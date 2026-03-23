@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ table_name }} - Database Viewer{% endblock %}
+{% block nav_db %}active{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{{ table_name }}</h1>
+  <p class="muted">Browse rows in the {{ table_name }} table.</p>
+</div>
+<div class="card">
+  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    <div class="field">
+      <label>Column</label>
+      <select id="column-filter">
+        <option value="all">All</option>
+        {% for col in columns %}<option value="{{ loop.index0 }}">{{ col }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field" style="min-width:240px; flex:1;">
+      <label for="table-filter">Search</label>
+      <input id="table-filter" type="text" placeholder="Search this table...">
+    </div>
+  </div>
+</div>
+<div class="card table-wrap">
+  <table id="db-table">
+    <thead><tr>{% for col in columns %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        {% for col in columns %}<td><div class="cell">{{ row[col] }}</div></td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<script>
+const filterInput = document.getElementById("table-filter");
+const columnSelect = document.getElementById("column-filter");
+const rows = Array.from(document.querySelectorAll("#db-table tbody tr"));
+function filterTable() {
+  const query = filterInput.value.toLowerCase();
+  const colIndex = columnSelect.value;
+  rows.forEach(row => {
+    let text = colIndex === "all" ? row.innerText : row.children[colIndex].innerText;
+    row.style.display = text.toLowerCase().includes(query) ? "" : "none";
+  });
+}
+filterInput.addEventListener("input", filterTable);
+columnSelect.addEventListener("change", filterTable);
+</script>
+{% endblock %}

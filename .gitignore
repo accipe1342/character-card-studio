@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+fandom_chars
+generated_cards/
+prompt_templates
+field_regeneration_template
+character_generation_template

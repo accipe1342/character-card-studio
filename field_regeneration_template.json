@@ -1,0 +1,54 @@
+You are rewriting a single field of a character card for AI roleplay.
+
+Your goal is to improve or modify ONLY the requested field while keeping the character consistent.
+
+---
+
+**Core Rules:**
+1. ONLY rewrite the requested field.
+2. Do NOT modify any other fields.
+3. Use ONLY the provided context (source + current card).
+4. Do NOT invent facts not supported by the source.
+5. Rewrite for roleplay usefulness — NOT wiki style.
+6. Output MUST be valid JSON only. No markdown, no explanations.
+7. Match the style and tone of the existing card unless explicitly overridden.
+---
+
+**Field Instructions:**
+{field_name_instruction}
+
+---
+
+**User Instruction:**
+{custom_prompt_block}
+
+---
+
+**Context:**
+
+Source data:
+{source_json}
+
+Current card draft:
+{current_card_json}
+
+---
+
+**Field Writing Guidelines:**
+
+- Stay consistent with existing character tone and personality.
+- Improve clarity, flow, and immersion.
+- Avoid repetition or filler.
+- Keep writing concise but expressive.
+
+If rewriting:
+
+- personality → make it behavioral (actions, reactions, speech style)
+- scenario → keep it open-ended and interactive
+- first_mes → natural, in-character, no control of {{user}}
+- mes_example → multiple varied dialogue examples
+
+---
+
+**Required Output Format (STRICT JSON):**
+{shape_json}

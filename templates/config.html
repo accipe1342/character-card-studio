@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Config - Character Card Studio{% endblock %}
+{% block nav_config %}active{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <h1>Config</h1>
+  <p class="muted">Control how prompts and templates behave.</p>
+</div>
+
+<div class="card">
+  <form method="POST" action="/config">
+
+    <div class="field">
+      <label>
+        <input type="checkbox" name="use_templates" value="true" {% if config.use_templates %}checked{% endif %}>
+        Use Custom Templates
+      </label>
+      <div class="muted">
+        If enabled, the app will use your prompt templates instead of the default prompts.
+      </div>
+    </div>
+
+    <div style="margin-top:16px;">
+      <button type="submit">Save Config</button>
+    </div>
+
+  </form>
+</div>
+
+<div class="card">
+  <p>Recommended defaults:</p>
+  <ul>
+    <li>Provider: nanogpt</li>
+    <li>Model: zai-org/glm-4.7:thinking</li>
+    <li>Keep your API keys in <code>.env</code>, not inside code files.</li>
+  </ul>
+</div>
+
+{% endblock %}

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Source Detail - Character Card Studio{% endblock %}
+{% block nav_db %}active{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Source Detail</h1><p class="muted">Raw JSON for one source row.</p></div>
+<div class="card"><div class="prebox">{{ source | tojson(indent=2) }}</div></div>
+{% endblock %}
