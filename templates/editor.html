@@ -4,7 +4,16 @@
 {% block content %}
 <div class="topbar">
   <h1>{{ card.name or "Character Editor" }}</h1>
-  <div class="muted">Provider: {{ card.provider or "—" }} | Model: {{ card.model or "—" }}</div>
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+    <label style="margin:0;">Provider</label>
+    <select id="card-provider">
+      <option value="local" {% if card.provider == 'local' %}selected{% endif %}>local</option>
+      <option value="nanogpt" {% if card.provider == 'nanogpt' %}selected{% endif %}>nanogpt</option>
+      <option value="openrouter" {% if card.provider == 'openrouter' %}selected{% endif %}>openrouter</option>
+    </select>
+    <label style="margin:0;">Model</label>
+    <input id="card-model" type="text" value="{{ card.model or '' }}" style="width:320px;">
+  </div>
   <div class="actions">
     <form method="POST" action="/generate/full/{{ card.id }}" style="display:inline;"><button type="submit">Generate Full Card</button></form>
     <button type="button" onclick="saveCard()">Save Current Edits</button>
@@ -12,7 +21,7 @@
     <a class="button-link" href="/library">Back to Library</a>
     <span id="save-status" class="success"></span>
   </div>
-  <div id="global-error" class="error"></div>
+  <div id="global-error" class="error">{% if error %}{{ error }}{% endif %}</div>
 </div>
 
 <div class="layout source-hidden" id="editor-layout">
@@ -132,6 +141,8 @@ function collectStructuredProfile() {
 }
 function collectCard() {
   return {
+    provider: document.getElementById("card-provider").value.trim(),
+    model: document.getElementById("card-model").value.trim(),
     name: document.getElementById("name").value.trim(),
     description: document.getElementById("description").value,
     personality: document.getElementById("personality").value,

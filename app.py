@@ -19,6 +19,7 @@ from flask import (
 from database import (
     DB_PATH,
     create_or_update_card,
+    delete_card,
     get_card,
     get_source,
     init_db,
@@ -28,7 +29,7 @@ from database import (
 )
 from generator import generate_full_card, regenerate_single_field
 from preview import build_export_card_json, format_structured_profile_text
-from scraper import scrape_fandom_page
+from scraper import parse_fandom_url, scrape_fandom_page
 
 
 def load_config():
@@ -111,7 +112,8 @@ def get_table_count(table_name: str) -> int:
 @app.get("/")
 def index():
     cards = list_cards()
-    return render_template("index.html", cards=cards)
+    error = request.args.get("error", "")
+    return render_template("index.html", cards=cards, error=error)
 
 
 @app.get("/library")
@@ -156,14 +158,37 @@ def save_config_route():
 # ---------- Scrape / cards ----------
 @app.post("/scrape")
 def scrape():
-    wiki_base = request.form["wiki_base"].strip().rstrip("/")
-    page_name = request.form["page_name"].strip()
-    provider = request.form.get("provider", "nanogpt").strip() or "nanogpt"
-    model = request.form.get("model", "").strip() or os.getenv(
-        "NANOGPT_MODEL", "zai-org/glm-4.7:thinking"
+    fandom_url = request.form.get("fandom_url", "").strip()
+
+    try:
+        wiki_base, page_name = parse_fandom_url(fandom_url)
+    except ValueError as e:
+        return redirect(url_for("index", error=str(e)))
+
+    provider = (
+        request.form.get("provider", "").strip().lower()
+        or os.getenv("DEFAULT_PROVIDER", "local").strip().lower()
+        or "local"
     )
 
-    source = scrape_fandom_page(wiki_base, page_name)
+    if provider in {"lmstudio", "openai_local"}:
+        provider = "local"
+
+    model_default = os.getenv("NANOGPT_MODEL", "zai-org/glm-4.7:thinking")
+    if provider == "openrouter":
+        model_default = os.getenv("OPENROUTER_MODEL", "z-ai/glm-4.7")
+    elif provider == "local":
+        model_default = os.getenv(
+            "LOCAL_MODEL", "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K"
+        )
+
+    model = request.form.get("model", "").strip() or model_default
+
+    try:
+        source = scrape_fandom_page(wiki_base, page_name)
+    except Exception as e:
+        return redirect(url_for("index", error=f"Scrape failed: {e}"))
+
     source_id = save_source(source)
     card_id = create_or_update_card(
         source_id,
@@ -184,12 +209,14 @@ def editor(card_id: int):
         card["name"], card["structured_profile"]
     )
     export_json = build_export_card_json(card)
+    error = request.args.get("error", "")
     return render_template(
         "editor.html",
         card=card,
         source=source,
         preview_text=preview_text,
         export_json=json.dumps(export_json, ensure_ascii=False, indent=2),
+        error=error,
     )
 
 
@@ -197,7 +224,10 @@ def editor(card_id: int):
 def generate_full(card_id: int):
     card = get_card(card_id)
     source = get_source(card["source_id"])
-    generated = generate_full_card(source, card["provider"], card["model"])
+    try:
+        generated = generate_full_card(source, card["provider"], card["model"])
+    except Exception as e:
+        return redirect(url_for("editor", card_id=card_id, error=str(e)))
     generated["provider"] = card["provider"]
     generated["model"] = card["model"]
     create_or_update_card(card["source_id"], generated, card_id=card_id)
@@ -327,12 +357,19 @@ def apply_preview(card_id: int):
     return jsonify({"status": "ok"})
 
 
+@app.post("/card/<int:card_id>/delete")
+def delete_card_route(card_id: int):
+    delete_card(card_id)
+    return redirect(url_for("library"))
+
+
 @app.post("/save/<int:card_id>")
 def save_card(card_id: int):
     payload = request.get_json(force=True)
     card = get_card(card_id)
-    payload["provider"] = card["provider"]
-    payload["model"] = card["model"]
+    # Accept provider/model from payload if caller supplies them, otherwise keep stored values
+    payload["provider"] = payload.get("provider") or card["provider"]
+    payload["model"] = payload.get("model") or card["model"]
     create_or_update_card(card["source_id"], payload, card_id=card_id)
     return jsonify({"status": "ok"})
 

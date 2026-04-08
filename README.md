@@ -1,172 +1,165 @@
-# Character Card Studio
+﻿# Character Card Studio
 
 Character Card Studio is a local web app for scraping a Fandom wiki page, generating a SillyTavern-style character card with AI, editing it in your browser, and exporting the final `.card.json` file.
 
-This package is set up for people who are **new to Python, SQLite, and local web apps**.
+This package is designed for people who are new to Python, SQLite, and local web apps.
 
-## What this app does
+## Current Status
+
+The app is now configured to work with local OpenAI-compatible servers (including LM Studio style endpoints) and has guardrails added to prevent common crash paths.
+
+## What This App Does
 
 - Scrapes a Fandom page
 - Saves scraped data in a local SQLite database
-- Generates a character card with NanoGPT or OpenRouter
+- Generates character cards with local or cloud LLM providers
 - Lets you edit natural fields and structured profile fields
-- Lets you regenerate individual fields with a custom prompt
+- Lets you regenerate specific fields with custom prompts
 - Exports a SillyTavern-compatible `.card.json`
 - Includes a built-in SQLite table viewer and `.env` editor
 
-## What is included
+## Included Files
 
-- `app.py` - the Flask web app
-- `database.py` - database helpers
-- `scraper.py` - Fandom scraping logic
-- `generator.py` - AI card generation logic
-- `preview.py` - export/preview formatting helpers
-- `fandom_chars.db` - the SQLite database file
-- `templates/` - all HTML pages
-- `.env.example` - sample environment file
-- `requirements.txt` - Python packages needed
-- `setup_windows.bat` - first-time setup for Windows
-- `start_windows.bat` - run the app on Windows
-- `start_mac_linux.sh` - run the app on macOS/Linux
+- `app.py`: Flask web app and routes
+- `database.py`: SQLite helpers and persistence logic
+- `scraper.py`: Fandom scraping and URL parsing
+- `generator.py`: LLM request and generation logic
+- `preview.py`: export/preview formatting helpers
+- `templates/`: HTML templates
+- `.env.example`: sample environment file
+- `requirements.txt`: Python dependencies
+- `setup_windows.bat`: first-time setup on Windows
+- `start_windows.bat`: run app on Windows
+- `start_mac_linux.sh`: run app on macOS/Linux
 
-## Before you start
+## Recent Changes (What and Why)
+
+- Added local provider support (`local`) with optional `LOCAL_API_KEY`.
+- Why: you are running a local model at `http://127.0.0.1:1234` without a cloud API key.
+
+- Added provider/model editing in the card editor.
+- Why: cards saved with wrong provider values (for example a model name in provider field) were causing generation failures.
+
+- Added fallback for unknown provider values to local provider.
+- Why: avoid hard crashes from bad historical card values.
+
+- Fixed `UnboundLocalError` when templates were enabled but template text was blank.
+- Why: prompt could be left undefined in template mode.
+
+- Fixed preview crash when `backstory` arrived as a list instead of a string.
+- Why: model output shape can vary across runs.
+
+- Added card deletion from Library.
+- Why: easier cleanup and recovery after bad scrapes/tests.
+
+- Switched scrape input from two fields to one full Fandom URL.
+- Why: simpler UX and fewer formatting mistakes.
+
+- Prevented blank card entries on scrape failures.
+- Why: scraping errors now return to main page with a visible error and do not write empty rows.
+
+- Softened strict generation-key failure behavior.
+- Why: if the model omits fields like `mes_example` or `tags`, defaults are filled instead of crashing.
+
+## Before You Start
 
 You need:
 
 1. A computer with internet access
-2. A NanoGPT API key or OpenRouter API key
-3. Python installed
+2. Python 3.11+
+3. A model provider (local or cloud)
+4. Cloud API keys only if you use cloud providers
 
-## Step 1 - Install Python
-
-### Windows
-1. Go to the official Python website.
-2. Download **Python 3.11 or newer**.
-3. Run the installer.
-4. **Important:** check the box that says **Add Python to PATH**.
-5. Finish the install.
-
-### macOS / Linux
-Install Python 3.11 or newer using your normal package manager or from the official Python website.
-
-## Step 2 - Download this project
-
-1. Download this project ZIP from GitHub.
-2. Extract it to a folder such as:
-   - `Desktop\character-card-studio`
-   - or `Downloads\character-card-studio`
-
-## Step 3 - Set up the app (Windows)
+## Setup on Windows
 
 1. Open the project folder.
-2. Double-click `setup_windows.bat`.
-3. Wait for it to finish.
-4. It will create:
-   - a virtual environment in `.venv`
-   - install the required packages
-   - create `.env` from `.env.example` if needed
+2. Run `setup_windows.bat` once.
+3. Run `start_windows.bat` to launch the app.
 
-## Step 4 - Add your API key
+## Configure Provider (`.env`)
 
-You have two easy options.
+### Local OpenAI-Compatible Server (Recommended)
 
-### Option A - edit the `.env` file manually
-Open `.env` in Notepad and fill in your key.
+```env
+DEFAULT_PROVIDER=local
+LOCAL_OPENAI_BASE_URL=http://127.0.0.1:1234
+LOCAL_MODEL=Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K
+LOCAL_API_KEY=
+```
 
-Example for NanoGPT:
+Notes:
+
+- `LOCAL_API_KEY` can stay blank for local servers that do not require auth.
+- The app automatically targets `/v1/chat/completions`.
+
+### NanoGPT
 
 ```env
 NANOGPT_API_KEY=your_real_key_here
 NANOGPT_MODEL=zai-org/glm-4.7:thinking
 ```
 
-Example for OpenRouter:
+### OpenRouter
 
 ```env
 OPENROUTER_API_KEY=your_real_key_here
 OPENROUTER_MODEL=z-ai/glm-4.7
 ```
 
-### Option B - use the built-in `.env` page
-After the app starts, visit:
+You can also edit env values from `http://127.0.0.1:5000/env`.
 
-- `http://127.0.0.1:5000/env`
+## Basic Workflow
 
-Then paste your key and save.
+1. Open `http://127.0.0.1:5000`.
+2. Paste one full Fandom page URL (example: `https://gundam.fandom.com/wiki/Rain_Mikamura`).
+3. Click **Scrape**.
+4. Open the card from **Library**.
+5. In editor top bar, verify `Provider` and `Model` are correct.
+6. Click **Generate Full Card**.
+7. Edit or regenerate fields as needed.
+8. Export `.card.json` when finished.
 
-## Step 5 - Start the app
+## Common Pages
 
-### Windows
-Double-click `start_windows.bat`
+- `/`: dashboard
+- `/library`: saved cards
+- `/card/<id>`: card editor
+- `/db`: SQLite viewer
+- `/env`: environment editor
 
-### macOS / Linux
-Open Terminal in the project folder and run:
+## Troubleshooting
 
-```bash
-./start_mac_linux.sh
-```
+### App Starts but Generation Fails
 
-## Step 6 - Open the app
+Check:
 
-Open your browser and go to:
+- Provider/model values on the card editor page
+- `.env` values for selected provider
+- Local server is running and reachable at `LOCAL_OPENAI_BASE_URL`
 
-```text
-http://127.0.0.1:5000
-```
+### Scrape Fails
 
-## Basic workflow
+- Use a full Fandom page URL containing `/wiki/`.
+- On failure, the app returns to main page with an error message and does not create blank card rows.
 
-1. Go to **Main**
-2. Enter a Fandom wiki base and page name
-3. Click **Scrape**
-4. Open the card from **Library**
-5. Click **Generate Full Card**
-6. Edit fields as needed
-7. Regenerate specific fields if needed
-8. Export the finished `.card.json`
+### Python Not Recognized
 
-## Example scrape values
+Reinstall Python and ensure Add Python to PATH is enabled.
 
-- Wiki Base: `https://gundam.fandom.com`
-- Page Name: `Rain_Mikamura`
+### Missing Module Error
 
-## Common pages in the app
-
-- `/` - dashboard
-- `/library` - all saved cards
-- `/card/<id>` - editor for one card
-- `/db` - SQLite database viewer
-- `/env` - environment variable editor
-
-## If something goes wrong
-
-### "Python is not recognized"
-Python was not installed correctly or was not added to PATH. Reinstall Python and check **Add Python to PATH**.
-
-### The app opens but generation fails
-Usually this means:
-- your API key is missing
-- your API key is wrong
-- your selected provider does not match your key
-
-Check your `.env` file.
-
-### The page says a module is missing
-Run the setup script again:
+Run setup again:
 
 - `setup_windows.bat`
 
-### The site does not load
-Make sure the terminal or batch window is still open. The app only runs while that window is open.
+## Safety Note
 
-## Safety note
+Keep real API keys in `.env`, not in source files.
 
-Do not put real API keys directly inside Python files. Keep them in `.env` only.
+## Clean Reset
 
-## Want to start clean?
+Delete `fandom_chars.db` to rebuild tables on next app start.
 
-You can delete `fandom_chars.db` and the app will recreate the tables the next time it runs.
+## License / Personal Use
 
-## License / personal use
-
-Use, edit, and adapt this project however you want for your own local workflow.
+Use, edit, and adapt this project for your own local workflow.

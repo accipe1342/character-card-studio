@@ -12,6 +12,8 @@ NANOGPT_URL = "https://nano-gpt.com/api/v1/chat/completions"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 NANOGPT_MODEL = os.getenv("NANOGPT_MODEL", "zai-org/glm-4.7:thinking")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "z-ai/glm-4.7")
+LOCAL_DEFAULT_BASE_URL = "http://127.0.0.1:1234"
+LOCAL_DEFAULT_MODEL = "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K"
 OPENROUTER_ENABLE_REASONING = True
 TEMPERATURE = 0.7
 TIMEOUT_SECONDS = 120
@@ -34,6 +36,27 @@ def get_nanogpt_key() -> str:
 
 def get_openrouter_key() -> str:
     return os.getenv("OPENROUTER_API_KEY", "")
+
+
+def get_local_key() -> str:
+    return os.getenv("LOCAL_API_KEY", "")
+
+
+def get_local_base_url() -> str:
+    return os.getenv("LOCAL_OPENAI_BASE_URL", LOCAL_DEFAULT_BASE_URL)
+
+
+def get_local_model() -> str:
+    return os.getenv("LOCAL_MODEL", LOCAL_DEFAULT_MODEL)
+
+
+def _build_local_chat_completions_url(base_url: str) -> str:
+    base = (base_url or LOCAL_DEFAULT_BASE_URL).strip().rstrip("/")
+    if base.endswith("/chat/completions"):
+        return base
+    if base.endswith("/v1"):
+        return f"{base}/chat/completions"
+    return f"{base}/v1/chat/completions"
 
 
 def _strip_code_fences(text: str) -> str:
@@ -63,7 +86,16 @@ def load_runtime_config():
     except:
         return {"use_templates": False}
 
+KNOWN_PROVIDERS = {"nanogpt", "openrouter", "local", "lmstudio", "openai_local"}
+
+
 def _request(provider: str, model: str, prompt: str) -> Dict[str, Any]:
+    provider = (provider or "").strip().lower()
+
+    if provider not in KNOWN_PROVIDERS:
+        print(f"[GENERATOR] Unknown provider '{provider}', falling back to local.")
+        provider = "local"
+
     if provider == "nanogpt":
         api_key = get_nanogpt_key()
         if not api_key:
@@ -84,7 +116,7 @@ def _request(provider: str, model: str, prompt: str) -> Dict[str, Any]:
         response = requests.post(
             NANOGPT_URL, headers=headers, json=payload, timeout=TIMEOUT_SECONDS
         )
-    else:
+    elif provider == "openrouter":
         api_key = get_openrouter_key()
         if not api_key:
             raise ValueError("Missing OPENROUTER_API_KEY environment variable.")
@@ -107,6 +139,52 @@ def _request(provider: str, model: str, prompt: str) -> Dict[str, Any]:
         response = requests.post(
             OPENROUTER_URL, headers=headers, json=payload, timeout=TIMEOUT_SECONDS
         )
+    elif provider in {"local", "lmstudio", "openai_local"}:
+        local_api_key = get_local_key()
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if local_api_key:
+            headers["Authorization"] = f"Bearer {local_api_key}"
+
+        payload = {
+            "model": model or get_local_model(),
+            "messages": [
+                {"role": "system", "content": "Return only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": TEMPERATURE,
+            "stream": False,
+        }
+        response = requests.post(
+            _build_local_chat_completions_url(get_local_base_url()),
+            headers=headers,
+            json=payload,
+            timeout=TIMEOUT_SECONDS,
+        )
+    else:
+        # Alias catch-all — should never reach here after the normalisation above
+        print(f"[GENERATOR] Unhandled provider '{provider}', routing to local.")
+        provider = "local"
+        local_api_key = get_local_key()
+        headers = {"Content-Type": "application/json"}
+        if local_api_key:
+            headers["Authorization"] = f"Bearer {local_api_key}"
+        payload = {
+            "model": model or get_local_model(),
+            "messages": [
+                {"role": "system", "content": "Return only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": TEMPERATURE,
+            "stream": False,
+        }
+        response = requests.post(
+            _build_local_chat_completions_url(get_local_base_url()),
+            headers=headers,
+            json=payload,
+            timeout=TIMEOUT_SECONDS,
+        )
 
     response.raise_for_status()
     data = response.json()
@@ -122,10 +200,14 @@ def generate_full_card(
     templates = get_prompt_templates()
     config = load_runtime_config()
     use_config = config.get("use_templates", False)
+    has_template = bool(templates.get("character_generation_template", "").strip())
 
     print(f"[GENERATOR] Using config templates (full): {use_config}")
 
-    if use_config and templates.get("character_generation_template", "").strip():
+    if use_config and not has_template:
+        use_config = False
+
+    if use_config:
         try:
             prompt = templates["character_generation_template"].format(
                 source_json=source_json
@@ -193,9 +275,21 @@ Source data:
 
     result = _request(provider, model, prompt)
 
-    missing = REQUIRED_KEYS - set(result.keys())
-    if missing:
-        raise ValueError(f"Missing keys from generation: {sorted(missing)}")
+    # Fill any keys the model omitted with safe defaults instead of crashing
+    defaults = {
+        "name": "",
+        "structured_profile": {},
+        "description": "",
+        "personality": "",
+        "scenario": "",
+        "first_mes": "",
+        "mes_example": "",
+        "tags": [],
+    }
+    for key, default in defaults.items():
+        if key not in result:
+            print(f"[GENERATOR] Model omitted '{key}', using default.")
+            result[key] = default
 
     return result
 
@@ -232,10 +326,14 @@ def regenerate_single_field(
     templates = get_prompt_templates()
     config = load_runtime_config()
     use_config = config.get("use_templates", False)
+    has_template = bool(templates.get("field_regeneration_template", "").strip())
 
     print(f"[GENERATOR] Using config templates (regen): {use_config}")
 
-    if use_config and templates.get("field_regeneration_template", "").strip():
+    if use_config and not has_template:
+        use_config = False
+
+    if use_config:
         try:
             custom_prompt_block = (
                 f"Additional user instruction: {custom_prompt}"

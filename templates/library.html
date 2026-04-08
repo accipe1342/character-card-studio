@@ -17,7 +17,12 @@
             <div class="meta">Provider: {{ card.provider or "—" }} | Model: {{ card.model or "—" }}</div>
             <div class="meta">Route: /card/{{ card.id }}</div>
           </div>
-          <a class="button-link" href="/card/{{ card.id }}">Open Editor</a>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <a class="button-link" href="/card/{{ card.id }}">Open Editor</a>
+            <form method="POST" action="/card/{{ card.id }}/delete" style="margin:0;" onsubmit="return confirm('Delete {{ card.name }}? This cannot be undone.')">
+              <button type="submit" style="background:#c0392b; color:#fff; border:none; padding:6px 14px; border-radius:6px; cursor:pointer;">Delete</button>
+            </form>
+          </div>
         </div>
       {% endfor %}
     </div>

@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlparse
 from typing import Any, Dict, Optional
 
 import requests
@@ -44,6 +45,24 @@ def normalize_infobox(infobox: dict) -> dict:
                 normalized[standard_key] = raw_value
                 break
     return normalized
+
+
+def parse_fandom_url(url: str):
+    """Split a full Fandom wiki URL into (wiki_base, page_name)."""
+    url = url.strip()
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(f"Not a valid URL: {url}")
+    path = parsed.path
+    idx = path.find("/wiki/")
+    if idx == -1:
+        raise ValueError(f"Could not find /wiki/ in URL — paste the full wiki page URL.")
+    base_path = path[:idx] if path[:idx] else ""
+    wiki_base = f"{parsed.scheme}://{parsed.netloc}{base_path}"
+    page_name = path[idx + len("/wiki/"):].strip("/")
+    if not page_name:
+        raise ValueError(f"No page name found in URL: {url}")
+    return wiki_base.rstrip("/"), page_name
 
 
 def scrape_fandom_page(wiki_base: str, page_name: str) -> Dict[str, Any]:

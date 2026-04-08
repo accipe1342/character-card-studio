@@ -2,7 +2,9 @@ from typing import Any, Dict
 
 
 def format_structured_profile_text(name: str, profile: Dict[str, Any]) -> str:
-    def q(value: str) -> str:
+    def q(value) -> str:
+        if isinstance(value, list):
+            value = ", ".join(str(v) for v in value)
         return (value or "").replace('"', '\\"')
 
     def join_items(items: list[str]) -> str:

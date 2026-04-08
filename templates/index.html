@@ -9,27 +9,29 @@
 
 <div class="card">
   <h2>Scrape a Fandom page</h2>
+  {% if error %}
+  <div style="background:#fdecea; border:1px solid #e57373; border-radius:8px; padding:10px 14px; margin-bottom:12px; color:#b71c1c;">{{ error }}</div>
+  {% endif %}
   <form id="scrape-form" method="POST" action="/scrape">
-    <div class="grid-2">
-      <div class="field">
-        <label>Wiki Base</label>
-        <input name="wiki_base" value="https://gundam.fandom.com">
-      </div>
-      <div class="field">
-        <label>Page Name</label>
-        <input name="page_name" value="Rain_Mikamura">
-      </div>
+    <div class="field">
+      <label>Fandom page URL</label>
+      <input name="fandom_url" placeholder="https://gundam.fandom.com/wiki/Rain_Mikamura" style="width:100%;">
     </div>
     <div class="grid-2">
       <div class="field">
         <label>Provider</label>
-        <input name="provider" value="nanogpt">
+        <select name="provider">
+          <option value="local" selected>local (OpenAI-compatible local server)</option>
+          <option value="nanogpt">nanogpt</option>
+          <option value="openrouter">openrouter</option>
+        </select>
       </div>
       <div class="field">
         <label>Model</label>
-        <input name="model" value="zai-org/glm-4.7:thinking">
+        <input name="model" value="Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K">
       </div>
     </div>
+    <p class="muted">For local providers, set LOCAL_OPENAI_BASE_URL in .env (example: http://127.0.0.1:1234).</p>
     <button id="scrape-btn" class="primary-btn" type="submit">Scrape</button>
   </form>
   <div id="scrape-status" class="scrape-status">

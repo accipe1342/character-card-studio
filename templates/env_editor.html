@@ -4,10 +4,15 @@
 {% block content %}
 <div class="page-header">
   <h1>.env Editor</h1>
-  <p class="muted">Edit your API keys and default model settings for this app.</p>
+  <p class="muted">Edit provider settings, API keys, and default models for this app.</p>
 </div>
 <div class="card">
-  <div class="hint">Example:<pre>NANOGPT_API_KEY=your_key_here
+  <div class="hint">Example:<pre>DEFAULT_PROVIDER=local
+LOCAL_OPENAI_BASE_URL=http://127.0.0.1:1234
+LOCAL_MODEL=Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K
+LOCAL_API_KEY=
+
+NANOGPT_API_KEY=your_key_here
 NANOGPT_MODEL=zai-org/glm-4.7:thinking
 OPENROUTER_API_KEY=your_key_here
 OPENROUTER_MODEL=z-ai/glm-4.7</pre></div>

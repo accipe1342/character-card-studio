@@ -248,6 +248,15 @@ def save_field_version(card_id: int, field_name: str, old_value: str | None, new
     conn.close()
 
 
+def delete_card(card_id: int) -> None:
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM field_versions WHERE card_id = ?", (card_id,))
+    cur.execute("DELETE FROM cards WHERE id = ?", (card_id,))
+    conn.commit()
+    conn.close()
+
+
 def list_cards() -> list[Dict[str, Any]]:
     conn = _conn()
     cur = conn.cursor()
