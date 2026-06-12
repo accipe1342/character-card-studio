@@ -96,6 +96,11 @@ NANOGPT_MODEL = os.getenv("NANOGPT_MODEL", "zai-org/glm-4.7:thinking")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "z-ai/glm-4.7")
 OPENROUTER_ENABLE_REASONING = True
 TEMPERATURE = 0.7
+
+# Local / OpenAI-compatible server
+LOCAL_BASE_URL = os.getenv("LOCAL_OPENAI_BASE_URL", "http://localhost:1234/v1")
+LOCAL_MODEL    = os.getenv("LOCAL_MODEL", "")
+LOCAL_API_KEY  = os.getenv("LOCAL_API_KEY", "local")
 TIMEOUT_SECONDS = 180
 
 REQUIRED_KEYS = {
@@ -236,8 +241,41 @@ def _build_request(provider: str, model: str, prompt: str):
             payload["reasoning"] = {"enabled": True}
         return OPENROUTER_URL, headers, payload
 
+    elif provider == "local":
+        base_url = LOCAL_BASE_URL.rstrip("/")
+        headers = {
+            "Authorization": f"Bearer {LOCAL_API_KEY or 'local'}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model or LOCAL_MODEL or "local-model",
+            "messages": [
+                {"role": "system", "content": "Return only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": TEMPERATURE,
+            "max_tokens": 4096,
+        }
+        return f"{base_url}/chat/completions", headers, payload
+
     else:
-        raise ValueError(f"Unsupported provider: {provider}")
+        # Unknown provider — fall back to local OpenAI-compatible
+        _log_warn(f"Unknown provider '{provider}', treating as local OpenAI-compatible")
+        base_url = LOCAL_BASE_URL.rstrip("/")
+        headers = {
+            "Authorization": f"Bearer {LOCAL_API_KEY or 'local'}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model or LOCAL_MODEL or provider,
+            "messages": [
+                {"role": "system", "content": "Return only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": TEMPERATURE,
+            "max_tokens": 4096,
+        }
+        return f"{base_url}/chat/completions", headers, payload
 
 
 def _request(provider: str, model: str, prompt: str) -> Dict[str, Any]:

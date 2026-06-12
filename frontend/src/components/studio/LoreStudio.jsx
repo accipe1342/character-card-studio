@@ -284,6 +284,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
         <select value={provider} onChange={e => setProvider(e.target.value)} style={{ ...inputStyle, width: "auto" }}>
           <option value="nanogpt">NanoGPT</option>
           <option value="openrouter">OpenRouter</option>
+          <option value="local">Local (OpenAI-compatible)</option>
         </select>
         {/* Model picker */}
         <div ref={modelRef} style={{ position: "relative", width: 220 }}>

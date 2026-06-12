@@ -2,7 +2,20 @@
 
 A NieR:Automata–themed desktop app for generating SillyTavern character cards and lorebooks from Fandom wiki pages using AI.
 
-![Character Card Studio](hero.png)
+![Character Card Studio](Character Card Studio.png)
+
+---
+
+## What's New in v2.1
+
+### Local LLM Support
+- **Local / OpenAI-compatible provider** — connect to any local LLM server alongside NanoGPT and OpenRouter
+- Works with **LM Studio**, **Ollama**, **KoboldCPP**, or any server speaking the OpenAI `/v1/chat/completions` format
+- Configure via `.env` or directly in **Config → API Keys**:
+  - `LOCAL_OPENAI_BASE_URL` — your server's base URL (default: `http://localhost:1234/v1`)
+  - `LOCAL_MODEL` — model name to request
+  - `LOCAL_API_KEY` — API key if required (default: `local`)
+- Unknown providers now fall back to local instead of crashing
 
 ---
 
@@ -54,7 +67,9 @@ A NieR:Automata–themed desktop app for generating SillyTavern character cards 
 - Scrape any Fandom wiki page and generate a full SillyTavern V2 character card
 - Natural & Structured views — edit description, personality, scenario, first message, and 20+ structured profile fields
 - Field regeneration with custom prompt support
+- Alternate greetings with per-entry AI regeneration
 - PNG export with embedded SillyTavern metadata (`chara` tEXt chunk)
+- Library with save, load, rename, duplicate, and delete
 
 ### Lore Studio
 - Single page or multi-URL lorebook generation
@@ -64,7 +79,7 @@ A NieR:Automata–themed desktop app for generating SillyTavern character cards 
 
 ### Config
 - Custom system prompt templates per generation type
-- API key management in-app
+- API key management in-app for all three providers
 
 ---
 
@@ -74,7 +89,7 @@ A NieR:Automata–themed desktop app for generating SillyTavern character cards 
 |---|---|
 | Backend | Python 3 · Flask · SQLite |
 | Frontend | React 18 · Vite · CSS |
-| AI | NanoGPT API · OpenRouter API |
+| AI | NanoGPT · OpenRouter · Local OpenAI-compatible |
 | Scraping | BeautifulSoup4 · requests |
 
 ---
@@ -103,14 +118,24 @@ Runs at `http://localhost:5173` with Flask backend on port 5000.
 
 ## Configuration
 
-Copy `_env` to `.env` and add your API keys:
+Copy `_env.example` to `.env` and add your keys:
 
 ```env
+# NanoGPT
 NANOGPT_API_KEY=your_key_here
+NANOGPT_MODEL=zai-org/glm-4.7:thinking
+
+# OpenRouter
 OPENROUTER_API_KEY=your_key_here
+OPENROUTER_MODEL=openai/gpt-4o-mini
+
+# Local / OpenAI-compatible (LM Studio, Ollama, KoboldCPP, etc.)
+LOCAL_OPENAI_BASE_URL=http://localhost:1234/v1
+LOCAL_MODEL=local-model
+LOCAL_API_KEY=local
 ```
 
-Or set them in **Config → API Keys** in the app.
+Or manage everything in **Config → API Keys** in the app.
 
 ---
 
@@ -120,6 +145,7 @@ Or set them in **Config → API Keys** in the app.
 |---|---|
 | [NanoGPT](https://nano-gpt.com) | Default — GLM, Qwen, and many others |
 | [OpenRouter](https://openrouter.ai) | Claude, GPT-4o, Llama, Mistral, and more |
+| Local | Any OpenAI-compatible server — LM Studio, Ollama, KoboldCPP |
 
 ---
 

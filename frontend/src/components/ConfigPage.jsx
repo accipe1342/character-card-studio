@@ -233,6 +233,9 @@ export default function ConfigPage({ t = {}, showToast }) {
             { key: "OPENROUTER_API_KEY", label: t.openrouterKey || "OpenRouter API Key", placeholder: "sk-or-...", isKey: true },
             { key: "NANOGPT_MODEL", label: t.nanogptModel || "Default NanoGPT Model", placeholder: "zai-org/glm-4.7:thinking", isKey: false },
             { key: "OPENROUTER_MODEL", label: t.openrouterModel || "Default OpenRouter Model", placeholder: "openai/gpt-4o-mini", isKey: false },
+            { key: "LOCAL_OPENAI_BASE_URL", label: "Local Server Base URL", placeholder: "http://localhost:1234/v1", isKey: false },
+            { key: "LOCAL_MODEL", label: "Local Model Name", placeholder: "local-model", isKey: false },
+            { key: "LOCAL_API_KEY", label: "Local API Key (if required)", placeholder: "local", isKey: true },
           ].map(({ key, label, placeholder, isKey }) => (
             <label key={key} style={{ fontSize: 12, color: "var(--nier-text-dim)", display: "flex", flexDirection: "column", gap: 4 }}>
               {label}

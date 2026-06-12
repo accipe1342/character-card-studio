@@ -417,6 +417,7 @@ export default function CharacterStudio({
         >
           <option value="nanogpt">NanoGPT</option>
           <option value="openrouter">OpenRouter</option>
+          <option value="local">Local (OpenAI-compatible)</option>
         </select>
 
         {/* Model picker — NieR style */}
