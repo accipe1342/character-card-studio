@@ -2,7 +2,7 @@
 
 A NieR:Automata–themed desktop app for generating SillyTavern character cards and lorebooks from Fandom wiki pages using AI.
 
-![Character Card Studio](Character Card Studio.png)
+![Character Card Studio](preview.png)
 
 ---
 
