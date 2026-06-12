@@ -48,7 +48,6 @@ A NieR:Automata–themed desktop app for generating SillyTavern character cards 
 - NieR:Automata design system — `::` colon motifs, corner bracket ornaments, musical score dividers, CRT screen inset shadow
 - **Dark / light theme** toggle with localStorage persistence
 - **EN / 日本語 / 中文** language toggle — all UI labels, field names, buttons, and type chips translate
-- NieR:Automata quotes cycle during model processing
 - Responsive two-column layout with mobile breakpoints
 - Improved loading bar — blank track with sweeping dark block animation
 
@@ -69,6 +68,7 @@ A NieR:Automata–themed desktop app for generating SillyTavern character cards 
 - Field regeneration with custom prompt support
 - Alternate greetings with per-entry AI regeneration
 - PNG export with embedded SillyTavern metadata (`chara` tEXt chunk)
+- **Cheatsheet bar** — click to insert SillyTavern variables (`{{char}}`, `{{user}}`, `<START>`, lorebook blocks etc.) directly into any field, with a token counter per field
 - Library with save, load, rename, duplicate, and delete
 
 ### Lore Studio
