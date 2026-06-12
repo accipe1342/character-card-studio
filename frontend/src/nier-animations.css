@@ -1,0 +1,629 @@
+/* ============================================================
+   NieR:Automata UI Animation System
+   Design language: "moist, not dried-out" — Hisayoshi Kijima
+   
+   Core principles:
+   - Everything uses a spring ease: fast start, soft land
+   - Elements stagger in sequentially, never all at once  
+   - Horizontal lines draw before content appears
+   - No hard cuts, no jarring flickers
+   - Beige palette, opacity + transform only (GPU-safe)
+   ============================================================ */
+
+/* Spring easing used throughout */
+:root {
+  --nier-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --nier-soft:   cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --nier-snappy: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
+/* ----------------------------------------------------------
+   KEYFRAMES
+   ---------------------------------------------------------- */
+
+/* Panel: line draws first, then content rises up behind it */
+@keyframes nier-line-draw {
+  0%   { transform: scaleX(0); opacity: 0; }
+  1%   { opacity: 1; }
+  100% { transform: scaleX(1); opacity: 1; }
+  transform-origin: left;
+}
+
+/* Content rises up after line */
+@keyframes nier-rise {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Fade in only — for subtle elements */
+@keyframes nier-fade {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Title: gentle expand from slightly compressed */
+@keyframes nier-title {
+  0%   { opacity: 0; letter-spacing: -0.02em; }
+  60%  { opacity: 1; letter-spacing: 0.12em; }
+  100% { opacity: 1; letter-spacing: 0.1em; }
+}
+
+/* Mode switch: slides from the side cleanly */
+@keyframes nier-slide-in-right {
+  0%   { opacity: 0; transform: translateX(16px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes nier-slide-in-left {
+  0%   { opacity: 0; transform: translateX(-16px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+/* Button sweep line */
+@keyframes nier-sweep {
+  0%   { transform: scaleX(0); transform-origin: left; opacity: 1; }
+  70%  { transform: scaleX(1); transform-origin: left; opacity: 0.4; }
+  100% { transform: scaleX(1); transform-origin: left; opacity: 0; }
+}
+
+/* Progress shimmer */
+@keyframes nier-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Vignette fade in on load */
+@keyframes nier-vignette {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+
+/* ----------------------------------------------------------
+   TITLE
+   ---------------------------------------------------------- */
+
+.nier-title {
+  animation: nier-title 0.9s var(--nier-spring) both;
+}
+
+
+/* ----------------------------------------------------------
+   CRT VIGNETTE — subtle, static after load
+   ---------------------------------------------------------- */
+
+.nier-screen {
+  position: relative;
+}
+.nier-screen::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center,
+    transparent 50%,
+    rgba(0,0,0,0.12) 100%
+  );
+  animation: nier-vignette 1.8s var(--nier-soft) both;
+  z-index: 9999;
+}
+
+
+/* ----------------------------------------------------------
+   PANELS — line draws, then content rises
+   Each panel has a ::before pseudo that draws the top line
+   ---------------------------------------------------------- */
+
+.nier-panel {
+  animation: nier-rise 0.55s var(--nier-spring) both;
+  position: relative;
+}
+.nier-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: #3a3a3a;
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: nier-line-draw 0.35s var(--nier-snappy) both;
+}
+
+.nier-panel-delay-1 { animation-delay: 0.08s; }
+.nier-panel-delay-1::before { animation-delay: 0.0s; }
+
+.nier-panel-delay-2 { animation-delay: 0.16s; }
+.nier-panel-delay-2::before { animation-delay: 0.06s; }
+
+.nier-panel-delay-3 { animation-delay: 0.24s; }
+.nier-panel-delay-3::before { animation-delay: 0.12s; }
+
+
+/* ----------------------------------------------------------
+   MODE TRANSITION (Character ↔ Lore)
+   ---------------------------------------------------------- */
+
+.nier-mode-enter {
+  animation: nier-slide-in-right 0.38s var(--nier-spring) both;
+}
+.nier-mode-enter-left {
+  animation: nier-slide-in-left 0.38s var(--nier-spring) both;
+}
+
+
+/* ----------------------------------------------------------
+   BUTTONS — staff-line sweep on hover
+   ---------------------------------------------------------- */
+
+.nier-btn {
+  position: relative;
+  overflow: hidden;
+  transition:
+    background 0.18s var(--nier-soft),
+    color 0.18s var(--nier-soft),
+    transform 0.1s var(--nier-snappy);
+}
+.nier-btn::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 0; right: 0;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.nier-btn:hover::after {
+  animation: nier-sweep 0.4s var(--nier-soft) forwards;
+}
+.nier-btn:hover {
+  background: #d4cdb8 !important;
+}
+.nier-btn-active:hover {
+  background: #3d3d3d !important;
+}
+.nier-btn:active {
+  transform: scale(0.97);
+}
+
+
+/* ----------------------------------------------------------
+   FIELD SELECTION — bar draws from left on active
+   ---------------------------------------------------------- */
+
+.nier-field-active {
+  position: relative;
+}
+.nier-field-active::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 2px;
+  background: #f5f1e8;
+  animation: nier-line-draw 0.22s var(--nier-snappy) both;
+}
+
+
+/* ----------------------------------------------------------
+   STAGGERED LIST ITEMS — for field buttons
+   ---------------------------------------------------------- */
+
+.nier-list-item {
+  animation: nier-rise 0.4s var(--nier-spring) both;
+}
+/* Apply via nth-child or inline style for stagger */
+
+
+/* ----------------------------------------------------------
+   PROGRESS BAR SHIMMER
+   ---------------------------------------------------------- */
+
+.nier-progress-shimmer {
+  background: linear-gradient(
+    90deg,
+    #2b2b2b 0%,
+    #2b2b2b 35%,
+    #555540 50%,
+    #2b2b2b 65%,
+    #2b2b2b 100%
+  ) !important;
+  background-size: 250% 100% !important;
+  animation: nier-shimmer 1.8s ease-in-out infinite !important;
+}
+[data-theme="dark"] .nier-progress-shimmer {
+  background: linear-gradient(
+    90deg,
+    #c8c0a8 0%,
+    #c8c0a8 35%,
+    #ffffff 50%,
+    #c8c0a8 65%,
+    #c8c0a8 100%
+  ) !important;
+  background-size: 250% 100% !important;
+  animation: nier-shimmer 1.8s ease-in-out infinite !important;
+}
+
+
+/* ----------------------------------------------------------
+   LIBRARY DRAWER — items rise in staggered
+   ---------------------------------------------------------- */
+
+.nier-library-item {
+  animation: nier-rise 0.35s var(--nier-spring) both;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.15s var(--nier-soft), color 0.15s var(--nier-soft);
+}
+.nier-library-item::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.nier-library-item:hover::after {
+  animation: nier-sweep 0.4s var(--nier-soft) forwards;
+}
+
+
+/* ----------------------------------------------------------
+   HEADINGS — NieR style: dark bg, beige text, drop shadow
+   ---------------------------------------------------------- */
+
+.nier-heading {
+  color: #2b2b2b;
+  letter-spacing: 0.1em;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 14px;
+  user-select: none;
+  filter: drop-shadow(0px 2px 6px rgba(0,0,0,0.20));
+}
+
+h1.nier-heading {
+  font-size: 26px;
+  letter-spacing: 0.08em;
+  margin: 0 0 4px 0;
+}
+
+h2.nier-heading {
+  font-size: 15px;
+  letter-spacing: 0.12em;
+}
+
+
+/* ----------------------------------------------------------
+   THEME TOKENS
+   ---------------------------------------------------------- */
+
+:root {
+  --nier-bg:        #e8e3d3;
+  --nier-bg-panel:  #efe8d8;
+  --nier-bg-field:  #f7f2e7;
+  --nier-bg-input:  #f7f2e7;
+  --nier-bg-btn:    #dcd6c4;
+  --nier-bg-dark:   #2b2b2b;
+  --nier-bg-mid:    #d3cbb8;
+
+  --nier-text:      #2b2b2b;
+  --nier-text-inv:  #f5f1e8;
+  --nier-text-dim:  #666666;
+  --nier-border:    #3a3a3a;
+
+  --nier-btn-hover: #d4cdb8;
+  --nier-btn-active-bg: #2b2b2b;
+  --nier-btn-active-text: #f5f1e8;
+}
+
+[data-theme="dark"] {
+  --nier-bg:        #1a1814;
+  --nier-bg-panel:  #201e1a;
+  --nier-bg-field:  #272420;
+  --nier-bg-input:  #272420;
+  --nier-bg-btn:    #2e2b26;
+  --nier-bg-dark:   #0d0c0a;
+  --nier-bg-mid:    #2a2720;
+
+  --nier-text:      #c8c0a8;
+  --nier-text-inv:  #c8c0a8;
+  --nier-text-dim:  #7a7060;
+  --nier-border:    #4a4540;
+
+  --nier-btn-hover: #3a3630;
+  --nier-btn-active-bg: #c8c0a8;
+  --nier-btn-active-text: #1a1814;
+}
+
+/* Apply theme vars to structural elements */
+body {
+  background: var(--nier-bg);
+  color: var(--nier-text);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* Theme-aware overrides for common patterns */
+[data-theme="dark"] .nier-btn:hover {
+  background: var(--nier-btn-hover) !important;
+}
+[data-theme="dark"] .nier-btn-active:hover {
+  background: #b8b09a !important;
+}
+[data-theme="dark"] h1.nier-heading,
+[data-theme="dark"] h2.nier-heading {
+  color: var(--nier-text);
+  filter: drop-shadow(0px 2px 8px rgba(0,0,0,0.5));
+}
+
+
+/* ----------------------------------------------------------
+   DARK MODE — element overrides
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] textarea,
+[data-theme="dark"] input,
+[data-theme="dark"] select {
+  background: var(--nier-bg-field) !important;
+  color: var(--nier-text) !important;
+  border-color: var(--nier-border) !important;
+}
+
+[data-theme="dark"] select option {
+  background: var(--nier-bg-panel);
+  color: var(--nier-text);
+}
+
+/* Scrollbar */
+[data-theme="dark"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: var(--nier-bg);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: var(--nier-border);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--nier-text-dim);
+}
+
+
+/* All buttons in dark mode — override every inline style */
+html[data-theme="dark"] button.nier-btn,
+html[data-theme="dark"] button.nier-btn:not(:hover) {
+  background: #2e2b26 !important;
+  color: #c8c0a8 !important;
+  border-color: #4a4540 !important;
+}
+html[data-theme="dark"] button.nier-btn.nier-btn-active,
+html[data-theme="dark"] button.nier-btn.nier-btn-active:not(:hover) {
+  background: #c8c0a8 !important;
+  color: #1a1814 !important;
+}
+html[data-theme="dark"] button.nier-btn:hover {
+  background: #3a3630 !important;
+  color: #c8c0a8 !important;
+}
+
+/* Light mode buttons */
+html[data-theme="light"] button.nier-btn,
+html button.nier-btn {
+  background: #dcd6c4 !important;
+  color: #2b2b2b !important;
+  border-color: #3a3a3a !important;
+}
+html[data-theme="light"] button.nier-btn.nier-btn-active,
+html button.nier-btn.nier-btn-active {
+  background: #2b2b2b !important;
+  color: #f5f1e8 !important;
+}
+html[data-theme="light"] button.nier-btn:hover,
+html button.nier-btn:hover {
+  background: #d4cdb8 !important;
+  color: #2b2b2b !important;
+}
+
+
+/* Fetch models button */
+button.nier-fetch-btn {
+  background: #2b2b2b !important;
+  color: #f5f1e8 !important;
+}
+button.nier-fetch-btn.nier-fetch-btn-loading {
+  background: #d3cbb8 !important;
+  color: #888 !important;
+}
+html[data-theme="dark"] button.nier-fetch-btn {
+  background: #c8c0a8 !important;
+  color: #1a1814 !important;
+}
+html[data-theme="dark"] button.nier-fetch-btn.nier-fetch-btn-loading {
+  background: #2a2720 !important;
+  color: #7a7060 !important;
+}
+
+
+/* ----------------------------------------------------------
+   NIER UI MOTIFS
+   ---------------------------------------------------------- */
+
+/* 1. Musical score section divider */
+.nier-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+.nier-divider-bar {
+  flex: 1;
+  height: 1px;
+  background: var(--nier-border);
+}
+.nier-divider-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--nier-text-dim);
+  white-space: nowrap;
+}
+.nier-divider-mark {
+  width: 5px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.nier-divider-mark-left {
+  border-left: 2px solid var(--nier-border);
+  border-right: 1px solid var(--nier-border);
+}
+.nier-divider-mark-right {
+  border-right: 2px solid var(--nier-border);
+  border-left: 1px solid var(--nier-border);
+}
+
+/* 2. Convex CRT screen effect */
+.nier-screen-panel {
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.07), inset 0 0 0 1px rgba(0,0,0,0.03);
+  border-radius: 3px;
+}
+[data-theme="dark"] .nier-screen-panel {
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.25), inset 0 0 0 1px rgba(0,0,0,0.15);
+}
+
+/* 3. Colon :: motif on headings */
+.nier-heading::before {
+  content: ':: ';
+  font-size: 0.7em;
+  opacity: 0.45;
+  letter-spacing: 0.05em;
+  font-weight: 400;
+}
+.nier-heading::after {
+  content: ' ::';
+  font-size: 0.7em;
+  opacity: 0.45;
+  letter-spacing: 0.05em;
+  font-weight: 400;
+}
+
+/* 4. Corner bracket ornaments */
+.nier-corners {
+  position: relative;
+}
+.nier-corners::before,
+.nier-corners::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+.nier-corners::before {
+  top: 5px; left: 5px;
+  border-top: 2px solid var(--nier-border);
+  border-left: 2px solid var(--nier-border);
+}
+.nier-corners::after {
+  top: 5px; right: 5px;
+  border-top: 2px solid var(--nier-border);
+  border-right: 2px solid var(--nier-border);
+}
+/* All four corners using ::before (top) and ::after (bottom) */
+.nier-corners-all {
+  position: relative;
+}
+/* Top-left and top-right corner brackets */
+.nier-corners-all::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    /* TL vertical */ linear-gradient(var(--nier-border), var(--nier-border)),
+    /* TL horizontal */ linear-gradient(var(--nier-border), var(--nier-border)),
+    /* TR vertical */ linear-gradient(var(--nier-border), var(--nier-border)),
+    /* TR horizontal */ linear-gradient(var(--nier-border), var(--nier-border)),
+    /* BL vertical */ linear-gradient(var(--nier-border), var(--nier-border)),
+    /* BL horizontal */ linear-gradient(var(--nier-border), var(--nier-border)),
+    /* BR vertical */ linear-gradient(var(--nier-border), var(--nier-border)),
+    /* BR horizontal */ linear-gradient(var(--nier-border), var(--nier-border));
+  background-size:
+    1.5px 10px, 10px 1.5px,
+    1.5px 10px, 10px 1.5px,
+    1.5px 10px, 10px 1.5px,
+    1.5px 10px, 10px 1.5px;
+  background-position:
+    4px 4px,           4px 4px,
+    calc(100% - 4px) 4px, calc(100% - 14px) 4px,
+    4px calc(100% - 14px), 4px calc(100% - 5px),
+    calc(100% - 4px) calc(100% - 14px), calc(100% - 14px) calc(100% - 5px);
+  background-repeat: no-repeat;
+}
+
+/* 5. Active field weight hierarchy */
+.nier-field-label-active {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--nier-text);
+}
+.nier-field-label-inactive {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--nier-text-dim);
+}
+
+
+/* ----------------------------------------------------------
+   RESPONSIVE LAYOUT
+   ---------------------------------------------------------- */
+
+@media (max-width: 700px) {
+  /* Stack main Preview + Character System columns */
+  .nier-main-grid {
+    grid-template-columns: 1fr !important;
+  }
+  /* Stack field list + editor columns */
+  .nier-character-grid {
+    grid-template-columns: 1fr !important;
+  }
+  /* Sticky panels shouldn't be sticky on mobile */
+  .nier-sticky-panel {
+    position: static !important;
+  }
+  /* Shrink top nav */
+  .nier-topnav {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
+
+
+/* ----------------------------------------------------------
+   INDETERMINATE PROGRESS BAR
+   Simple bouncing block — no overflow:hidden needed
+   ---------------------------------------------------------- */
+
+@keyframes nier-bar-scan {
+  0%   { left: -35%; }
+  100% { left: 110%; }
+}
+
+/* NieR-style loading bar — blank track, dark block sweeps left to right */
+.nier-bar-running {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 30%;
+  background: var(--nier-text, #2b2b2b);
+  animation: nier-bar-scan 1.4s linear infinite;
+}
+[data-theme="dark"] .nier-bar-running {
+  background: #c8c0a8;
+}

@@ -1,8 +1,32 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.venv/
+
+# Secrets
 .env
+
+# Database
+*.db
+*.sqlite
+
+# Config with keys/settings
+config/settings.json
+
+# Old template files
 fandom_chars
 generated_cards/
 prompt_templates
 field_regeneration_template
 character_generation_template
+
+# Node
+node_modules/
+
+# Build output
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
