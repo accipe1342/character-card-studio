@@ -1,0 +1,822 @@
+/**
+ * signal-ui.css — Signal UI design system
+ * =========================================
+ * All component styles, CSS custom properties, animations, and
+ * theme definitions for the app. Formerly nier-animations.css.
+ *
+ * CSS CUSTOM PROPERTIES (variables)
+ * ----------------------------------
+ * All colours and spacing are defined as --signal-* variables at
+ * the :root level (light mode) and overridden in [data-theme="dark"].
+ *
+ * Key variables:
+ *   --signal-bg              Page background
+ *   --signal-bg-panel        Card/panel background
+ *   --signal-bg-field        Input/textarea background
+ *   --signal-bg-btn          Button background
+ *   --signal-bg-mid          Slightly darker panel background
+ *   --signal-text            Primary text colour
+ *   --signal-text-dim        Muted/secondary text colour
+ *   --signal-text-inv        Text on active/highlighted backgrounds
+ *   --signal-border          Border colour
+ *   --signal-btn-active-bg   Active button background (beige/tan)
+ *   --signal-btn-active-text Text on active button (near black)
+ *
+ * SECTIONS (in order)
+ * -------------------
+ * 1. CSS custom properties  — all --signal-* vars, light + dark
+ * 2. Base reset              — body, box-sizing, scrollbar styles
+ * 3. signal-btn             — button component, active state, hover
+ * 4. signal-panel           — panel container with scan-in animation
+ * 5. signal-screen          — full-screen panel wrapper
+ * 6. signal-corners-all     — SVG corner bracket ornaments (4 corners)
+ * 7. signal-heading         — section headings with decorative lines
+ * 8. signal-divider         — horizontal section dividers with label
+ * 9. signal-library-item    — saved card list items with hover sweep
+ * 10. signal-field-*        — active field label and input styles
+ * 11. Animation pack         — glitch loop, typing cursor, progress
+ *                              bar simulation, save flash, delete flash
+ * 12. Dark mode overrides    — targeted fixes for dark theme visibility
+ *
+ * HOW TO EXTEND
+ * -------------
+ * - Add a new theme: duplicate [data-theme="dark"] with a new attribute
+ *   selector and different variable values.
+ * - Add a new component: follow the naming convention signal-name,
+ *   define it after the existing component sections.
+ * - Change the colour palette: edit the :root variables only — all
+ *   components reference variables and will update automatically.
+ * - Add an animation: add @keyframes and a class that applies it.
+ *   Follow the signal-field-flash pattern for triggered animations
+ *   or signal-glitch-label for looping ones.
+ */
+
+/* ============================================================
+   Signal UI UI Animation System
+   Design language: "moist, not dried-out" — Hisayoshi Kijima
+   
+   Core principles:
+   - Everything uses a spring ease: fast start, soft land
+   - Elements stagger in sequentially, never all at once  
+   - Horizontal lines draw before content appears
+   - No hard cuts, no jarring flickers
+   - Beige palette, opacity + transform only (GPU-safe)
+   ============================================================ */
+
+/* Spring easing used throughout */
+:root {
+  --signal-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --signal-soft:   cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --signal-snappy: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
+/* ----------------------------------------------------------
+   KEYFRAMES
+   ---------------------------------------------------------- */
+
+/* Panel: line draws first, then content rises up behind it */
+@keyframes signal-line-draw {
+  0%   { transform: scaleX(0); opacity: 0; }
+  1%   { opacity: 1; }
+  100% { transform: scaleX(1); opacity: 1; }
+  transform-origin: left;
+}
+
+/* Content rises up after line */
+@keyframes signal-rise {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Fade in only — for subtle elements */
+@keyframes signal-fade {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Title: gentle expand from slightly compressed */
+@keyframes signal-title {
+  0%   { opacity: 0; letter-spacing: -0.02em; }
+  60%  { opacity: 1; letter-spacing: 0.12em; }
+  100% { opacity: 1; letter-spacing: 0.1em; }
+}
+
+/* Mode switch: slides from the side cleanly */
+@keyframes signal-slide-in-right {
+  0%   { opacity: 0; transform: translateX(16px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes signal-slide-in-left {
+  0%   { opacity: 0; transform: translateX(-16px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+/* Button sweep line */
+@keyframes signal-sweep {
+  0%   { transform: scaleX(0); transform-origin: left; opacity: 1; }
+  70%  { transform: scaleX(1); transform-origin: left; opacity: 0.4; }
+  100% { transform: scaleX(1); transform-origin: left; opacity: 0; }
+}
+
+/* Progress shimmer */
+@keyframes signal-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Vignette fade in on load */
+@keyframes signal-vignette {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+
+/* ----------------------------------------------------------
+   TITLE
+   ---------------------------------------------------------- */
+
+.signal-title {
+  animation: signal-title 0.9s var(--signal-spring) both;
+}
+
+
+/* ----------------------------------------------------------
+   CRT VIGNETTE — subtle, static after load
+   ---------------------------------------------------------- */
+
+.signal-screen {
+  position: relative;
+}
+.signal-screen::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center,
+    transparent 50%,
+    rgba(0,0,0,0.12) 100%
+  );
+  animation: signal-vignette 1.8s var(--signal-soft) both;
+  z-index: 9999;
+}
+
+
+/* ----------------------------------------------------------
+   PANELS — line draws, then content rises
+   Each panel has a ::before pseudo that draws the top line
+   ---------------------------------------------------------- */
+
+.signal-panel {
+  animation: signal-rise 0.55s var(--signal-spring) both;
+  position: relative;
+}
+.signal-panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: #3a3a3a;
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: signal-line-draw 0.35s var(--signal-snappy) both;
+}
+
+.signal-panel-delay-1 { animation-delay: 0.08s; }
+.signal-panel-delay-1::before { animation-delay: 0.0s; }
+
+.signal-panel-delay-2 { animation-delay: 0.16s; }
+.signal-panel-delay-2::before { animation-delay: 0.06s; }
+
+.signal-panel-delay-3 { animation-delay: 0.24s; }
+.signal-panel-delay-3::before { animation-delay: 0.12s; }
+
+
+/* ----------------------------------------------------------
+   MODE TRANSITION (Character ↔ Lore)
+   ---------------------------------------------------------- */
+
+.signal-mode-enter {
+  animation: signal-slide-in-right 0.38s var(--signal-spring) both;
+}
+.signal-mode-enter-left {
+  animation: signal-slide-in-left 0.38s var(--signal-spring) both;
+}
+
+
+/* ----------------------------------------------------------
+   BUTTONS — staff-line sweep on hover
+   ---------------------------------------------------------- */
+
+.signal-btn {
+  position: relative;
+  overflow: hidden;
+  transition:
+    background 0.18s var(--signal-soft),
+    color 0.18s var(--signal-soft),
+    transform 0.1s var(--signal-snappy);
+}
+.signal-btn::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 0; right: 0;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.signal-btn:hover::after {
+  animation: signal-sweep 0.4s var(--signal-soft) forwards;
+}
+.signal-btn:hover {
+  background: #d4cdb8 !important;
+}
+.signal-btn-active:hover {
+  background: #3d3d3d !important;
+}
+.signal-btn:active {
+  transform: scale(0.97);
+}
+
+
+/* ----------------------------------------------------------
+   FIELD SELECTION — bar draws from left on active
+   ---------------------------------------------------------- */
+
+.signal-field-active {
+  position: relative;
+}
+.signal-field-active::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 2px;
+  background: #f5f1e8;
+  animation: signal-line-draw 0.22s var(--signal-snappy) both;
+}
+
+
+/* ----------------------------------------------------------
+   STAGGERED LIST ITEMS — for field buttons
+   ---------------------------------------------------------- */
+
+.signal-list-item {
+  animation: signal-rise 0.4s var(--signal-spring) both;
+}
+/* Apply via nth-child or inline style for stagger */
+
+
+/* ----------------------------------------------------------
+   PROGRESS BAR SHIMMER
+   ---------------------------------------------------------- */
+
+.signal-progress-shimmer {
+  background: linear-gradient(
+    90deg,
+    #2b2b2b 0%,
+    #2b2b2b 35%,
+    #555540 50%,
+    #2b2b2b 65%,
+    #2b2b2b 100%
+  ) !important;
+  background-size: 250% 100% !important;
+  animation: signal-shimmer 1.8s ease-in-out infinite !important;
+}
+[data-theme="dark"] .signal-progress-shimmer {
+  background: linear-gradient(
+    90deg,
+    #c8c0a8 0%,
+    #c8c0a8 35%,
+    #ffffff 50%,
+    #c8c0a8 65%,
+    #c8c0a8 100%
+  ) !important;
+  background-size: 250% 100% !important;
+  animation: signal-shimmer 1.8s ease-in-out infinite !important;
+}
+
+
+/* ----------------------------------------------------------
+   LIBRARY DRAWER — items rise in staggered
+   ---------------------------------------------------------- */
+
+.signal-library-item {
+  animation: signal-rise 0.35s var(--signal-spring) both;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.15s var(--signal-soft), color 0.15s var(--signal-soft);
+}
+.signal-library-item::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.signal-library-item:hover::after {
+  animation: signal-sweep 0.4s var(--signal-soft) forwards;
+}
+
+
+/* ----------------------------------------------------------
+   HEADINGS — Signal UI style: dark bg, beige text, drop shadow
+   ---------------------------------------------------------- */
+
+.signal-heading {
+  color: #2b2b2b;
+  letter-spacing: 0.1em;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 14px;
+  user-select: none;
+  filter: drop-shadow(0px 2px 6px rgba(0,0,0,0.20));
+}
+
+h1.signal-heading {
+  font-size: 26px;
+  letter-spacing: 0.08em;
+  margin: 0 0 4px 0;
+}
+
+h2.signal-heading {
+  font-size: 15px;
+  letter-spacing: 0.12em;
+}
+
+
+/* ----------------------------------------------------------
+   THEME TOKENS
+   ---------------------------------------------------------- */
+
+:root {
+  --signal-bg:        #e8e3d3;
+  --signal-bg-panel:  #efe8d8;
+  --signal-bg-field:  #f7f2e7;
+  --signal-bg-input:  #f7f2e7;
+  --signal-bg-btn:    #dcd6c4;
+  --signal-bg-dark:   #2b2b2b;
+  --signal-bg-mid:    #d3cbb8;
+
+  --signal-text:      #2b2b2b;
+  --signal-text-inv:  #f5f1e8;
+  --signal-text-dim:  #666666;
+  --signal-border:    #3a3a3a;
+
+  --signal-btn-hover: #d4cdb8;
+  --signal-btn-active-bg: #2b2b2b;
+  --signal-btn-active-text: #f5f1e8;
+}
+
+[data-theme="dark"] {
+  --signal-bg:        #1a1814;
+  --signal-bg-panel:  #201e1a;
+  --signal-bg-field:  #272420;
+  --signal-bg-input:  #272420;
+  --signal-bg-btn:    #2e2b26;
+  --signal-bg-dark:   #0d0c0a;
+  --signal-bg-mid:    #2a2720;
+
+  --signal-text:      #c8c0a8;
+  --signal-text-inv:  #c8c0a8;
+  --signal-text-dim:  #7a7060;
+  --signal-border:    #4a4540;
+
+  --signal-btn-hover: #3a3630;
+  --signal-btn-active-bg: #c8c0a8;
+  --signal-btn-active-text: #1a1814;
+  --signal-text-inv: #1a1814;
+}
+
+/* Apply theme vars to structural elements */
+body {
+  background: var(--signal-bg);
+  color: var(--signal-text);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* Theme-aware overrides for common patterns */
+[data-theme="dark"] .signal-btn:hover {
+  background: var(--signal-btn-hover) !important;
+}
+[data-theme="dark"] .signal-btn-active:hover {
+  background: #b8b09a !important;
+}
+[data-theme="dark"] h1.signal-heading,
+[data-theme="dark"] h2.signal-heading {
+  color: var(--signal-text);
+  filter: drop-shadow(0px 2px 8px rgba(0,0,0,0.5));
+}
+
+
+/* ----------------------------------------------------------
+   DARK MODE — element overrides
+   ---------------------------------------------------------- */
+
+[data-theme="dark"] textarea,
+[data-theme="dark"] input,
+[data-theme="dark"] select {
+  background: var(--signal-bg-field) !important;
+  color: var(--signal-text) !important;
+  border-color: var(--signal-border) !important;
+}
+
+[data-theme="dark"] select option {
+  background: var(--signal-bg-panel);
+  color: var(--signal-text);
+}
+
+/* Scrollbar */
+[data-theme="dark"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: var(--signal-bg);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: var(--signal-border);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--signal-text-dim);
+}
+
+
+/* All buttons in dark mode — override every inline style */
+html[data-theme="dark"] button.signal-btn,
+html[data-theme="dark"] button.signal-btn:not(:hover) {
+  background: #2e2b26 !important;
+  color: #c8c0a8 !important;
+  border-color: #4a4540 !important;
+}
+html[data-theme="dark"] button.signal-btn.signal-btn-active,
+html[data-theme="dark"] button.signal-btn.signal-btn-active:not(:hover) {
+  background: #c8c0a8 !important;
+  color: #1a1814 !important;
+}
+html[data-theme="dark"] button.signal-btn:hover {
+  background: #3a3630 !important;
+  color: #c8c0a8 !important;
+}
+
+/* Light mode buttons */
+html[data-theme="light"] button.signal-btn,
+html button.signal-btn {
+  background: #dcd6c4 !important;
+  color: #2b2b2b !important;
+  border-color: #3a3a3a !important;
+}
+html[data-theme="light"] button.signal-btn.signal-btn-active,
+html button.signal-btn.signal-btn-active {
+  background: #2b2b2b !important;
+  color: #f5f1e8 !important;
+}
+html[data-theme="light"] button.signal-btn:hover,
+html button.signal-btn:hover {
+  background: #d4cdb8 !important;
+  color: #2b2b2b !important;
+}
+
+
+/* Fetch models button */
+button.signal-fetch-btn {
+  background: #2b2b2b !important;
+  color: #f5f1e8 !important;
+}
+button.signal-fetch-btn.signal-fetch-btn-loading {
+  background: #d3cbb8 !important;
+  color: #888 !important;
+}
+html[data-theme="dark"] button.signal-fetch-btn {
+  background: #c8c0a8 !important;
+  color: #1a1814 !important;
+}
+html[data-theme="dark"] button.signal-fetch-btn.signal-fetch-btn-loading {
+  background: #2a2720 !important;
+  color: #7a7060 !important;
+}
+
+
+/* ----------------------------------------------------------
+   NIER UI MOTIFS
+   ---------------------------------------------------------- */
+
+/* 1. Musical score section divider */
+.signal-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+.signal-divider-bar {
+  flex: 1;
+  height: 1px;
+  background: var(--signal-border);
+}
+.signal-divider-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--signal-text-dim);
+  white-space: nowrap;
+}
+.signal-divider-mark {
+  width: 5px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.signal-divider-mark-left {
+  border-left: 2px solid var(--signal-border);
+  border-right: 1px solid var(--signal-border);
+}
+.signal-divider-mark-right {
+  border-right: 2px solid var(--signal-border);
+  border-left: 1px solid var(--signal-border);
+}
+
+/* 2. Convex CRT screen effect */
+.signal-screen-panel {
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.07), inset 0 0 0 1px rgba(0,0,0,0.03);
+  border-radius: 3px;
+}
+[data-theme="dark"] .signal-screen-panel {
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.25), inset 0 0 0 1px rgba(0,0,0,0.15);
+}
+
+/* 3. Colon :: motif on headings */
+.signal-heading::before {
+  content: ':: ';
+  font-size: 0.7em;
+  opacity: 0.45;
+  letter-spacing: 0.05em;
+  font-weight: 400;
+}
+.signal-heading::after {
+  content: ' ::';
+  font-size: 0.7em;
+  opacity: 0.45;
+  letter-spacing: 0.05em;
+  font-weight: 400;
+}
+
+/* 4. Corner bracket ornaments */
+.signal-corners {
+  position: relative;
+}
+.signal-corners::before,
+.signal-corners::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+.signal-corners::before {
+  top: 5px; left: 5px;
+  border-top: 2px solid var(--signal-border);
+  border-left: 2px solid var(--signal-border);
+}
+.signal-corners::after {
+  top: 5px; right: 5px;
+  border-top: 2px solid var(--signal-border);
+  border-right: 2px solid var(--signal-border);
+}
+/* All four corners using SVG background */
+.signal-corners-all {
+  position: relative;
+}
+.signal-corners-all::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    /* Top-left: bracket opens down-right */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M10 1 L1 1 L1 10' fill='none' stroke='%233a3a3a' stroke-width='1.5'/%3E%3C/svg%3E"),
+    /* Top-right: bracket opens down-left */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M0 1 L9 1 L9 10' fill='none' stroke='%233a3a3a' stroke-width='1.5'/%3E%3C/svg%3E"),
+    /* Bottom-left: bracket opens up-right */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M10 9 L1 9 L1 0' fill='none' stroke='%233a3a3a' stroke-width='1.5'/%3E%3C/svg%3E"),
+    /* Bottom-right: bracket opens up-left */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M0 9 L9 9 L9 0' fill='none' stroke='%233a3a3a' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-size: 10px 10px, 10px 10px, 10px 10px, 10px 10px;
+  background-position:
+    4px 4px,
+    calc(100% - 4px) 4px,
+    4px calc(100% - 4px),
+    calc(100% - 4px) calc(100% - 4px);
+  background-repeat: no-repeat;
+}
+
+[data-theme="dark"] .signal-corners-all::before {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M10 1 L1 1 L1 10' fill='none' stroke='%234a4540' stroke-width='1.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M0 1 L9 1 L9 10' fill='none' stroke='%234a4540' stroke-width='1.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M10 9 L1 9 L1 0' fill='none' stroke='%234a4540' stroke-width='1.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M0 9 L9 9 L9 0' fill='none' stroke='%234a4540' stroke-width='1.5'/%3E%3C/svg%3E");
+}
+
+/* 5. Active field weight hierarchy */
+.signal-field-label-active {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--signal-text);
+}
+.signal-field-label-inactive {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--signal-text-dim);
+}
+
+
+/* ----------------------------------------------------------
+   RESPONSIVE LAYOUT
+   ---------------------------------------------------------- */
+
+@media (max-width: 700px) {
+  /* Stack main Preview + Character System columns */
+  .signal-main-grid {
+    grid-template-columns: 1fr !important;
+  }
+  /* Stack field list + editor columns */
+  .signal-character-grid {
+    grid-template-columns: 1fr !important;
+  }
+  /* Sticky panels shouldn't be sticky on mobile */
+  .signal-sticky-panel {
+    position: static !important;
+  }
+  /* Shrink top nav */
+  .signal-topnav {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
+
+
+/* ----------------------------------------------------------
+   INDETERMINATE PROGRESS BAR
+   Simple bouncing block — no overflow:hidden needed
+   ---------------------------------------------------------- */
+
+@keyframes signal-bar-scan {
+  0%   { left: -35%; }
+  100% { left: 110%; }
+}
+
+/* Signal UI-style loading bar — blank track, dark block sweeps left to right */
+.signal-bar-running {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 30%;
+  background: var(--signal-text, #2b2b2b);
+  animation: signal-bar-scan 1.4s linear infinite;
+}
+[data-theme="dark"] .signal-bar-running {
+  background: #c8c0a8;
+}
+
+
+/* ============================================================
+   ANIMATION PACK
+   ============================================================ */
+
+/* ── 1. Glitch — constant subtle loop on active field label ── */
+@keyframes signal-glitch-loop {
+  0%, 82%, 100% { transform: translate(0); clip-path: none; opacity: 1; }
+  83%  { transform: translate(-2px, 0); opacity: 0.85; }
+  84%  { transform: translate(2px, 0); clip-path: polygon(0 0, 100% 0, 100% 45%, 0 45%); opacity: 1; }
+  85%  { transform: translate(-1px, 0); clip-path: polygon(0 55%, 100% 55%, 100% 100%, 0 100%); }
+  86%  { transform: translate(0); clip-path: none; opacity: 1; }
+  92%, 93% { transform: translate(1px, 0); opacity: 0.9; }
+  93%  { transform: translate(-1px, 0); opacity: 1; }
+}
+@keyframes signal-glitch-loop-top {
+  0%, 82%, 100% { opacity: 0; }
+  83%  { opacity: 1; transform: translate(3px, 0); clip-path: polygon(0 0, 100% 0, 100% 40%, 0 40%); }
+  85%  { opacity: 0; }
+}
+@keyframes signal-glitch-loop-bot {
+  0%, 83%, 100% { opacity: 0; }
+  84%  { opacity: 1; transform: translate(-3px, 0); clip-path: polygon(0 60%, 100% 60%, 100% 100%, 0 100%); }
+  86%  { opacity: 0; }
+}
+.signal-glitch-label {
+  position: relative;
+  display: inline-block;
+  animation: signal-glitch-loop 4s steps(1) infinite;
+}
+.signal-glitch-label::before {
+  content: attr(data-text);
+  position: absolute;
+  left: 2px; top: 0;
+  color: var(--signal-text-dim);
+  width: 100%;
+  animation: signal-glitch-loop-top 4s steps(1) infinite;
+  pointer-events: none;
+}
+.signal-glitch-label::after {
+  content: attr(data-text);
+  position: absolute;
+  left: -2px; top: 0;
+  color: var(--signal-text-dim);
+  width: 100%;
+  animation: signal-glitch-loop-bot 4s steps(1) infinite;
+  pointer-events: none;
+}
+/* One-shot glitch for card name on generate — keep for later use */
+.signal-glitch { position: relative; display: inline-block; }
+
+/* ── 2. Typing cursor — for typing effect ── */
+@keyframes signal-blink {
+  0%,100% { opacity: 1; }
+  50%     { opacity: 0; }
+}
+.signal-typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--signal-text);
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  animation: signal-blink 0.7s steps(1) infinite;
+}
+
+/* ── 3. Progress bar — pure indeterminate simulation ── */
+@keyframes signal-progress-sim {
+  0%   { left: -45%; width: 35%; }
+  50%  { left: 25%; width: 55%; }
+  100% { left: 110%; width: 35%; }
+}
+.signal-progress-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(0,0,0,0.12);
+  position: relative;
+  overflow: hidden;
+}
+.signal-progress-sim {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: var(--signal-btn-active-bg);
+  animation: signal-progress-sim 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.signal-progress-done {
+  width: 100%;
+  height: 100%;
+  background: var(--signal-btn-active-bg);
+  transition: opacity 0.4s ease;
+}
+.signal-progress-failed {
+  width: 100%;
+  height: 100%;
+  background: #c84a3a;
+}
+
+/* ── 4. Field accepted flash on save ── */
+@keyframes signal-field-flash {
+  0%   { box-shadow: none; border-color: var(--signal-border); }
+  20%  { box-shadow: 0 0 0 2px rgba(74,138,74,0.3); border-color: #4a8a4a; }
+  60%  { box-shadow: 0 0 0 2px rgba(74,138,74,0.15); border-color: #4a8a4a; }
+  100% { box-shadow: none; border-color: var(--signal-border); }
+}
+.signal-field-flash {
+  animation: signal-field-flash 0.8s ease forwards;
+}
+
+/* Corner bracket draw-in removed */
+
+
+/* ── Dark mode: ensure text visibility in lore list + library ── */
+[data-theme="dark"] .signal-bg-btn,
+[data-theme="dark"] [style*="var(--signal-bg-btn)"] {
+  color: var(--signal-text) !important;
+}
+
+/* Library drawer items in dark mode */
+[data-theme="dark"] .signal-library-item {
+  color: var(--signal-text) !important;
+}
+[data-theme="dark"] .signal-library-item div {
+  color: var(--signal-text) !important;
+}
+
+/* Entry delete flash */
+@keyframes signal-entry-delete {
+  0%   { background: rgba(200,74,58,0); border-color: var(--signal-border); }
+  30%  { background: rgba(200,74,58,0.25); border-color: #c84a3a; }
+  100% { background: rgba(200,74,58,0.15); border-color: #c84a3a; }
+}
+.signal-entry-delete-flash {
+  animation: signal-entry-delete 0.3s ease forwards;
+}

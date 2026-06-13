@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Character Card Studio{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #f7f7f7;
+      --card: #ffffff;
+      --text: #222;
+      --muted: #666;
+      --line: #ddd;
+      --line-2: #bbb;
+      --accent-bg: #e9f2ff;
+      --accent-line: #7aa7e8;
+      --hover: #f0f0f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 16px 24px;
+      line-height: 1.4;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .navbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 0;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 20px;
+    }
+    .logo { font-size: 1.8rem; font-weight: bold; line-height: 1.1; white-space: nowrap; }
+    .nav-links { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .nav-links a, .button-link, button {
+      display: inline-block;
+      padding: 9px 12px;
+      border: 1px solid #888;
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--text);
+      background: var(--card);
+      cursor: pointer;
+      font: inherit;
+    }
+    .nav-links a:hover, .button-link:hover, button:hover { background: var(--hover); }
+    .nav-links a.active, .tab-btn.active, .primary-btn {
+      background: var(--accent-bg);
+      border-color: var(--accent-line);
+    }
+    .card, .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 20px;
+    }
+    .page-header { margin-bottom: 18px; }
+    .page-header h1 { margin: 0 0 4px 0; font-size: 2.1rem; line-height: 1.1; }
+    .muted, .meta { color: var(--muted); }
+    .meta { font-size: 0.95rem; }
+    .saved-card {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fafafa;
+    }
+    .cards-list { display: grid; gap: 10px; }
+    .field { display: flex; flex-direction: column; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 4px; }
+    input, textarea, select {
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line-2);
+      font: inherit;
+      background: #fff;
+    }
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+      font-family: Consolas, Monaco, monospace;
+    }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; margin-bottom: 12px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+    table { border-collapse: collapse; width: 100%; min-width: 900px; }
+    th, td { border-bottom: 1px solid #eee; padding: 10px; text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #fafafa; position: sticky; top: 0; }
+    tbody tr:nth-child(even) { background: #fafafa; }
+    tbody tr:hover { background: #f0f7ff; }
+    .cell { max-width: 420px; white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
+    .topbar {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 18px;
+    }
+    .topbar h1 { margin: 0 0 6px 0; font-size: 1.5rem; }
+    .actions, .mini-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, .9fr); gap: 18px; align-items: start; }
+    .layout.source-hidden { grid-template-columns: 1fr; }
+    .layout.source-hidden .panel:last-child { display: none; }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .tab-btn { border: 1px solid var(--line-2); background: #fafafa; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .row { display: grid; grid-template-columns: 1fr 110px; gap: 8px; align-items: start; margin-bottom: 10px; }
+    .prebox {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #fafafa;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      max-height: 520px;
+      overflow: auto;
+    }
+    .small-textarea { min-height: 84px; }
+    .success { color: #0a6; font-weight: bold; }
+    .error { color: #b00; font-weight: bold; margin-top: 10px; white-space: pre-wrap; }
+    .scrape-status { display: flex; align-items: center; gap: 8px; color: var(--muted); margin-top: 12px; min-height: 22px; }
+    .hint { color: var(--muted); margin-bottom: 10px; }
+    @media (max-width: 900px) {
+      .navbar { flex-direction: column; align-items: flex-start; }
+      .logo { white-space: normal; }
+      .layout, .layout.source-hidden { grid-template-columns: 1fr; }
+      .saved-card { flex-direction: column; align-items: flex-start; }
+      .grid-2, .grid-3, .row { grid-template-columns: 1fr; }
+    }
+    {% block extra_css %}{% endblock %}
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <div class="logo">Character Card Studio</div>
+    <div class="nav-links">
+      <a href="/" class="{% block nav_main %}{% endblock %}">Main</a>
+      <a href="/library" class="{% block nav_library %}{% endblock %}">Library</a>
+      <a href="/db" class="{% block nav_db %}{% endblock %}">SQLite DB</a>
+      <a href="/env" class="{% block nav_env %}{% endblock %}">.env</a>
+      <a href="/config" class="{% block nav_config %}{% endblock %}">Config</a>
+    </div>
+  </div>
+  {% block content %}{% endblock %}
+</body>
+</html>

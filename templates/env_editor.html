@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}.env Editor - Character Card Studio{% endblock %}
+{% block nav_env %}active{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>.env Editor</h1>
+  <p class="muted">Edit your API keys and default model settings for this app.</p>
+</div>
+<div class="card">
+  <div class="hint">Example:<pre>NANOGPT_API_KEY=your_key_here
+NANOGPT_MODEL=zai-org/glm-4.7:thinking
+OPENROUTER_API_KEY=your_key_here
+OPENROUTER_MODEL=z-ai/glm-4.7</pre></div>
+  <form method="POST">
+    <textarea name="env_content">{{ env_data }}</textarea>
+    <div class="actions"><button type="submit">Save .env</button></div>
+  </form>
+</div>
+{% endblock %}

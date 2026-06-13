@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Main - Character Card Studio{% endblock %}
+{% block nav_main %}active{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Character Card Studio</h1>
+  <p class="muted">Scrape a Fandom page, generate a card, edit it, regenerate fields, and export a SillyTavern card JSON.</p>
+</div>
+
+<div class="card">
+  <h2>Scrape a Fandom page</h2>
+  <form id="scrape-form" method="POST" action="/scrape">
+    <div class="grid-2">
+      <div class="field">
+        <label>Wiki Base</label>
+        <input name="wiki_base" value="https://gundam.fandom.com">
+      </div>
+      <div class="field">
+        <label>Page Name</label>
+        <input name="page_name" value="Rain_Mikamura">
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="field">
+        <label>Provider</label>
+        <input name="provider" value="nanogpt">
+      </div>
+      <div class="field">
+        <label>Model</label>
+        <input name="model" value="zai-org/glm-4.7:thinking">
+      </div>
+    </div>
+    <button id="scrape-btn" class="primary-btn" type="submit">Scrape</button>
+  </form>
+  <div id="scrape-status" class="scrape-status">
+    <span id="scrape-spinner" style="display:none;">⚙️</span>
+    <span id="scrape-text"></span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Recent Card</h2>
+  {% if cards %}
+    {% set recent = cards[0] %}
+    <div class="saved-card">
+      <div>
+        <div><strong>{{ recent.name }}</strong></div>
+        <div class="meta">Provider: {{ recent.provider or "—" }} | Model: {{ recent.model or "—" }}</div>
+        <div class="meta">Route: /card/{{ recent.id }}</div>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a class="button-link" href="/card/{{ recent.id }}">Open Editor</a>
+        <a class="button-link" href="/library">Open Library</a>
+      </div>
+    </div>
+  {% else %}
+    <p class="muted">No saved cards yet.</p>
+  {% endif %}
+</div>
+
+<script>
+const scrapeForm = document.getElementById("scrape-form");
+const scrapeBtn = document.getElementById("scrape-btn");
+const scrapeSpinner = document.getElementById("scrape-spinner");
+const scrapeText = document.getElementById("scrape-text");
+if (scrapeForm) {
+  scrapeForm.addEventListener("submit", () => {
+    scrapeBtn.disabled = true;
+    scrapeBtn.textContent = "Scraping...";
+    scrapeSpinner.style.display = "inline";
+    scrapeText.textContent = "Scraping page... this may take a few seconds.";
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}SQLite DB - Character Card Studio{% endblock %}
+{% block nav_db %}active{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>SQLite Database Viewer</h1>
+  <p class="muted">Browse the tables stored by your app.</p>
+</div>
+<div class="card">
+  <div class="field" style="max-width:360px; margin-bottom:12px;">
+    <label for="db-table-filter">Filter tables</label>
+    <input id="db-table-filter" type="text" placeholder="Search tables...">
+  </div>
+  <div class="cards-list" id="db-table-list">
+    {% for table in tables %}
+      <div class="saved-card">
+        <div>
+          <div><strong>{{ table.name }}</strong></div>
+          <div class="meta">{{ table.count }} rows</div>
+        </div>
+        <a class="button-link" href="/db/{{ table.name }}">Open Table</a>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+<script>
+const dbTableFilter = document.getElementById("db-table-filter");
+const tableCards = Array.from(document.querySelectorAll("#db-table-list .saved-card"));
+if (dbTableFilter) {
+  dbTableFilter.addEventListener("input", () => {
+    const query = dbTableFilter.value.trim().toLowerCase();
+    tableCards.forEach(card => {
+      card.style.display = card.innerText.toLowerCase().includes(query) ? "" : "none";
+    });
+  });
+}
+</script>
+{% endblock %}
