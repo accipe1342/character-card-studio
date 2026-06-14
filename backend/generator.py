@@ -88,35 +88,138 @@ REQUIRED_KEYS = {
 LOREBOOK_DEFINITION = """
 ### WORLDINFO (LOREBOOK) DEFINITION
 
-A Lorebook is a collection of entries that give an AI consistent, contextual
-information about a fictional world during roleplay or storytelling.
+A Lorebook is a layered collection of entries that give an AI consistent,
+contextual information about a fictional world during roleplay or storytelling.
+Entries are organized into four layers, each with a specific purpose.
 
-**Standard Entry Structure:**
-- `title`: Short, specific name for the entry (e.g. "Seraph Voss", "The Ashen Blade")
-- `entry_type`: One of: character | ability | item | faction | place | event | concept
-- `keywords`: 2-6 strong trigger words. Include the name + common aliases.
-  Good: ["Seraph Voss", "Voss", "the Ashen Commander"]
-  Bad: ["main", "character", "important"]
-- `summary`: 1-2 sentence overview. Used for browsing, not injected into context.
-- `content`: 100-300 word encyclopedic, in-universe summary. Use plain prose.
-  Focus on: who/what it is, key relationships, why it matters to the world.
-  Ignore gameplay mechanics unless they are core to the lore.
+---
 
-**Example entry:**
+LAYER SYSTEM:
+
+Layer 1 — WORLD RULES (entry_type: "concept")
+  Core facts, power systems, or universal lore the AI must never violate.
+  Examples: magic systems, political structures, universal laws of the world.
+
+Layer 2 — FACTION ANCHORS (entry_type: "faction")
+  One entry per organization, army, group, side, or institution.
+  Must name every key member in the content to enable chaining.
+  Examples: the Blacks, the Greens, the Taimanin, the Dark Elf kingdom,
+  a school or academy, a criminal network, a corporation.
+
+Layer 3 — CHARACTERS (entry_type: "character")
+  One entry per named individual.
+  Cover: appearance, personality in prose, behavior, key relationships, role.
+  Name all relationships and factions in the content to enable chaining.
+
+Layer 4 — DETAIL ENTRIES (entry_type: "place" | "item" | "event" | "ability")
+  One entry per named location, item, technique, or significant event.
+  Location entries must name NPCs and items present within them.
+  Event entries cover named historical or story moments.
+  Ability entries cover named powers, techniques, spells, or skills.
+
+---
+
+ENTRY FIELDS:
+- `title`: Short specific name (e.g. "Mysaria", "The White Worm Network", "Dragonstone")
+- `entry_type`: character | ability | item | faction | place | event | concept
+- `keywords`: 2-6 trigger words. Always include the name + aliases + possessives.
+  Good: ["Mysaria", "White Worm", "Mysaria's", "the spymistress"]
+  Bad: ["character", "important", "the woman", "spy"]
+  Faction anchors must include shorthand: ["the Blacks", "Blacks", "Black faction"]
+  Never use generic descriptors — only names and titles someone would actually say.
+- `summary`: 1-2 sentence overview for browsing. Not injected into context.
+- `content`: 150-400 words. Plain encyclopedic prose, written in-universe.
+  Lead with the single most important fact about this entry.
+  Layer 2 (factions): name every key member in the content.
+  Layer 3 (characters): name all factions and key relationships.
+  Layer 4 (locations): name NPCs and items present.
+  Never use bullet points. Never summarize gameplay mechanics.
+
+---
+
+GENERATION RULES:
+Extract EVERY distinct named entity from the source as its own entry.
+Aim for 10-20 entries per page minimum. Rich pages should yield more.
+
+For each source section, extract:
+- Named characters → Layer 3 entry each
+- Named factions, armies, organizations, schools, institutions → Layer 2 entry each
+- Named cities, towns, regions, kingdoms, realms → Layer 4 place entry each
+- Named buildings, landmarks, districts, facilities → Layer 4 place entry each
+- Named abilities, techniques, powers, spells → Layer 4 ability entry each
+- Named items, weapons, artifacts → Layer 4 item entry each
+- Named events, battles, incidents → Layer 4 event entry each
+- Core world rules or power systems → Layer 1 concept entry each
+- Key relationships that define the character → Layer 4 concept entry
+
+Priority chain for content:
+  Level 1 — Named sections (Personality, Appearance, Abilities, Quotes, Background)
+  Level 2 — Structured source sections (history, biography, raw_sections)
+  Level 3 — story_sections and uncategorized_sections — scan for ALL named
+    entities even if buried in episode summaries, season recaps, or raw narrative.
+    Each named character, location, faction, or event found becomes its own entry.
+
+Additional rules:
+- If a Quotes section exists: use quotes in character content to anchor voice.
+- If infobox has Likes/Dislikes: include them in the character entry content.
+- If episode or season summaries exist: mine every paragraph for named entities.
+- For relationships that define the character (e.g. Mysaria and Daemon):
+  create a concept or event entry capturing the dynamic.
+
+---
+
+EXAMPLES:
+
+Layer 2 — Faction:
 {
-  "title": "The Hollow Citadel",
-  "entry_type": "place",
-  "keywords": ["Hollow Citadel", "the Citadel", "Voss's fortress"],
-  "summary": "A ruined fortress at the edge of the Ashfields, now seat of Seraph Voss.",
-  "content": "Once the seat of the old empire, the Hollow Citadel fell during the Sundering and lay abandoned for three centuries. Seraph Voss claimed it as her base of operations after her exile from the Council of Flames. Its walls are reinforced with shardite ore, rendering them impervious to conventional siege weapons. The citadel houses her elite unit, the Ashguard, and serves as the staging ground for her campaign against the eastern territories. Locals avoid the surrounding Ashfields, believing the citadel cursed."
+  "title": "The Blacks",
+  "entry_type": "faction",
+  "keywords": ["the Blacks", "Blacks", "Black faction", "Rhaenyra's faction"],
+  "summary": "The faction supporting Rhaenyra Targaryen's claim to the Iron Throne.",
+  "content": "The Blacks are the faction loyal to Queen Rhaenyra Targaryen in the Targaryen civil war known as the Dance of Dragons. Based at Dragonstone, their key members include Rhaenyra herself, Prince Daemon Targaryen, Mysaria the White Worm, Ser Erryk Cargyll, and Addam of Hull. They control the Velaryon fleet and several dragons but lack a standing army on the continent. Their primary opponents are the Greens, led by King Aegon II Targaryen from King's Landing."
 }
 
-**Validation:**
-Before generating, check if the source page is actually a detailed article
-about a single subject. Set `valid: false` for:
-- List/index/category pages
-- Disambiguation pages
+Layer 3 — Character:
+{
+  "title": "Mysaria",
+  "entry_type": "character",
+  "keywords": ["Mysaria", "White Worm", "Mysaria's", "the spymistress", "Lady Mysaria"],
+  "summary": "Former paramour of Daemon Targaryen, now spymistress for Queen Rhaenyra.",
+  "content": "Mysaria is a survivor from Yi Ti who rose from slavery and prostitution to become the most dangerous information broker in King's Landing under the alias the White Worm. Strong-willed and pragmatic, she does not act from loyalty but from calculated self-interest. Her relationship with Daemon Targaryen is defined by mutual use: he exploited her, she profited from him. Her alliance with Rhaenyra Targaryen is warmer — Rhaenyra showed her genuine mercy, which Mysaria repaid by saving her life and lending her spy network to the Black cause. She is fiercely opposed to the exploitation of children. Her network operates through trusted intermediaries including Elinda Massey and Talya."
+}
+
+Layer 4 — Place:
+{
+  "title": "King's Landing",
+  "entry_type": "place",
+  "keywords": ["King's Landing", "the capital", "the city"],
+  "summary": "Capital city of the Seven Kingdoms and seat of the Iron Throne.",
+  "content": "King's Landing is the largest city in Westeros and seat of the Iron Throne, controlled by the Greens during the Dance of Dragons. Its districts include Flea Bottom, the city's poorest quarter where Mysaria operated her spy network and dismantled child exploitation rings. Key locations within the city include the Red Keep, the Grand Sept, and the pot-shops and manse where Mysaria conducted her intelligence operations. The city's smallfolk are a significant political force, as Mysaria reminded both Otto Hightower and Rhaenyra Targaryen."
+}
+
+Layer 4 — Event:
+{
+  "title": "The Dance of Dragons",
+  "entry_type": "event",
+  "keywords": ["Dance of Dragons", "the Dance", "Targaryen civil war"],
+  "summary": "The Targaryen civil war fought between the Blacks and the Greens.",
+  "content": "The Dance of Dragons is the name given to the civil war that erupted within House Targaryen over the succession to the Iron Throne following the death of King Viserys I. The conflict pits Queen Rhaenyra Targaryen and her supporters, known as the Blacks, against King Aegon II Targaryen and his supporters, known as the Greens. The war is fought across Westeros and involves dragon combat, political intrigue, and the manipulation of the smallfolk. Mysaria serves as a key intelligence operative for the Black cause during this conflict."
+}
+
+---
+
+VALIDATION:
+Set `valid: false` for:
+- List, index, category, or disambiguation pages
+- Redirect pages or stubs under ~100 words
+- Real-world meta pages (voice actors, developers, release dates)
 - Pages that only mention the subject in passing
+- Pages with no usable lore content (copyright notices, empty fields, etc.)
+
+When setting valid: false, keep the reason SHORT — one sentence max.
+Example: "Category page with no character content."
+Example: "Page is a copyright notice with no lore data."
+Example: "Stub page under 100 words."
 """.strip()
 
 
@@ -167,6 +270,19 @@ Example: *Seraph doesn't look up from the map pinned across the table.* "You're 
 
 Show different moods: commanding, sardonic, briefly vulnerable, cold.
 Never write {{user}} lines. Each block starts with <START>.
+
+**`tags`**
+A flat list of at least 10 short descriptive tags. Draw from ALL available source data:
+- Franchise/series name (e.g. "resident evil", "house of the dragon")
+- Character type (e.g. "spy", "dark elf", "queen", "mercenary")
+- Personality descriptors (e.g. "cunning", "stoic", "seductive")
+- Setting/world (e.g. "fantasy", "post-apocalyptic", "medieval")
+- Relationship role (e.g. "rival", "anti-hero", "love interest")
+- Notable traits or abilities (e.g. "necromancer", "swordswoman", "spymistress")
+- Genre descriptors (e.g. "action", "romance", "political intrigue")
+- Physical traits worth tagging (e.g. "dark elf", "black hair", "tall")
+Aim for 10-20 tags. Use lowercase, no hashtags. Be specific over generic.
+Bad: ["character", "female", "powerful"] Good: ["dark elf queen", "necromancer", "cunning", "seductive", "anti-villain"]
 
 **`structured_profile`**
 Factual fields extracted directly from source. Only fill fields with
@@ -494,35 +610,27 @@ RULES:
 - Do not invent facts not present in the source.
 - Stay canon-consistent. Rewrite for roleplay, not wiki style.
 - Make personality behavioral - not a list of adjectives.
-- first_mes must be short, natural, and in character.
+- first_mes must be short, natural, and in character. If a Quotes section
+  exists in the source, use a quote to anchor the character's voice.
 - Do not write actions or dialogue for {{{{user}}}}.
 - mes_example must contain 3-6 examples. Exact format as a JSON string:
   "<START>\\n{{{{char}}}}: line one\\n\\n<START>\\n{{{{char}}}}: line two"
   Critical: TWO newlines (\\n\\n) between each block. Never place <START>
   immediately after dialogue on the same line as the previous entry.
-  Use \\n for line breaks inside the JSON string.
+  If a Quotes section exists, use those quotes as the basis for examples.
 - scenario: roleplay-ready setup grounded in canon. Describe the situation
   and where the interaction begins. Do not write a full story scene.
-- structured_profile: only fill fields the source directly supports.
-  For list fields, use short specific phrases. Leave blank if no basis.
-- If `story_sections` is present in the source, read through the narrative carefully
-  to infer personality, speech patterns, likes/dislikes/loves/hates, and appearance
-  details that are shown through action rather than stated directly.
-- Fill age, likes, dislikes, personality_traits, speech, relationship_to_user
-  whenever the source gives clear OR implied support. Be proactive:
-  - `speech`: infer from any quoted dialogue, described mannerisms, or narrative tone.
-    Even a single quote is enough to capture their voice pattern.
-  - `likes` / `dislikes` / `loves` / `hates`: infer from story actions, stated goals,
-    relationships, and emotional reactions. Apply intensity based on context:
-    "likes" for preferences, "loves" for deep passions or obsessions,
-    "dislikes" for mild aversions, "hates" for strong contempt or fear.
-    Examples: a character obsessed with alchemy -> loves alchemy;
-    one who destroys cursed artifacts on sight -> hates cursed items;
-    one who is shown to enjoy solitude -> likes solitude, dislikes crowds.
-    Never leave all four blank if the source has any behavioral or emotional content.
-  - `personality_traits`: extract from behavioral descriptions, not just explicit trait lists.
-  - `relationship_to_user`: default to a reasonable canon-consistent framing if not stated
-    (e.g. "a stranger who crossed paths with her" or "a potential ally she is testing").
+- structured_profile: fill using three-level priority chain:
+  Level 1 — infobox fields and named sections (Appearance, Personality, Quotes,
+    Likes/Dislikes). Use these directly.
+  Level 2 — structured source sections (history, biography, raw_sections).
+    Infer from stated preferences, behavioral descriptions, dialogue.
+  Level 3 — story_sections and uncategorized_sections. Read as raw narrative.
+    Infer only what the text genuinely supports. Never fabricate.
+  Never leave likes/dislikes/loves/hates all blank if ANY behavioral content
+  exists in the source. relationship_to_user: always fill with a canon-consistent
+  default. List fields: short specific phrases. Leave blank only if no basis
+  exists at any level.
 
 Return this exact JSON shape:
 {{
@@ -722,7 +830,12 @@ Do not write actions or dialogue for {{{{user}}}}."""
                     f"Rules: fill only if source directly states or strongly implies it.",
                 ]
         elif field_name == "tags":
-            parts += ["Return this shape: {\"tags\": []}"]
+            parts += [
+                "Return this shape: {\"tags\": []}",
+                "Generate at least 10 tags from the source. Include: franchise/series name, "
+                "character type, personality traits, setting, abilities, genre, physical traits, "
+                "relationship role. Use lowercase, no hashtags. Be specific. Aim for 10-20 tags.",
+            ]
         elif field_name == "scenario":
             parts += [
                 'Return this shape: {"scenario": ""}',
@@ -862,16 +975,35 @@ Check if this page meets the criteria above.
 - If valid: set "valid": true, "reason": null, fill "entries"
 
 STEP 2 - GENERATE (only if valid):
-Create one entry per distinct entity on the page.
-Include the main subject PLUS:
-- Each named ability, attack, move, or technique as its OWN separate entry
-- Named items, weapons, or equipment
-- Factions, locations, or events mentioned in detail
+Extract EVERY distinct named entity from the source as its own entry.
+Aim for 10-20 entries per page minimum. Rich pages should yield more.
 
-If abilities_list, abilities_raw, or extra_ability_sections are present in
-the source data, create individual entries for EACH named ability/attack.
-Do not group all abilities into one entry.
-Aim for 3-10 entries per page depending on how much content is available.
+Work through ALL source sections in this order:
+1. Named sections (Personality, Appearance, Abilities, Quotes, Background, History)
+2. Structured sections (history_list, raw_sections, relationships)
+3. story_sections and uncategorized_sections — scan EVERY paragraph for named
+   characters, locations, factions, events, and abilities. Each one is an entry.
+
+Extract entries for:
+- Every named character mentioned → Layer 3 (entry_type: "character")
+- Every named faction, organization, army, school, institution → Layer 2 (entry_type: "faction")
+- Every named city, town, region, kingdom, realm → Layer 4 (entry_type: "place")
+- Every named building, landmark, district, facility → Layer 4 (entry_type: "place")
+- Every named ability, technique, power, spell → Layer 4 (entry_type: "ability")
+- Every named item, weapon, artifact → Layer 4 (entry_type: "item")
+- Every named event, battle, incident → Layer 4 (entry_type: "event")
+- Core world rules or power systems → Layer 1 (entry_type: "concept")
+- Key relationships that define the character → Layer 4 (entry_type: "concept")
+
+Additional rules:
+- If abilities_list or extra_ability_sections exist: one entry per named ability.
+- If a Quotes section exists: use quotes in the character entry to anchor voice.
+- If infobox has Likes/Dislikes: include them in the character entry content.
+- If episode or season summaries exist in uncategorized_sections: mine every
+  paragraph — named characters, locations, and events each get their own entry.
+- Do not group multiple entities into one entry.
+- Layer 2 faction entries must name every key member in their content.
+- Layer 4 location entries must name NPCs and items present within them.
 
 Return this exact JSON shape:
 {{

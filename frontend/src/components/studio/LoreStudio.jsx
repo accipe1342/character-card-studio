@@ -83,6 +83,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
   const [crawlMode, setCrawlMode] = useState("single"); // "single" | "multi" | "crawl"
   const [multiUrls, setMultiUrls] = useState(["", ""]); // for multi mode
 
+
   const [job, setJob] = useState(null);
   const [jobId, setJobId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -435,6 +436,8 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
         >
           {crawlMode === "multi" ? (t.cancelBatch || "Cancel") : (t.multiplePages || "Multiple Pages")}
         </button>
+
+
 
         {entries.length > 0 && (
           <button className="signal-btn" onClick={handleExport} style={btnStyle}>

@@ -988,7 +988,56 @@ export default function CharacterStudio({
                   {t.regenerateFullCard || "Regenerate Full Card"}
                 </button>
 
+                {/* Progress badge — shows fields for current tab only, excludes optional fields */}
+                {(() => {
+                  const sp = card?.structured_profile || {};
 
+                  const naturalFields = ["description", "personality", "scenario", "first_mes", "mes_example", "tags"];
+                  const structuredFields = [
+                    "age", "gender", "pronouns", "ethnicity", "race", "sexual_attraction",
+                    "job_occupation", "relationship_to_user", "relationship_status",
+                    "appearance", "height", "weight", "clothing", "accessories",
+                    "non_human_appearance", "personal_parts",
+                    "personality_traits", "speech", "backstory",
+                    "likes", "dislikes", "loves", "hates", "kinks", "tags",
+                  ];
+
+                  const allFields = characterViewMode === "natural" ? naturalFields : structuredFields;
+
+                  const blank = allFields.filter(f => {
+                    const v = NATURAL_FIELDS.has(f) ? card?.[f] : sp[f];
+                    if (f === "tags") return !v || !Array.isArray(v) || v.length < 10;
+                    return !v || (Array.isArray(v) ? v.length === 0 : String(v).trim() === "");
+                  });
+
+                  const total = allFields.length;
+                  const filled = total - blank.length;
+                  const pct = Math.round((filled / total) * 100);
+                  const color = pct === 100 ? "var(--signal-ok, #4caf50)"
+                    : pct >= 60 ? "var(--signal-warn, #ff9800)"
+                    : "var(--signal-err, #f44336)";
+
+                  return (
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, letterSpacing: "0.08em", color: "var(--signal-text-dim)" }}>
+                          {characterViewMode === "natural" ? "NATURAL FIELDS" : "STRUCTURED FIELDS"}
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color }}>
+                          {filled}/{total}
+                        </span>
+                      </div>
+                      <div style={{ height: 3, background: "var(--signal-bg-field)", borderRadius: 2 }}>
+                        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 2, transition: "width 0.4s ease" }} />
+                      </div>
+                      {blank.length > 0 && (
+                        <div style={{ marginTop: 5, fontSize: 10, color: "var(--signal-text-dim)", lineHeight: 1.6 }}>
+                          {blank.map(f => (t.fields?.[f] || f.replaceAll("_", " "))).join(" · ")}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div
                   style={{
@@ -1064,10 +1113,21 @@ export default function CharacterStudio({
                           cursor: "pointer",
                           textAlign: "left",
                           fontSize: 14,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 6,
                         }}
                         onClick={() => setSelectedField(field)}
                       >
-                        ▸ {(t.fields && t.fields[field]) || field.replaceAll("_", " ")}
+                        <span>▸ {(t.fields && t.fields[field]) || field.replaceAll("_", " ")}</span>
+                        {(() => {
+                          const v = NATURAL_FIELDS.has(field) ? card?.[field] : card?.structured_profile?.[field];
+                          const isEmpty = !v || (Array.isArray(v) ? v.length === 0 : String(v).trim() === "");
+                          return isEmpty ? (
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--signal-text-dim)", opacity: 0.4, flexShrink: 0 }} />
+                          ) : null;
+                        })()}
                       </button>
                     </React.Fragment>
                   ))}

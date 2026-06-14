@@ -754,7 +754,9 @@ def api_lore_multi():
                         lore_result = generate_lore_entry(source, provider, model)
 
                         if not lore_result.get("valid", True):
-                            log_warn(f"  Skipped: {lore_result.get('reason', 'not valid')}")
+                            reason = lore_result.get("reason", "not valid")
+                            short = reason[:80] + "..." if len(reason) > 80 else reason
+                            log_warn(f"  Skipped [{title}]: {short}")
                             continue
 
                         entries_data = lore_result.get("entries", [])
@@ -829,8 +831,10 @@ def api_lore_single():
 
                 if not lore_result.get("valid", True):
                     reason = lore_result.get("reason", "Page did not meet criteria")
+                    # Truncate long model-generated reasons for the status bar
+                    short_reason = reason[:80] + "..." if len(reason) > 80 else reason
                     update_job(job_id, status="done", stage="done", progress=100,
-                               message=f"Skipped: {reason}")
+                               message=f"Skipped: {short_reason}")
                     log_warn(f"Single page lore skipped: {reason}")
                     return
 
@@ -1134,33 +1138,74 @@ def api_export_lorebook():
     try:
         from database import list_lore_entries, get_lore_entry
         entries = list_lore_entries()
-        # Build SillyTavern V2 lorebook format
+
+        # Layer defaults by entry_type — applied at export time
+        # Layer 1: concept (world rules) — order 900-999
+        # Layer 2: faction (anchors)     — order 700-899
+        # Layer 3: character             — order 400-599
+        # Layer 4: place/item/event/ability — order 1-399
+        def layer_defaults(entry_type: str, idx: int) -> dict:
+            if entry_type == "concept":
+                return {"order": 950 - idx, "position": 0,
+                        "preventRecursion": True, "excludeRecursion": False, "constant": False}
+            elif entry_type == "faction":
+                return {"order": 800 - idx, "position": 0,
+                        "preventRecursion": False, "excludeRecursion": False, "constant": False}
+            elif entry_type == "character":
+                return {"order": 500 - idx, "position": 1,
+                        "preventRecursion": False, "excludeRecursion": False, "constant": False}
+            else:  # place, item, event, ability
+                return {"order": 200 - min(idx, 190), "position": 1,
+                        "preventRecursion": True, "excludeRecursion": False, "constant": False}
+
+        # Build Schema 3 standalone lorebook
         lorebook = {
-            "spec": "lorebook_v2",
-            "spec_version": "2",
+            "name": "Character Card Studio Lorebook",
+            "scan_depth": 4,
+            "token_budget": 2048,
+            "recursive_scanning": True,
             "entries": {}
         }
+
         for i, e in enumerate(entries):
             full = get_lore_entry(e["id"])
+            entry_type = full.get("entry_type", "character")
+            defaults = layer_defaults(entry_type, i)
+            keywords = full.get("keywords", [])
+            if isinstance(keywords, str):
+                try:
+                    keywords = json.loads(keywords)
+                except Exception:
+                    keywords = [keywords]
+
             lorebook["entries"][str(i)] = {
-                "id": i,
-                "keys": full.get("keywords", []),
-                "secondary_keys": [],
-                "comment": full.get("title", ""),
+                "uid": i,
+                "key": keywords,
+                "keysecondary": [],
+                "comment": f"{full.get('title', '')} - {entry_type}",
                 "content": full.get("content", ""),
-                "constant": False,
+                "constant": defaults["constant"],
                 "selective": False,
-                "insertion_order": int(full.get("insertion_order", 100)),
-                "enabled": True,
-                "position": "after_char",
-                "use_regex": False,
-                "scan_depth": int(full.get("scan_depth", 2)),
+                "selectiveLogic": 0,
+                "addMemo": True,
+                "order": int(full.get("insertion_order", defaults["order"])),
+                "position": defaults["position"],
+                "disable": False,
+                "excludeRecursion": defaults["excludeRecursion"],
+                "preventRecursion": defaults["preventRecursion"],
+                "probability": 100,
+                "useProbability": True,
                 "depth": int(full.get("entry_depth", 4)),
-                "extensions": {
-                    "source_title": e.get("source_title", ""),
-                    "entry_type": e.get("entry_type", ""),
-                }
+                "group": entry_type,
+                "scanDepth": int(full.get("scan_depth", 4)),
+                "caseSensitive": None,
+                "matchWholeWords": None,
+                "displayIndex": i,
+                "sticky": 0,
+                "cooldown": 0,
+                "delay": 0,
             }
+
         return jsonify(lorebook)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
