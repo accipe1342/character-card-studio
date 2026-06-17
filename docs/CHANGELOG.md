@@ -6,6 +6,78 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.1] — 2026-06-17
+
+### Changed
+- Background grid pattern now fills the full window width instead of stopping
+  at the padded content edge
+- Action button row in Character Studio: buttons now space evenly across
+  the full bar width; View Source moved to the end of the row (after Export)
+- Nav bar (Character/Lore/Config tabs): inverted button colors for stronger
+  visual contrast — inactive tabs are now filled, active tab is light
+- Character name field in Character Studio inverted to a solid dark
+  background with light text, matching other highlighted UI elements
+- Section headings (Preview, Character System, etc.) now bold and
+  slightly larger for clearer visual hierarchy
+
+---
+
+## [2.3.0] — 2026-06-13
+
+### Added
+
+#### Character Studio
+- **Progress badge** — live field completion bar between Regenerate Full Card and the field list
+  - Shows filled/total count per tab (Natural: 5 fields, Structured: 25 fields)
+  - Color coded: red → orange → green as fields fill in
+  - Lists blank field names below the bar
+  - Blank dot indicator on each empty field button
+- **Tags generation** — generator now produces at least 10 tags per card covering franchise,
+  character type, personality, setting, abilities, genre, and physical traits
+
+#### Lorebook
+- **Layered architecture** — entries now follow a four-layer system:
+  - Layer 1: World rules / concepts
+  - Layer 2: Faction anchors (names all key members)
+  - Layer 3: Character entries
+  - Layer 4: Places, items, events, abilities
+- **10-20+ entries per page** — generator now extracts every named entity from the source
+- **Uncategorized section mining** — episode summaries, season recaps, and raw narrative
+  sections now scanned for named characters, locations, factions, and events
+- **Schema 3 export** — lorebook JSON now exports in SillyTavern standalone lorebook format
+  with `key`, `order`, `preventRecursion`, `recursive_scanning` etc.
+- **Layer defaults at export time** — `preventRecursion`, `position`, `order` assigned
+  automatically by entry type; no DB changes required
+
+#### Generator
+- **Three-level field inference** — character card fields now filled via priority chain:
+  - Level 1: Explicit infobox fields and named sections (Personality, Quotes, Likes/Dislikes)
+  - Level 2: Structured source sections (history, biography, raw_sections)
+  - Level 3: story_sections and uncategorized_sections — raw narrative fallback
+- **Quotes section** — if present, used directly for `mes_example` and `speech` patterns
+- **Infobox Likes/Dislikes** — used directly when present rather than inferred
+
+#### Scraper
+- **Birth year → age calculation** — `Date of birth: c. 1974` → `~52 (b. c. 1974)`
+- **Birth date aliases** — `date of birth`, `born`, `dob`, `birthdate` all map to age
+- **Wiki hedging cleaned** — `"Unknown or Chinese"` → `"Chinese"`
+- **`species` renamed to `ethnicity`** — covers nationality, cultural background, biological type
+- **`nationality` merged into `ethnicity`** — no longer a separate field
+- **`race`** retained for biological subtype
+- **Fandom tab panel extraction** — Personality and Appearance tabs now extracted separately
+  before the main section walk
+- **Date-pattern history routing** — sections named `Raccoon City (1998)` now route to history
+- **JSON-LD image fallback** — catches pages where portable infobox image is missing
+- **Faction/affiliation aliases expanded** — `faction`, `clan`, `guild`, `side`, `crew` etc.
+- **Language aliases added to ethnicity** — `language`, `native language`, `homeland` etc.
+
+### Fixed
+- Skip reason truncated in job status bar — full reason still logged to console
+- `title` UnboundLocalError in single-page lore job
+- DB migration order — runs after table creation on fresh databases
+
+---
+
 ## [2.2.0] — 2026-06-13
 
 ### Added
@@ -49,6 +121,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **Typing effect** — regenerated field text types in character-by-character at a speed proportional to length
 - **Progress bar simulation** — indeterminate sweeping animation while any job runs
 - **Save flash** — green outline pulse on editor panel on save in both studios
+- **Live elapsed timer** — ticks during every job and field regeneration; freezes on completion showing total time (e.g. "18s")
 
 #### Internationalisation
 - All new UI strings added to EN / JA / ZH translation tables:
@@ -86,6 +159,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **Detailed field definitions** — both `CHARACTER_CARD_DEFINITION` and `LOREBOOK_DEFINITION` rewritten with purpose, examples, and keyword guidance
 - **`_ensure_list()` helper** — normalises any field that should be a list regardless of how the model returns it
 - **Structured profile source trimmed** — `generate_full_card` now sends a compact subset of normalized fields instead of the full blob
+- **Field regeneration trimmed** — each field regen only sends relevant card context (e.g. personality regen excludes mes_example); significantly faster per-field generation
 - **`use_config` parameter** — was dead code; now correctly reads `settings.json` and applies custom templates
 - **Inline generator imports cleaned up** — all `from generator import ...` scattered through `app.py` consolidated into top-level import
 
@@ -165,10 +239,71 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **JSON-LD image extraction** — `<script type="application/ld+json">` is now checked as a fallback image source; catches Fandom pages where the portable infobox image is missing (e.g. Resident Evil wiki)
 - **Story sections fallback** — when `personality` and `appearance` are sparse, uncategorized narrative sections are included as `story_sections` for the generator to infer from
 
+## [2.1.0] — 2026-06-12
+
+First public release. Established the full three-tab layout and core feature set.
+
+### Added
+
+#### Character Studio
+- Scrape any Fandom wiki URL and generate a SillyTavern V2 character card in one step
+- Natural view — description, personality, scenario, first message, message examples, tags
+- Structured view — 22 profile fields across identity, physical, character, and card sections
+- Field regeneration with custom prompt support
+- Alternate greetings with per-entry AI regeneration
+- PNG export with embedded SillyTavern V2 metadata (`chara` tEXt chunk)
+- Cheatsheet bar — click to insert SillyTavern variables into any field
+- Library with save, load, search, rename, duplicate, and delete
+
+#### Lore Studio
+- Single-page lorebook generation from a Fandom wiki URL
+- Named projects to organise separate lorebooks
+- Manual entry creation and AI generation from custom text prompt
+- SillyTavern V2 lorebook JSON export
+
+#### Config
+- API key management for NanoGPT, OpenRouter, and local servers
+- Custom system prompt templates per generation type (character, field regen, lore)
+- OpenRouter model picker with live fetch, context window size, and price per token
+- NanoGPT model picker
+
+#### Backend
+- Flask backend with SQLite database
+- BeautifulSoup scraper for Fandom/MediaWiki pages
+- Support for NanoGPT, OpenRouter, and any local OpenAI-compatible server
+
+#### UI
+- NieR:Automata–inspired design system (light and dark mode)
+- EN / 日本語 / 中文 interface
+
 ---
 
-## [2.1.0] — prior release
+## [2.0.0] — 2026-06-10
 
-Initial public release with Character Studio, Lore Studio, and Config.
+Major rewrite from single-script experiment to full Flask + React application.
+
+### Added
+- Flask backend replacing the original standalone Python script
+- React + Vite frontend replacing terminal output
+- SQLite database for persistent card and source storage
+- Basic character card generation from Fandom wiki URLs
+- Basic lorebook generation
+- NanoGPT provider support
+
+### Changed
+- Output moved from terminal JSON to interactive browser UI
+- Card data now stored in DB and editable after generation
+
+---
+
+## [1.0.0] — 2026-03-22
+
+Initial local experiment. Single Python script, no UI.
+
+### Added
+- Fandom wiki scraper using BeautifulSoup
+- Character card JSON generation via NanoGPT API
+- Output printed to terminal as raw JSON
+- Manual copy-paste into SillyTavern
 
 ---

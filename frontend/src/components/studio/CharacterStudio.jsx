@@ -727,30 +727,21 @@ export default function CharacterStudio({
 
       </div>
 
-      {/* Row 2: actions */}
+      {/* Row 2: actions — evenly spaced across the bar */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <button onClick={handleNewCard} className="signal-btn" style={buttonStyle}>
+        <button onClick={handleNewCard} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }}>
           {t.newCard || "New Card"}
         </button>
 
-        <button onClick={handleScrape} disabled={loading} className="signal-btn" style={buttonStyle}>
+        <button onClick={handleScrape} disabled={loading} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }}>
           {loading ? (t.working || "Working...") : (t.scrape || "Scrape")}
-        </button>
-
-        <button
-          onClick={() => setSourceOpen(true)}
-          disabled={!source}
-          className="signal-btn"
-          style={buttonStyle}
-        >
-          {t.viewSource || "View Source"}
         </button>
 
         <button
           onClick={handleGenerate}
           disabled={loading || !sourceId}
           className="signal-btn"
-          style={buttonStyle}
+          style={{ ...buttonStyle, flex: "1 1 0" }}
         >
           {t.generateCard || "Generate Card"}
         </button>
@@ -758,15 +749,24 @@ export default function CharacterStudio({
         <button
           className="signal-btn"
           onClick={() => { setBatchMode(b => !b); setBatchResults(null); }}
-          style={buttonStyle}
+          style={{ ...buttonStyle, flex: "1 1 0" }}
         >
           {batchMode ? (t.cancelBatch || "Cancel Batch") : (t.batchGenerate || "Batch Generate")}
         </button>
 
-        <button onClick={handleExportCard} disabled={!card} className="signal-btn" style={buttonStyle}>
+        <button onClick={handleExportCard} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }}>
           {characterViewMode === "structured"
             ? (t.exportStructuredJson || "Export Structured JSON")
             : (t.exportCardJson || "Export Card JSON")}
+        </button>
+
+        <button
+          onClick={() => setSourceOpen(true)}
+          disabled={!source}
+          className="signal-btn"
+          style={{ ...buttonStyle, flex: "1 1 0" }}
+        >
+          {t.viewSource || "View Source"}
         </button>
       </div>
 
@@ -1161,13 +1161,12 @@ export default function CharacterStudio({
                     fontWeight: 700,
                     fontSize: 18,
                     marginBottom: 10,
-                    border: "none",
-                    borderBottom: "1px solid var(--signal-border)",
-                    background: "transparent",
-                    color: "var(--signal-text)",
+                    border: "1px solid var(--signal-border)",
+                    background: "var(--signal-btn-active-bg)",
+                    color: "var(--signal-btn-active-text)",
                     fontFamily: "inherit",
                     outline: "none",
-                    padding: "2px 0 6px",
+                    padding: "8px 10px",
                     boxSizing: "border-box",
                   }}
                 />

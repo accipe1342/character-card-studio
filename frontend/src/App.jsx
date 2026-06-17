@@ -150,18 +150,24 @@ export default function App() {
   }
 
   return (
-    <main
-      className="signal-screen"
+    <div
       style={{
         minHeight: "100vh",
+        width: "100%",
         background: "var(--signal-bg, #e8e3d3)",
-        color: "var(--signal-text, #2b2b2b)",
-        padding: 24,
         backgroundImage: `
           linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
           linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px)
         `,
         backgroundSize: "40px 40px",
+      }}
+    >
+    <main
+      className="signal-screen"
+      style={{
+        minHeight: "100vh",
+        color: "var(--signal-text, #2b2b2b)",
+        padding: 24,
       }}
     >
       {/* Save toast */}
@@ -437,5 +443,6 @@ export default function App() {
         </div>
       </div>
     </main>
+    </div>
   );
 }

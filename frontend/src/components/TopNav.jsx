@@ -39,8 +39,8 @@ export default function TopNav({ mode, setMode, onLibrary, lang, setLang, t = {}
   const buttonStyle = {
     padding: "10px 14px",
     border: "1px solid var(--signal-border, #3a3a3a)",
-    background: "var(--signal-bg-btn, #dcd6c4)",
-    color: "var(--signal-text, #2b2b2b)",
+    background: "var(--signal-btn-active-bg, #2b2b2b)",
+    color: "var(--signal-btn-active-text, #f5f1e8)",
     cursor: "pointer",
     fontWeight: 700,
     letterSpacing: "0.08em",
@@ -48,8 +48,8 @@ export default function TopNav({ mode, setMode, onLibrary, lang, setLang, t = {}
 
   const activeStyle = {
     ...buttonStyle,
-    background: "var(--signal-btn-active-bg, #2b2b2b)",
-    color: "var(--signal-btn-active-text, #f5f1e8)",
+    background: "var(--signal-bg-btn, #dcd6c4)",
+    color: "var(--signal-text, #2b2b2b)",
   };
 
   const iconBtnStyle = {
