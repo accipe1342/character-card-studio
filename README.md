@@ -1,12 +1,25 @@
 # Character Card Studio
 
-A Signal UI–themed app for generating SillyTavern character cards and lorebooks from Fandom wiki pages using AI.
+[![CI](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml)
+![version](https://img.shields.io/badge/version-2.4.0-informational)
+![license](https://img.shields.io/badge/license-MIT-green)
+
+A Signal UI–themed app for making SillyTavern character cards and lorebooks with AI: from Fandom wiki pages, from fan fiction and other long text, or from your own roleplay chats.
 
 ![Character Card Studio preview](preview.png)
 
 ---
 
 ## Quick Start
+
+### Step 0 — Get the code
+
+```bash
+git clone https://github.com/accipe1342/character-card-studio.git
+cd character-card-studio
+```
+
+Or download the ZIP from the green **Code** button on GitHub and unzip it.
 
 ### Step 1 — Install requirements (first time only)
 
@@ -63,7 +76,8 @@ After the first run, launching is instant.
 - Structured profile includes: age, sex, gender, ethnicity, race, pronouns, sexual attraction, appearance, clothing, accessories, backstory, speech patterns, personality traits, likes, dislikes, loves, hates, kinks, relationship status, height, weight
 - Field regeneration with custom prompt support and live timer
 - Alternate greetings with per-entry AI regeneration
-- PNG export with embedded SillyTavern metadata (`chara` tEXt chunk)
+- Generation options: story point, who {{user}} is, size, prose or PList style, in-depth mode; static AUDIT; per-field undo
+- PNG export with embedded V2 (`chara`) and V3 (`ccv3`) metadata; V2 and V3 JSON; attach a LORE project as the card's lorebook
 - Cheatsheet bar — click to insert SillyTavern variables into any field
 - Library with save, load, search, rename, duplicate, and delete
 
@@ -71,12 +85,23 @@ After the first run, launching is instant.
 - Single page or batch multi-URL lorebook generation (up to 20 URLs)
 - Valid/reason validation — bad pages are skipped with a logged reason instead of generating garbage entries
 - Named projects to organise separate lorebooks
-- SillyTavern V2 lorebook fields per entry: Scan Depth, Insertion Order, Entry Depth
-- Move entries between projects
+- Every SillyTavern World Info setting per entry: scan depth, order, position/depth/role, sticky, cooldown, delay, probability, secondary keys and logic, inclusion groups, character filter, vectorized, constant
+- Test Activation (which entries fire for a chat and why, with the token budget), Links (recursion map), budget meter
+- Trash with restore, keyboard review (J/K/X/U, Ctrl+S), Clean Keywords, move entries between projects
 - Manual entry creation and AI generation from custom text
-- SillyTavern V2 lorebook JSON export
+- SillyTavern World Info JSON export and DeepLore (.zip) export
+
+### Text Studio (fan fiction → lorebook)
+- Load a fic by paste, file (.txt .md .html .epub), URL (AO3 full works, chapter-by-chapter "follow next", wiki pages) or a SillyTavern chat (.jsonl); + ADD TEXT appends new chapters later
+- Deep extraction in parallel: characters, places, factions, items, abilities, concepts and plot events, with tiers (main / supporting / one-off), fic-only flags, relationships and age flags
+- Review with autosave, keyboard shortcuts, duplicate/junk detection, merge, trash and undo
+- Story So Far with a starting point ("roleplay starts after chapter N"), an AI archive recap and a timeline; place it before the card or at depth 4
+- Send to LORE (re-sending updates the same project and keeps your LORE edits), with an always-on Cast Roster and Relationships entry
+- Make a card for one character, for the whole main cast (plus a group card), or a World Narrator card
+- Critic: brutally honest critique, chapter sweep, score history and passage rewrites
 
 ### Config
+- Model presets per task, database backups and restore, model usage, project bundles (.zip export / import)
 - Temperature slider (0.0–1.0) — controls creativity vs precision
 - Max Tokens dropdown (1024 / 2048 / 4096 / 8192)
 - Custom system prompt templates per generation type
@@ -95,6 +120,7 @@ After the first run, launching is instant.
 ### UI
 - Signal UI design system — light and dark mode
 - EN / 日本語 / 中文 interface
+- Ctrl+K search across everything
 - Live elapsed timer on all jobs and field regeneration
 - Animated progress bar, typing effect, glitch label, save flash
 
@@ -107,7 +133,7 @@ Copy `_env.example` to `.env` and add your API keys:
 ```env
 # NanoGPT
 NANOGPT_API_KEY=your_key_here
-NANOGPT_MODEL=zai-org/glm-4.7:thinking
+NANOGPT_MODEL=deepseek/deepseek-v4.1-flash
 
 # OpenRouter
 OPENROUTER_API_KEY=your_key_here
@@ -120,6 +146,18 @@ LOCAL_API_KEY=local
 ```
 
 Or manage everything in **Config → API Keys** inside the app.
+
+Your data lives in `data/fandom_chars.db`; automatic backups go to `data/backups/` (Config → Backups).
+
+---
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest backend/tests -q          # backend, with a throwaway database
+python tests/e2e/run_all.py                # browser tests (see tests/e2e/README.md)
+```
 
 ---
 
@@ -157,6 +195,12 @@ Delete the project folder. Nothing is written to your system, registry, or AppDa
 
 ---
 
+## What's new
+
+See [docs/UPDATE-v2.4.md](docs/UPDATE-v2.4.md) for the v2.4 overview and [docs/CHANGELOG.md](docs/CHANGELOG.md) for every change.
+
+---
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

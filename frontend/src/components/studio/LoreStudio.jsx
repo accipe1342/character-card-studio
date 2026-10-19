@@ -38,12 +38,12 @@
  * handleExport()         Downloads lorebook as SillyTavern JSON
  * handleMoveEntry()      Moves entry to a different project
  *
- * SILLYAVERN FIELDS
+ * SILLYTAVERN FIELDS
  * -----------------
- * Each entry has three ST-specific sliders in the editor:
- *   scan_depth      (1–20)    How many messages to scan for keywords
- *   insertion_order (0–1000)  Priority; lower = inserted first
- *   entry_depth     (0–20)    Where in context to insert the entry
+ * Each entry has three ST sliders in the editor, plus "Advanced SillyTavern settings" (LoreTools.jsx):
+ *   scan_depth      (1–20)    "Scan Depth": how many messages to scan for keywords
+ *   insertion_order (0–1000)  "Order (priority)": higher = closer to the chat, more influence, kept first under budget
+ *   entry_depth     (0–20)    "Depth (@Depth only)": messages up from the latest one; only used when Position = At depth
  * These are saved to the DB and exported in the lorebook JSON.
  *
  * PROPS
@@ -63,16 +63,31 @@
 
 import React, { useState, useEffect } from "react";
 import MainJobStatus from "../shared/MainJobStatus";
+import { markBusy } from "../../lib/leaveGuard";
+import { AdvancedWI, BudgetMeter, LinksPanel, SimulatorPanel, TrashPanel, isAlwaysOn } from "./LoreTools";
 import {
   startLoreCrawl, startLoreSingle, startLoreMulti, listLoreEntries, getLoreEntry,
-  updateLoreEntry, deleteLoreEntry, exportLorebook, getJob, fetchModels,
+  updateLoreEntry, deleteLoreEntry, exportLorebook, exportDeepLore, getJob, fetchModels,
   listLoreProjects, createLoreProject, renameLoreProject, deleteLoreProject,
-  newLoreEntry, generateLoreEntry, moveEntryToProject,
+  newLoreEntry, generateLoreEntry, moveEntryToProject, clearLoreProject, cleanLoreKeywords, getPresets,
+  restoreLoreEntry,
 } from "../../lib/api";
+
+// list badges: problems that make an entry useless or noisy in SillyTavern
+function loreIssues(e, dupTitles) {
+  const out = [];
+  const on = isAlwaysOn(e);
+  if (on) out.push(["ALWAYS ON", "var(--signal-btn-active-bg)", "Exported as a constant entry: always in context"]);
+  if (!(e.keywords || []).length && !on) out.push(["NO KEYS", "#6b6b6b", "No trigger keywords: it will never load"]);
+  if (e.user_edited && e.provider === "text-module") out.push(["EDITED", "#6b6458", "Edited by hand: re-sending from TEXT keeps your version"]);
+  if ((e.content_chars ?? 1) < 15) out.push(["EMPTY", "#c84a3a", "Almost no content"]);
+  if (dupTitles.has((e.title || "").trim().toLowerCase())) out.push(["DUP", "#b8860b", "Another entry has the same title"]);
+  return out;
+}
 
 const ENTRY_TYPES = ["character", "place", "faction", "event", "item", "ability", "concept", "other"];
 
-export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
+export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clearFocus }) {
   const [provider, setProvider] = useState("nanogpt");
   const [model, setModel] = useState("");
   const [maxPages, setMaxPages] = useState(10);
@@ -80,6 +95,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
   const [purpose, setPurpose] = useState("Create a general lorebook");
   const [criteria, setCriteria] = useState("Must be a meaningful lore page");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [deep, setDeep] = useState(false); // multi-pass extraction (more entries, slower)
   const [crawlMode, setCrawlMode] = useState("single"); // "single" | "multi" | "crawl"
   const [multiUrls, setMultiUrls] = useState(["", ""]); // for multi mode
 
@@ -116,6 +132,25 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
   const [flashEntry, setFlashEntry] = useState(null);   // id of entry to flash green
   const [deletingEntry, setDeletingEntry] = useState(null); // id flashing red
   const [movingEntryId, setMovingEntryId] = useState(null); // entry being moved
+  const baselineRef = React.useRef("");   // last saved copy of the open entry (autosave compares against it)
+  const entryRef = React.useRef(null);
+  entryRef.current = entry;
+  const [dirty, setDirty] = useState(false);
+  const [toolPanel, setToolPanel] = useState(null);       // null | "sim" | "links" | "trash"
+  const [trashKey, setTrashKey] = useState(0);            // bump to reload the trash panel
+  const [lastDeleted, setLastDeleted] = useState(null);   // U restores it
+
+  // closing the tab mid-crawl or with an unsaved edit asks first
+  useEffect(() => { markBusy("lore", loading || dirty); return () => markBusy("lore", false); }, [loading, dirty]);
+  // a search hit: open its project and the entry
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.project_id && !projects.length) return;      // wait for the project list
+    const proj = focus.project_id ? projects.find(p => p.id === focus.project_id) || null : null;
+    setActiveProject(proj);
+    if (focus.id) handleSelectEntry(focus.id);
+    clearFocus && clearFocus();
+  }, [focus, projects]);
 
   // Poll job
   useEffect(() => {
@@ -128,6 +163,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
           clearInterval(interval);
           setLoading(false);
           if (j.status === "done") { loadEntries(activeProjectRef.current); loadProjects(); }
+          if (j.status === "failed") setError(j.error || j.message || "Job failed");
         }
       } catch {}
     }, 1000);
@@ -199,19 +235,24 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
       const url = proj ? `/api/lore/entries?project_id=${proj.id}` : "/api/lore/entries";
       const res = await fetch(url);
       const data = await res.json();
-      setEntries(data);
+      if (!res.ok) throw new Error(data.error || "Failed to load entries");
+      setEntries([...data].sort((a, b) => b.id - a.id));
     } catch (e) {
       setError(e.message);
     }
   }
 
-  useEffect(() => { loadProjects(); loadEntries(); }, []);
+  useEffect(() => {
+    loadProjects(); loadEntries();
+    getPresets().then((p) => { if (p?.lore?.model) { setProvider(p.lore.provider || "nanogpt"); setModel(p.lore.model); } }).catch(() => {});
+  }, []);
   useEffect(() => {
     activeProjectRef.current = activeProject;
     loadEntries(activeProject);
   }, [activeProject]);
 
   async function handleSelectEntry(id) {
+    if (entryRef.current && JSON.stringify(entryRef.current) !== baselineRef.current) await handleSaveEntry(true);
     setSelectedId(id);
     try {
       const data = await getLoreEntry(id);
@@ -220,26 +261,63 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
         try { data.keywords = JSON.parse(data.keywords); } catch { data.keywords = []; }
       }
       if (!Array.isArray(data.keywords)) data.keywords = [];
-      setEntry(data);
+      baselineRef.current = JSON.stringify(data);
+      setEntry(data); setDirty(false);
     } catch (e) {
       setError(e.message);
     }
   }
 
-  async function handleSaveEntry() {
-    if (!entry || !selectedId) return;
+  async function handleSaveEntry(silent = false) {
+    const snap = entryRef.current;
+    if (!snap || !snap.id) return;
     setSaving(true);
+    let base0 = null;
+    try { base0 = JSON.parse(baselineRef.current || "null"); } catch { base0 = null; }
     try {
-      await updateLoreEntry(selectedId, entry);
-      setEntries(prev => prev.map(e => e.id === selectedId ? { ...e, title: entry.title } : e));
-      if (showToast) showToast(t.entrySaved || "Entry saved");
-      setFlashEntry(selectedId);
-      setTimeout(() => setFlashEntry(null), 900);
+      await updateLoreEntry(snap.id, snap);
+      baselineRef.current = JSON.stringify(snap);
+      if (entryRef.current === snap) setDirty(false);
+      const textEdited = base0 && (base0.title !== snap.title || base0.content !== snap.content
+        || JSON.stringify(base0.keywords) !== JSON.stringify(snap.keywords));
+      setEntries(prev => prev.map(e => e.id === snap.id ? { ...e, title: snap.title, entry_type: snap.entry_type,
+        keywords: snap.keywords, content_chars: (snap.content || "").length, constant: snap.constant,
+        user_edited: e.user_edited || (textEdited ? 1 : 0) } : e));
+      if (silent !== true) {
+        if (showToast) showToast(t.entrySaved || "Entry saved");
+        setFlashEntry(snap.id);
+        setTimeout(() => setFlashEntry(null), 900);
+      }
     } catch (e) {
       setError(e.message);
     } finally {
       setSaving(false);
     }
+  }
+
+  // autosave 1.2 s after the last edit
+  useEffect(() => {
+    if (!entry) return;
+    const changed = JSON.stringify(entry) !== baselineRef.current;
+    setDirty(changed);
+    if (!changed) return;
+    const tm = setTimeout(() => handleSaveEntry(true), 1200);
+    return () => clearTimeout(tm);
+  }, [entry]);
+
+  async function handleCleanKeywords() {
+    if (!activeProject) return;
+    try {
+      const preview = await cleanLoreKeywords(activeProject.id, false);
+      if (!preview.changed) { showToast && showToast("Keywords are already clean"); return; }
+      const ex = preview.examples.slice(0, 4).map(c => `• ${c.title}: ${c.before.join(", ")}  →  ${c.after.join(", ")}`).join("\n");
+      if (!window.confirm(`Clean the keywords of ${preview.changed} entries? Generic words and other entries' names are removed, so an entry only fires for itself.\n\n${ex}`)) return;
+      if (entryRef.current && JSON.stringify(entryRef.current) !== baselineRef.current) await handleSaveEntry(true);
+      await cleanLoreKeywords(activeProject.id, true);
+      await loadEntries(activeProjectRef.current);
+      if (selectedId) await handleSelectEntry(selectedId);
+      showToast && showToast(`${preview.changed} entries cleaned`);
+    } catch (e) { setError(e.message); }
   }
 
   async function handleDeleteEntry(id, e) {
@@ -248,6 +326,9 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
       try {
         setDeletingEntry(id);
         await deleteLoreEntry(id);
+        setLastDeleted(id); setTrashKey(k => k + 1);
+        setProjects(prev => prev.map(p => p.id === activeProjectRef.current?.id ? { ...p, entry_count: Math.max(0, (p.entry_count || 1) - 1) } : p));
+        if (showToast) showToast("Moved to the trash · press U to restore");
         setTimeout(() => {
           setEntries(prev => prev.filter(e => e.id !== id));
           if (selectedId === id) { setSelectedId(null); setEntry(null); }
@@ -280,11 +361,11 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
     try {
       let data;
       if (crawlMode === "single") {
-        data = await startLoreSingle({ url, provider, model, project_id: activeProject?.id });
+        data = await startLoreSingle({ url, provider, model, deep, project_id: activeProject?.id });
       } else {
         const validUrls = multiUrls.filter(u => u.trim());
         if (!validUrls.length) { setError("Add at least one URL"); setLoading(false); return; }
-        data = await startLoreMulti({ urls: validUrls, provider, model, project_id: activeProject?.id });
+        data = await startLoreMulti({ urls: validUrls, provider, model, deep, project_id: activeProject?.id });
       }
       setJobId(data.job_id);
       setJob({ status: "running", progress: 0, stage: "queued", message: "Starting..." });
@@ -294,19 +375,78 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
     }
   }
 
-  async function handleExport() {
+  // DeepLore (SillyTavern extension, Obsidian vault): one markdown note per entry, zipped
+  async function handleExportDeepLore() {
     try {
-      const data = await exportLorebook();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const blob = await exportDeepLore(activeProject?.id);
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "lorebook.json";
+      const slug = (activeProject?.project_name || "lorebook").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-") || "lorebook";
+      a.download = `${slug}-deeplore.zip`;
       a.click();
       URL.revokeObjectURL(a.href);
     } catch (e) {
       setError(e.message);
     }
   }
+
+  async function handleExport() {
+    try {
+      const data = await exportLorebook(activeProject?.id);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      const slug = (activeProject?.project_name || "lorebook").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-") || "lorebook";
+      a.download = `${slug}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function restoreLast() {
+    if (!lastDeleted) return;
+    try {
+      await restoreLoreEntry(lastDeleted);
+      setLastDeleted(null); setTrashKey(k => k + 1);
+      await loadEntries(activeProjectRef.current); await loadProjects();
+      if (showToast) showToast("Entry restored");
+    } catch (e) { setError(e.message); }
+  }
+
+  // keyboard review: J/K next/previous entry, X or Delete to trash (press twice), U restores, Ctrl+S saves
+  const keyRef = React.useRef({});
+  keyRef.current = { filteredEntries: null, selectedId, deleteConfirm };
+  useEffect(() => {
+    function onKey(ev) {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
+        if (entryRef.current) { ev.preventDefault(); handleSaveEntry(false); }
+        return;
+      }
+      const tag = (ev.target.tagName || "").toLowerCase();
+      if (["input", "textarea", "select"].includes(tag) || ev.target.isContentEditable || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      const { filteredEntries: list, selectedId: sel } = keyRef.current;
+      if (!list || !list.length) return;
+      const i = list.findIndex(e => e.id === sel);
+      const k = ev.key.toLowerCase();
+      if (k === "j" || k === "k") {
+        ev.preventDefault();
+        const next = list[Math.max(0, Math.min(list.length - 1, i < 0 ? 0 : i + (k === "j" ? 1 : -1)))];
+        if (next && next.id !== sel) handleSelectEntry(next.id);
+      } else if ((k === "x" || ev.key === "Delete") && sel) {
+        ev.preventDefault();
+        handleDeleteEntry(sel, { stopPropagation() {} });
+      } else if (k === "u") {
+        ev.preventDefault();
+        restoreLast();
+      } else if (ev.key === "Escape") {
+        setDeleteConfirm(null);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   function addKeyword() {
     const kw = newKeyword.trim();
@@ -321,11 +461,17 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
     setEntry(prev => ({ ...prev, keywords: prev.keywords.filter(k => k !== kw) }));
   }
 
+  const dupTitles = React.useMemo(() => {
+    const seen = new Set(), dup = new Set();
+    for (const e of entries) { const k = (e.title || "").trim().toLowerCase(); if (seen.has(k)) dup.add(k); seen.add(k); }
+    return dup;
+  }, [entries]);
   const filteredEntries = entries.filter(e => {
     const matchType = filterType === "all" || e.entry_type === filterType;
     const matchSearch = !search || e.title?.toLowerCase().includes(search.toLowerCase());
     return matchType && matchSearch;
   });
+  keyRef.current.filteredEntries = filteredEntries;
 
   const inputStyle = {
     padding: "10px 12px",
@@ -426,24 +572,59 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
 
       <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
         <button className="signal-btn" onClick={handleStartCrawl} disabled={loading || crawlMode === "multi"} style={btnStyle}>
-          {loading && crawlMode === "single" ? (t.working || "Working...") : "⟳ " + (t.generateEntry || "Generate Entry")}
+          {loading && crawlMode === "single" ? (t.working || "Working...") : "⟳ " + (t.generateFromUrl || "Generate from URL")}
         </button>
+
+        <label title="Several passes per page: lists every named entity and event, re-checks for misses, then writes details. Slower and uses more model calls, but doesn't stop at a handful of entries."
+          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, letterSpacing: "0.05em", cursor: "pointer" }}>
+          <input type="checkbox" checked={deep} onChange={e => setDeep(e.target.checked)} />
+          DEEP EXTRACTION
+        </label>
 
         <button
           className="signal-btn"
           onClick={() => { setCrawlMode(m => m === "multi" ? "single" : "multi"); }}
           style={btnStyle}
         >
-          {crawlMode === "multi" ? (t.cancelBatch || "Cancel") : (t.multiplePages || "Multiple Pages")}
+          {crawlMode === "multi" ? (t.cancelBatch || "Cancel") : (t.severalUrls || "Several URLs")}
         </button>
 
 
 
         {entries.length > 0 && (
-          <button className="signal-btn" onClick={handleExport} style={btnStyle}>
-            ↓ {t.exportLorebook || "Export Lorebook"}
+          <button className="signal-btn" onClick={handleExport} style={btnStyle}
+            title="World Info lorebook for SillyTavern (import in the World Info panel)">
+            ↓ {t.exportSillyTavern || "SillyTavern (.json)"}
           </button>
         )}
+        {activeProject && entries.length > 0 && (
+          <button className="signal-btn" onClick={handleCleanKeywords} style={btnStyle}
+            title="Remove generic trigger words and other entries' names from keywords, so each entry fires only for itself">
+            ⌫ {t.cleanKeywords || "Clean Keywords"}
+          </button>
+        )}
+        {entries.length > 0 && (
+          <button className="signal-btn" onClick={handleExportDeepLore} style={btnStyle}
+            title="Zip of markdown notes for the DeepLore extension (Obsidian vault)">
+            ↓ {t.exportDeepLore || "DeepLore (.zip)"}
+          </button>
+        )}
+        {entries.length > 0 && (
+          <button className={toolPanel === "sim" ? "signal-btn signal-btn-active" : "signal-btn"} onClick={() => setToolPanel(p => p === "sim" ? null : "sim")} style={btnStyle}
+            title="Paste chat text and see which entries SillyTavern would insert, and why">
+            ▶ {t.testActivation || "Test Activation"}
+          </button>
+        )}
+        {activeProject && entries.length > 0 && (
+          <button className={toolPanel === "links" ? "signal-btn signal-btn-active" : "signal-btn"} onClick={() => setToolPanel(p => p === "links" ? null : "links")} style={btnStyle}
+            title="Which entries mention which (recursion), unlinked entries and entries that never fire">
+            ⌘ {t.links || "Links"}
+          </button>
+        )}
+        <button className={toolPanel === "trash" ? "signal-btn signal-btn-active" : "signal-btn"} onClick={() => setToolPanel(p => p === "trash" ? null : "trash")} style={btnStyle}
+          title="Deleted entries: restore them or delete them for good">
+          ♻ {t.trash || "Trash"}
+        </button>
         <button className="signal-btn" onClick={handleNewEntry} style={btnStyle}>
           + {t.newEntry || "New Entry"}
         </button>
@@ -452,14 +633,15 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
         </button>
         {activeProject && entries.length > 0 && (
           <button className="signal-btn" onClick={async () => {
-            if (!window.confirm(`Delete all ${entries.length} entries in "${activeProject.project_name}"?`)) return;
-            await deleteLoreProject(activeProject.id);
-            const recreated = await createLoreProject(activeProject.project_name);
-            setProjects(prev => prev.map(p => p.id === activeProject.id ? { ...p, id: recreated.id, entry_count: 0 } : p));
-            setActiveProject(prev => ({ ...prev, id: recreated.id }));
-            setEntries([]);
-          }} style={{ padding: "8px 12px", border: "1px solid #c84a3a", background: "transparent", color: "#c84a3a", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700 }}>
-            ✕ Clear entries
+            if (!window.confirm(`Move all ${entries.length} entries in "${activeProject.project_name}" to the trash?`)) return;
+            try {
+              await clearLoreProject(activeProject.id);   // keeps the project id (TEXT links and card lorebooks point at it)
+              setProjects(prev => prev.map(p => p.id === activeProject.id ? { ...p, entry_count: 0 } : p));
+              setEntries([]); setEntry(null); setSelectedId(null); setTrashKey(k => k + 1);
+              if (showToast) showToast("Entries moved to the trash");
+            } catch (er) { setError(er.message); }
+          }} className="signal-btn" style={{ ...btnStyle, borderColor: "#c84a3a", color: "#c84a3a" }}>
+            ♻ {t.trashAllEntries || "Trash all entries"}
           </button>
         )}
         <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--signal-text-dim)", alignSelf: "center" }}>
@@ -518,8 +700,10 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
       {job && <MainJobStatus job={job} mode="lore" />}
 
       {error && (
-        <div style={{ color: "#c84a3a", fontSize: 13, marginBottom: 10, padding: "8px 12px", border: "1px solid #c84a3a" }}>
-          ⊗ {error}
+        <div style={{ color: "#c84a3a", fontSize: 13, marginBottom: 10, padding: "8px 12px", border: "1px solid #c84a3a",
+          display: "flex", justifyContent: "space-between", gap: 8 }}>
+          <span>⊗ {error}</span>
+          <span style={{ cursor: "pointer" }} onClick={() => setError("")}>✕</span>
         </div>
       )}
 
@@ -555,7 +739,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
       )}
 
       {/* Project panel */}
-      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12, marginBottom: 12 }}>
+      <div className="lore-grid-projects" style={{ display: "grid", gap: 12, marginBottom: 12 }}>
         <div className="signal-panel" style={{ border: "1px solid var(--signal-border)", background: "var(--signal-bg-panel)", padding: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "var(--signal-text-dim)", marginBottom: 8 }}>
             PROJECTS
@@ -636,8 +820,11 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
                   </div>
                   <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
                     <button onClick={e => { e.stopPropagation(); setRenamingId(p.id); setRenameVal(p.project_name); }}
+                      aria-label={`Rename ${p.project_name}`} title="Rename"
                       style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 11, opacity: 0.6, padding: "0 2px" }}>✎</button>
-                    <button onClick={async e => {
+                    <button aria-label={deletingProjectId === p.id ? `Confirm: delete ${p.project_name}` : `Delete ${p.project_name}`}
+                      title={deletingProjectId === p.id ? "Click again to delete the project and its entries" : "Delete project"}
+                      onClick={async e => {
                       e.stopPropagation();
                       if (deletingProjectId === p.id) {
                         await deleteLoreProject(p.id);
@@ -672,12 +859,18 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
         {/* Right side placeholder when no entries */}
         <div style={{ minWidth: 0 }}>
 
+      {toolPanel === "sim" && <SimulatorPanel project={activeProject} onOpen={handleSelectEntry} onClose={() => setToolPanel(null)} t={t} />}
+      {toolPanel === "links" && activeProject && <LinksPanel project={activeProject} onOpen={handleSelectEntry} onClose={() => setToolPanel(null)} t={t} />}
+      {toolPanel === "trash" && <TrashPanel project={activeProject} refreshKey={trashKey} onClose={() => setToolPanel(null)} t={t}
+        onChanged={() => { loadEntries(activeProjectRef.current); loadProjects(); }} />}
+
       {/* Main editor area */}
       {entries.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 12, alignItems: "start" }}>
+        <div className="lore-grid-editor" style={{ display: "grid", gap: 12, alignItems: "start" }}>
 
           {/* Entry list */}
           <div className="signal-panel" style={{ border: "1px solid var(--signal-border)", background: "var(--signal-bg-panel)", padding: 10 }}>
+            <BudgetMeter entries={entries} />
             {/* Filter + search */}
             <div style={{ marginBottom: 8, display: "flex", flexDirection: "column", gap: 6 }}>
               <input
@@ -722,16 +915,27 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
                       </div>
                       <div style={{ fontSize: 10, opacity: 0.6, letterSpacing: "0.06em" }}>
                         {(t.entryTypes && t.entryTypes[e.entry_type]) || e.entry_type?.toUpperCase()}
+                        {e.content_chars != null && ` · ~${Math.max(1, Math.round(e.content_chars / 4))} tok`}
                       </div>
+                      {loreIssues(e, dupTitles).length > 0 && (
+                        <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 3 }}>
+                          {loreIssues(e, dupTitles).map(([txt, bg, tip]) => (
+                            <span key={txt} title={tip} style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", background: bg,
+                              color: bg.startsWith("var") ? "var(--signal-btn-active-text)" : "#fff", letterSpacing: "0.04em" }}>{txt}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
                       <button
                         onClick={ev => { ev.stopPropagation(); setMovingEntryId(movingEntryId === e.id ? null : e.id); }}
-                        title={t.moveToProject || "Move to project"}
+                        title={t.moveToProject || "Move to project"} aria-label={`Move ${e.title || "entry"} to another project`}
                         style={{ padding: "2px 5px", fontSize: 10, fontWeight: 700, border: "1px solid var(--signal-border)", background: movingEntryId === e.id ? "var(--signal-btn-active-bg)" : "transparent", color: movingEntryId === e.id ? "var(--signal-btn-active-text)" : "var(--signal-text-dim)", cursor: "pointer", fontFamily: "inherit" }}
                       >↪</button>
                       <button
                         onClick={(ev) => handleDeleteEntry(e.id, ev)}
+                        aria-label={deleteConfirm === e.id ? `Confirm: move ${e.title || "entry"} to the trash` : `Delete ${e.title || "entry"}`}
+                        title={deleteConfirm === e.id ? "Click again (or X) to move it to the trash" : "Delete (to the trash)"}
                         style={{ padding: "2px 6px", fontSize: 10, fontWeight: 700, border: `1px solid ${deleteConfirm === e.id ? "#c84a3a" : "var(--signal-border)"}`, background: deleteConfirm === e.id ? "#c84a3a" : "transparent", color: deleteConfirm === e.id ? "#fff" : "#c84a3a", cursor: "pointer", fontFamily: "inherit" }}
                       >
                         {deleteConfirm === e.id ? "?" : "✕"}
@@ -812,7 +1016,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
                     display: "flex", alignItems: "center", gap: 4,
                   }}>
                     {kw}
-                    <button onClick={() => removeKeyword(kw)} style={{
+                    <button onClick={() => removeKeyword(kw)} aria-label={`Remove keyword ${kw}`} style={{
                       background: "none", border: "none", cursor: "pointer", color: "#c84a3a",
                       padding: 0, fontSize: 12, lineHeight: 1,
                     }}>✕</button>
@@ -856,11 +1060,11 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
                 <div className="signal-divider-bar" />
                 <div className="signal-divider-mark signal-divider-mark-right" />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
                 {[
                   { key: "scan_depth", label: t.scanDepth || "Scan Depth", min: 1, max: 20, def: 2, hint: "How many recent messages to scan for trigger keywords" },
-                  { key: "insertion_order", label: t.insertionOrder || "Insertion Order", min: 0, max: 1000, def: 100, hint: "Priority order — lower number = inserted first" },
-                  { key: "entry_depth", label: t.entryDepth || "Entry Depth", min: 0, max: 20, def: 4, hint: "Where in context to insert (0 = top)" },
+                  { key: "insertion_order", label: t.orderPriority || "Order (priority)", min: 0, max: 1000, def: 100, hint: "Higher = placed closer to the chat, more influence, and kept first when the World Info budget runs out (SillyTavern docs)" },
+                  { key: "entry_depth", label: t.depthAtDepth || "Depth (@Depth only)", min: 0, max: 20, def: 4, hint: "Only used when Position is 'At depth' (Advanced settings): how many messages up from the latest one the entry goes (0 = after the last message)" },
                 ].map(({ key, label, min, max, def, hint }) => (
                   <div key={key} title={hint}>
                     <div style={{ fontSize: 10, letterSpacing: "0.08em", color: "var(--signal-text-dim)", marginBottom: 4 }}>{label}</div>
@@ -880,9 +1084,16 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast }) {
                 ))}
               </div>
 
+              <AdvancedWI entry={entry} setEntry={setEntry} t={t} />
+
               {/* Save */}
-              <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
-                <button className="signal-btn" onClick={handleSaveEntry} disabled={saving}
+              <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end", alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: "var(--signal-text-dim)", marginRight: "auto" }}>
+                  ~{Math.round((entry.content || "").length / 4)} tokens · {saving ? "saving…" : dirty ? "● editing (autosaves)" : "✓ saved"}
+                  {isAlwaysOn(entry) && " · always on (exported as constant)"}
+                  <span style={{ display: "block", opacity: 0.8 }}>Keys: J/K next/prev · X delete · U undo delete · Ctrl+S save</span>
+                </span>
+                <button className="signal-btn" onClick={() => handleSaveEntry(false)} disabled={saving}
                   style={{ ...btnStyle, opacity: saving ? 0.5 : 1 }}>
                   {saving ? (t.saving || "Saving...") : (t.saveEntry || "Save Entry")}
                 </button>

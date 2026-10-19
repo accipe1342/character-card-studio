@@ -62,13 +62,19 @@ def _log_dim(m):   print(f"{_DIM}{m}{_RESET}")
 
 NANOGPT_URL      = "https://nano-gpt.com/api/v1/chat/completions"
 OPENROUTER_URL   = "https://openrouter.ai/api/v1/chat/completions"
-NANOGPT_MODEL    = os.getenv("NANOGPT_MODEL", "zai-org/glm-4.7:thinking")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "z-ai/glm-4.7")
+# Defaults only. The values saved in Config (.env) are read at call time, so changing them
+# in the UI applies immediately, no restart needed.
+NANOGPT_MODEL    = "deepseek/deepseek-v4.1-flash"   # fast, non-thinking: generation makes many calls
+OPENROUTER_MODEL = "z-ai/glm-4.7"
 OPENROUTER_ENABLE_REASONING = True
 TEMPERATURE      = 0.7
-LOCAL_BASE_URL   = os.getenv("LOCAL_OPENAI_BASE_URL", "http://localhost:1234/v1")
-LOCAL_MODEL      = os.getenv("LOCAL_MODEL", "")
-LOCAL_API_KEY    = os.getenv("LOCAL_API_KEY", "local")
+LOCAL_BASE_URL   = "http://localhost:1234/v1"
+LOCAL_MODEL      = ""
+LOCAL_API_KEY    = "local"
+
+
+def _env(name, default):
+    return os.getenv(name) or default
 TIMEOUT_SECONDS  = 180
 
 _RETRY_MAX_ATTEMPTS   = 3
@@ -401,7 +407,7 @@ def _build_request(
             "Content-Type": "application/json",
         }
         payload = {
-            "model": model or NANOGPT_MODEL,
+            "model": model or _env("NANOGPT_MODEL", NANOGPT_MODEL),
             "messages": messages,
             "temperature": temperature,
             "stream": False,
@@ -420,7 +426,7 @@ def _build_request(
             "X-Title": "Character Card Studio",
         }
         payload = {
-            "model": model or OPENROUTER_MODEL,
+            "model": model or _env("OPENROUTER_MODEL", OPENROUTER_MODEL),
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -430,13 +436,13 @@ def _build_request(
         return OPENROUTER_URL, headers, payload
 
     elif provider == "local":
-        base_url = LOCAL_BASE_URL.rstrip("/")
+        base_url = _env("LOCAL_OPENAI_BASE_URL", LOCAL_BASE_URL).rstrip("/")
         headers = {
-            "Authorization": f"Bearer {LOCAL_API_KEY or 'local'}",
+            "Authorization": f"Bearer {_env('LOCAL_API_KEY', LOCAL_API_KEY) or 'local'}",
             "Content-Type": "application/json",
         }
         payload = {
-            "model": model or LOCAL_MODEL or "local-model",
+            "model": model or _env("LOCAL_MODEL", LOCAL_MODEL) or "local-model",
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -445,13 +451,13 @@ def _build_request(
 
     else:
         _log_warn(f"Unknown provider '{provider}', treating as local OpenAI-compatible")
-        base_url = LOCAL_BASE_URL.rstrip("/")
+        base_url = _env("LOCAL_OPENAI_BASE_URL", LOCAL_BASE_URL).rstrip("/")
         headers = {
-            "Authorization": f"Bearer {LOCAL_API_KEY or 'local'}",
+            "Authorization": f"Bearer {_env('LOCAL_API_KEY', LOCAL_API_KEY) or 'local'}",
             "Content-Type": "application/json",
         }
         payload = {
-            "model": model or LOCAL_MODEL or provider,
+            "model": model or _env("LOCAL_MODEL", LOCAL_MODEL) or provider,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -464,6 +470,7 @@ def _request(
     model: str,
     prompt: str,
     system: Optional[str] = None,
+    max_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Send a request to the provider. Accepts either:
@@ -481,7 +488,7 @@ def _request(
     # Read temperature and max_tokens from settings.json
     cfg = load_runtime_config()
     cfg_temperature = float(cfg.get("temperature", TEMPERATURE))
-    cfg_max_tokens = int(cfg.get("max_tokens", 4096))
+    cfg_max_tokens = int(max_tokens or cfg.get("max_tokens", 4096))
 
     url, headers, payload = _build_request(
         provider, model, effective_system, prompt,
@@ -489,20 +496,30 @@ def _request(
     )
 
     last_exception: Exception = RuntimeError("No attempts made")
+    retry_after = None   # seconds the provider asked us to wait (HTTP 429 Retry-After)
 
     for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
         if attempt > 1:
             wait = _RETRY_BACKOFF_SECONDS[attempt - 2]
+            if retry_after is not None:
+                wait = max(wait, min(retry_after, 60))
             _log_warn(f"attempt {attempt}/{_RETRY_MAX_ATTEMPTS} - waiting {wait}s")
             time.sleep(wait)
+            retry_after = None
 
         try:
             _log_dim(f"  -> sending (attempt {attempt})")
+            t0 = time.time()
             response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT_SECONDS)
             _log_dim(f"  <- {response.status_code}")
 
             if response.status_code in _RETRYABLE_STATUS_CODES:
                 msg = f"HTTP {response.status_code} from {provider} (attempt {attempt})"
+                if response.status_code == 429:
+                    msg += " - rate limited; lower 'Chunks at once' if this keeps happening"
+                    retry_after = _parse_retry_after(response.headers.get("Retry-After"))
+                    if retry_after is None:
+                        retry_after = 10 * attempt     # no hint: back off harder than for other errors
                 _log_warn(msg)
                 last_exception = RuntimeError(msg)
                 continue
@@ -511,6 +528,13 @@ def _request(
 
             data = response.json()
             content = data["choices"][0]["message"]["content"]
+            usage = data.get("usage") or {}
+            try:
+                from database import record_usage
+                record_usage(provider, payload.get("model", model or ""), usage.get("prompt_tokens", 0),
+                             usage.get("completion_tokens", 0), time.time() - t0)
+            except Exception:
+                pass
             return _extract_json_object(content)
 
         except Timeout:
@@ -534,12 +558,27 @@ def _request(
     ) from last_exception
 
 
+def _parse_retry_after(value):
+    """Retry-After is seconds or an HTTP date; return seconds or None."""
+    if not value:
+        return None
+    try:
+        return max(0, int(float(value)))
+    except ValueError:
+        try:
+            from email.utils import parsedate_to_datetime
+            import datetime as _dt
+            return max(0, int((parsedate_to_datetime(value) - _dt.datetime.now(_dt.timezone.utc)).total_seconds()))
+        except Exception:
+            return None
+
+
 # -------------------------------------------------------------------------------
 # Character card generation
 # -------------------------------------------------------------------------------
 
 def generate_full_card(
-    source: Dict[str, Any], provider: str, model: str
+    source: Dict[str, Any], provider: str, model: str, options: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Generate a complete SillyTavern V2 character card from a scraped source.
@@ -598,64 +637,30 @@ def generate_full_card(
     use_config = config.get("use_templates", False)
     template_text = templates.get("character_generation_template", "").strip()
 
-    # System message: definitions + task rules
-    system = f"""{CHARACTER_CARD_DEFINITION}
+    options = options or {}
+    deep = bool(options.get("deep"))
+    if deep:
+        # richer source for the bible pass: every normalized section, trimmed to a sane size
+        rich = {k: v for k, v in normalized.items() if k not in ("raw_html",) and v}
+        rich["raw_sections"] = source.get("raw_sections") or {}
+        rich_json = json.dumps(rich, ensure_ascii=False, indent=1)[:18000]
+        _progress(options, "Reading the source into a character bible (1/3)...")
+        bible = _request(provider, model, f"SOURCE DATA:\n{rich_json}",
+                         system=BIBLE_SYSTEM + _fic_note(source) + _story_point_note(options))
+        source_json = ("CHARACTER BIBLE (primary, already checked against the source):\n"
+                       + json.dumps(bible, ensure_ascii=False, indent=1)
+                       + "\n\nCOMPACT SOURCE (reference):\n" + source_json)
+        _progress(options, "Writing the card from the bible (2/3)...")
 
----
+    templates = get_prompt_templates()
+    config = load_runtime_config()
+    use_config = config.get("use_templates", False)
+    template_text = templates.get("character_generation_template", "").strip()
 
-You are converting scraped wiki data into a SillyTavern V2 character card.
-Return ONLY valid JSON. No markdown fences. No extra commentary.
-
-RULES:
-- Do not invent facts not present in the source.
-- Stay canon-consistent. Rewrite for roleplay, not wiki style.
-- Make personality behavioral - not a list of adjectives.
-- first_mes must be short, natural, and in character. If a Quotes section
-  exists in the source, use a quote to anchor the character's voice.
-- Do not write actions or dialogue for {{{{user}}}}.
-- mes_example must contain 3-6 examples. Exact format as a JSON string:
-  "<START>\\n{{{{char}}}}: line one\\n\\n<START>\\n{{{{char}}}}: line two"
-  Critical: TWO newlines (\\n\\n) between each block. Never place <START>
-  immediately after dialogue on the same line as the previous entry.
-  If a Quotes section exists, use those quotes as the basis for examples.
-- scenario: roleplay-ready setup grounded in canon. Describe the situation
-  and where the interaction begins. Do not write a full story scene.
-- structured_profile: fill using three-level priority chain:
-  Level 1 — infobox fields and named sections (Appearance, Personality, Quotes,
-    Likes/Dislikes). Use these directly.
-  Level 2 — structured source sections (history, biography, raw_sections).
-    Infer from stated preferences, behavioral descriptions, dialogue.
-  Level 3 — story_sections and uncategorized_sections. Read as raw narrative.
-    Infer only what the text genuinely supports. Never fabricate.
-  Never leave likes/dislikes/loves/hates all blank if ANY behavioral content
-  exists in the source. relationship_to_user: always fill with a canon-consistent
-  default. List fields: short specific phrases. Leave blank only if no basis
-  exists at any level.
-
-Return this exact JSON shape:
-{{
-  "name": "",
-  "structured_profile": {{
-    "sex": "", "ethnicity": "", "race": "", "job_occupation": "",
-    "gender": "", "sexual_attraction": "", "pronouns": "",
-    "appearance": [], "non_human_appearance": [], "personal_parts": [],
-    "clothing": [], "accessories": [],
-    "relationship_to_user": "", "relationship_status": "",
-    "backstory": "", "speech": [], "personality_traits": [],
-    "kinks": [], "likes": [], "dislikes": [],
-    "loves": [], "hates": [],
-    "height": "", "weight": "", "age": ""
-  }},
-  "description": "",
-  "personality": "",
-  "scenario": "",
-  "first_mes": "",
-  "mes_example": "<START>\\n{{{{char}}}}: ...\\n\\n<START>\\n{{{{char}}}}: ...\\n\\n<START>\\n{{{{char}}}}: ...",
-  "tags": []
-}}"""
+    system = card_system_prompt(source, options)
 
     # User message: source data (or custom template)
-    if use_config and template_text:
+    if use_config and template_text and not deep:
         try:
             user = template_text.format(source_json=source_json)
         except Exception as e:
@@ -665,8 +670,20 @@ Return this exact JSON shape:
         user = f"SOURCE DATA:\n{source_json}"
 
     result = _request(provider, model, user, system=system)
-
     _log_dim(f"  card keys: {list(result.keys())}")
+
+    if deep:
+        _progress(options, "Checking the card against the bible (3/3)...")
+        try:
+            check = _request(provider, model,
+                             "CHARACTER BIBLE:\n" + json.dumps(bible, ensure_ascii=False, indent=1)
+                             + "\n\nCARD:\n" + json.dumps(result, ensure_ascii=False, indent=1),
+                             system=CHECK_SYSTEM)
+            applied = apply_card_fixes(result, check.get("fixes") or {})
+            result["_check_issues"] = [str(x) for x in (check.get("issues") or [])][:12]
+            _log_dim(f"  check pass: {applied} fix(es)")
+        except Exception as e:
+            _log_warn(f"check pass failed, keeping the card as written: {e}")
 
     for key in REQUIRED_KEYS:
         if key == "tags":
@@ -676,19 +693,278 @@ Return this exact JSON shape:
         else:
             result.setdefault(key, "")
 
-    # Normalise list fields that may come back as strings
-    sp = result.get("structured_profile", {})
-    list_fields = [
-        "appearance", "non_human_appearance", "personal_parts",
-        "clothing", "accessories", "speech", "personality_traits",
-        "kinks", "likes", "dislikes", "loves", "hates",
-    ]
-    for lf in list_fields:
-        if lf in sp:
-            sp[lf] = _ensure_list(sp[lf])
-    result["tags"] = _ensure_list(result.get("tags", []))
-
+    result, warnings = validate_card(result, options)
+    result["_warnings"] = warnings + [f"Check: {x}" for x in result.pop("_check_issues", [])]
     return result
+
+
+# ---------------------------------------------------------------------------
+# Card prompt building, in-depth passes and validation
+# ---------------------------------------------------------------------------
+PROFILE_TEXT_FIELDS = ["sex", "species", "ethnicity", "race", "job_occupation", "gender", "sexual_attraction",
+                       "pronouns", "relationship_to_user", "relationship_status", "backstory", "height", "weight",
+                       "age", "story_point"]
+PROFILE_LIST_FIELDS = ["appearance", "non_human_appearance", "personal_parts", "clothing", "accessories", "speech",
+                       "personality_traits", "kinks", "likes", "dislikes", "loves", "hates", "motivations", "flaws",
+                       "mannerisms", "relationships"]
+SEXUAL_FIELDS_LIST = ["kinks", "personal_parts"]
+SEXUAL_FIELDS_TEXT = ["sexual_attraction"]
+
+TOKEN_TARGETS = {   # permanent tokens: description + personality + scenario
+    "small": (600, "SMALL-MODEL CARD: description <= 250 tokens, personality <= 100, scenario <= 80. Short, plain sentences."),
+    "lean": (800, "LEAN CARD: description <= 400 tokens, personality <= 150, scenario <= 100."),
+    "standard": (1200, "STANDARD CARD: description 400-700 tokens, personality <= 250, scenario <= 150."),
+    "rich": (1800, "RICH CARD: description up to 1100 tokens, personality <= 350, scenario <= 200."),
+}
+
+BIBLE_SYSTEM = """You build a CHARACTER BIBLE from source data, as the fact base for a roleplay character card.
+Return ONLY valid JSON, no fences:
+{"name": "", "aliases": [], "story_point": "which version / moment of the character this describes",
+ "age": "", "species": "", "identity": "who they are in 2-3 sentences",
+ "appearance": [], "outfit": [], "personality": ["behavioural statements, not adjectives"],
+ "voice": {"quotes": ["verbatim lines from the source, max 25 words"], "patterns": ["how they talk"]},
+ "relationships": [{"with": "", "relation": ""}], "motivations": [], "fears_and_flaws": [],
+ "key_history": ["events that shaped them, oldest first"], "abilities": [],
+ "changes_in_this_story": ["facts where this source differs from the original canon"],
+ "uncertain": ["things the source does not settle"]}
+Rules: only facts the source supports; prefer specific details; quotes copied exactly; leave fields empty rather than guess."""
+
+CHECK_SYSTEM = """You check a SillyTavern character card against its character bible. Return ONLY valid JSON:
+{"fixes": {"<field>": "<corrected value>"}, "issues": ["short description of each problem you fixed or could not fix"]}
+Fix ONLY: facts that contradict the bible; invented facts the bible does not support; any text that speaks or acts
+for {{user}}; a missing or empty required field (description, personality, scenario, first_mes, mes_example);
+a mes_example not in the <START> block format; fields far over their size target.
+Field names: description, personality, scenario, first_mes, mes_example, alternate_greetings (list), character_note,
+tags (list), or structured_profile.<subfield>. Leave everything else out. If nothing is wrong, return {"fixes": {}, "issues": []}."""
+
+
+def _progress(options, msg):
+    cb = options.get("progress") if isinstance(options, dict) else None
+    if callable(cb):
+        try:
+            cb(msg)
+        except Exception:
+            pass
+
+
+def _is_fic_source(source):
+    return (source or {}).get("wiki_base") == "text-studio"
+
+
+def _fic_note(source):
+    if not _is_fic_source(source):
+        return ""
+    return ("\n\nTHIS SOURCE IS A FAN FICTION, not the original canon. Where it differs from canon, the fan fiction "
+            "wins. Facts marked 'changed by this story', 'original to this story' or listed as story events are the "
+            "truth for this character. Use canon only to fill gaps the fan fiction leaves open.")
+
+
+def _story_point_note(options):
+    sp = str(options.get("story_point") or "").strip()
+    return f"\n\nSTORY POINT: describe the character as of: {sp}. Ignore facts from later in their story." if sp else ""
+
+
+def card_system_prompt(source, options):
+    """The system prompt for a full card, assembled from the options."""
+    options = options or {}
+    fic = _is_fic_source(source)
+    target_key = options.get("token_target") if options.get("token_target") in TOKEN_TARGETS else "standard"
+    style = options.get("style") or "prose"
+    task = ("You are converting NOTES FROM A FAN FICTION into a SillyTavern V2 character card." if fic else
+            "You are converting scraped wiki data into a SillyTavern V2 character card.")
+    canon_rule = ("- The fan fiction is the truth: keep its changes to canon. Use canon only where the notes are silent."
+                  if fic else "- Stay canon-consistent. Rewrite for roleplay, not wiki style.")
+    extra = []
+    sp = str(options.get("story_point") or "").strip()
+    if sp:
+        extra.append(f"- STORY POINT: write the character as of {sp}. Age, look, relationships and knowledge must match "
+                     f"that moment; ignore later events. Put it in structured_profile.story_point.")
+    role = str(options.get("user_role") or "").strip()
+    if role:
+        extra.append(f"- {{{{user}}}} IS: {role}. Build scenario, relationship_to_user and first_mes around that.")
+    if options.get("lore_aware"):
+        extra.append("- A LOREBOOK with the world, places, factions and other characters is attached to this card. "
+                     "Keep world facts OUT of description and scenario; describe only this character and their "
+                     "relationship to the world in a sentence or two. Keep the card lean.")
+    extra.append("- SIZE: " + TOKEN_TARGETS[target_key][1])
+    if style == "plist":
+        extra.append("- STYLE: write description as a PList: [Name's persona: trait, trait; Name's appearance: ...; "
+                     "Name's likes: ...] (square brackets, semicolons between categories). Write mes_example in "
+                     "Ali:Chat style: each block shows {{char}} answering, revealing traits through action and dialogue.")
+    else:
+        extra.append("- STYLE: prose. Description in short paragraphs (appearance, personality, mannerisms).")
+    extra_txt = "\n".join(extra)
+    return f"""{CHARACTER_CARD_DEFINITION}
+
+---
+
+{task}
+Return ONLY valid JSON. No markdown fences. No extra commentary.
+
+RULES:
+- Do not invent facts not present in the source.
+{canon_rule}
+- Make personality behavioral - not a list of adjectives.
+- first_mes must be short, natural, and in character. If a Quotes section
+  exists in the source, use a quote to anchor the character's voice.
+- Do not write actions or dialogue for {{{{user}}}}.
+- alternate_greetings: 2-3 extra openings in different situations (same voice, same rules as first_mes).
+- character_note: 1-3 short sentences (max ~60 tokens) restating the traits and speech habits that matter most.
+  SillyTavern injects it deep in the chat to keep the character consistent in long roleplays.
+- mes_example must contain 3-6 examples. Exact format as a JSON string:
+  "<START>\\n{{{{char}}}}: line one\\n\\n<START>\\n{{{{char}}}}: line two"
+  Critical: TWO newlines (\\n\\n) between each block. Never place <START>
+  immediately after dialogue on the same line as the previous entry.
+  If a Quotes section exists, use those quotes as the basis for examples.
+- scenario: roleplay-ready setup grounded in the source. Describe the situation
+  and where the interaction begins. Do not write a full story scene.
+- structured_profile: fill using three-level priority chain:
+  Level 1 — infobox fields and named sections (Appearance, Personality, Quotes,
+    Likes/Dislikes). Use these directly.
+  Level 2 — structured source sections (history, biography, raw_sections).
+    Infer from stated preferences, behavioral descriptions, dialogue.
+  Level 3 — story_sections and uncategorized_sections. Read as raw narrative.
+    Infer only what the text genuinely supports. Never fabricate.
+  species = what kind of being they are (human, Al Bhed, android, elf...).
+  motivations / flaws / mannerisms: short specific phrases. relationships: "Name - relation" phrases.
+  Never leave likes/dislikes/loves/hates all blank if ANY behavioral content
+  exists in the source. relationship_to_user: fill with a source-consistent
+  default (or from the {{{{user}}}} role given below). List fields: short specific phrases. Leave blank only if no basis
+  exists at any level.
+- If the character is under 18, or reads as a minor: leave kinks, personal_parts and sexual_attraction empty and put
+  no sexual or romantic-sexual content anywhere in the card.
+{extra_txt}
+
+Return this exact JSON shape:
+{{
+  "name": "",
+  "structured_profile": {{
+    "sex": "", "species": "", "ethnicity": "", "race": "", "job_occupation": "",
+    "gender": "", "sexual_attraction": "", "pronouns": "",
+    "appearance": [], "non_human_appearance": [], "personal_parts": [],
+    "clothing": [], "accessories": [],
+    "relationship_to_user": "", "relationship_status": "",
+    "backstory": "", "speech": [], "personality_traits": [],
+    "kinks": [], "likes": [], "dislikes": [],
+    "loves": [], "hates": [],
+    "motivations": [], "flaws": [], "mannerisms": [], "relationships": [],
+    "height": "", "weight": "", "age": "", "story_point": ""
+  }},
+  "description": "",
+  "personality": "",
+  "scenario": "",
+  "first_mes": "",
+  "alternate_greetings": ["", ""],
+  "character_note": "",
+  "mes_example": "<START>\\n{{{{char}}}}: ...\\n\\n<START>\\n{{{{char}}}}: ...\\n\\n<START>\\n{{{{char}}}}: ...",
+  "tags": []
+}}"""
+
+
+def apply_card_fixes(card, fixes):
+    n = 0
+    for k, v in (fixes or {}).items():
+        if not isinstance(k, str):
+            continue
+        if k.startswith("structured_profile."):
+            sub = k.split(".", 1)[1]
+            if sub in PROFILE_TEXT_FIELDS or sub in PROFILE_LIST_FIELDS:
+                card.setdefault("structured_profile", {})[sub] = v
+                n += 1
+        elif k in ("description", "personality", "scenario", "first_mes", "mes_example", "alternate_greetings",
+                   "character_note", "tags"):
+            card[k] = v
+            n += 1
+    return n
+
+
+_MINOR_RE = re.compile(r"\b(child|kid|toddler|teen|teenage|teenager|minor|adolescent|schoolboy|schoolgirl|"
+                       r"high[- ]school|middle[- ]school|preteen|underage)\b", re.I)
+
+
+def _reads_as_minor(age_text):
+    t = str(age_text or "")
+    nums = [int(n) for n in re.findall(r"\b(\d{1,3})\b", t) if 0 < int(n) < 130]
+    if nums:
+        return min(nums) < 18 and not any(n >= 18 for n in nums)
+    return bool(_MINOR_RE.search(t))
+
+
+def estimate_tokens(text):
+    return max(0, round(len(str(text or "")) / 4))
+
+
+def validate_card(card, options=None):
+    """Repair what code can repair and list what needs a human look. Returns (card, warnings)."""
+    options = options or {}
+    warnings = []
+    sp = card.get("structured_profile") or {}
+    if not isinstance(sp, dict):
+        sp = {}
+    for f in PROFILE_LIST_FIELDS:
+        if f in sp:
+            sp[f] = _ensure_list(sp[f])
+    for f in PROFILE_TEXT_FIELDS:
+        if f in sp and isinstance(sp[f], list):
+            sp[f] = ", ".join(str(x) for x in sp[f])
+    if not sp.get("species") and sp.get("ethnicity"):
+        sp["species"] = sp["ethnicity"]          # older sources keep species in 'ethnicity'
+    card["structured_profile"] = sp
+
+    # example messages: <START> on its own line, a blank line between blocks
+    mes = str(card.get("mes_example") or "").replace("\r\n", "\n")
+    if mes:
+        fixed = re.sub(r"\s*<START>\s*", "\n\n<START>\n", mes).strip()
+        if fixed != mes.strip():
+            warnings.append("Example messages: fixed the <START> block spacing.")
+        mes = fixed
+        if not mes.startswith("<START>"):
+            mes = "<START>\n" + mes
+        if re.search(r"(^|\n)\{\{user\}\}:", mes):
+            warnings.append("Example messages contain {{user}} lines; the card should only show {{char}}.")
+    card["mes_example"] = mes
+
+    fm = str(card.get("first_mes") or "")
+    if re.search(r"(^|\n)\s*\{\{user\}\}\s*:", fm) or re.search(r"\*\{\{user\}\}\s+\w+s\b", fm):
+        warnings.append("First message seems to speak or act for {{user}}; check it.")
+    if not fm.strip():
+        warnings.append("First message is empty.")
+
+    greetings = card.get("alternate_greetings") or []
+    if isinstance(greetings, str):
+        greetings = [greetings]
+    card["alternate_greetings"] = [str(g).strip() for g in greetings if str(g).strip()][:5]
+    card["character_note"] = str(card.get("character_note") or card.get("depth_prompt") or "").strip()
+
+    tags, seen = [], set()
+    for t in _ensure_list(card.get("tags")):
+        t = str(t).strip().lstrip("#").lower()
+        if t and t not in seen:
+            seen.add(t)
+            tags.append(t)
+    card["tags"] = tags
+    if len(tags) < 10:
+        warnings.append(f"Only {len(tags)} tags (aim for 10-20).")
+
+    for f in ("description", "personality", "scenario"):
+        if not str(card.get(f) or "").strip():
+            warnings.append(f"{f.capitalize()} is empty.")
+
+    if _reads_as_minor(sp.get("age")):
+        cleared = [f for f in SEXUAL_FIELDS_LIST if sp.get(f)] + [f for f in SEXUAL_FIELDS_TEXT if sp.get(f)]
+        for f in SEXUAL_FIELDS_LIST:
+            sp[f] = []
+        for f in SEXUAL_FIELDS_TEXT:
+            sp[f] = ""
+        if cleared:
+            warnings.append("Character is under 18: sexual profile fields were left empty.")
+
+    perm = sum(estimate_tokens(card.get(f)) for f in ("description", "personality", "scenario"))
+    target_key = options.get("token_target") if options.get("token_target") in TOKEN_TARGETS else "standard"
+    limit = TOKEN_TARGETS[target_key][0]
+    if perm > limit * 1.25:
+        warnings.append(f"Permanent tokens about {perm} (target ~{limit}). Consider trimming the description.")
+    return card, warnings
 
 
 # -------------------------------------------------------------------------------
@@ -723,6 +999,7 @@ def regenerate_single_field(
     source_json = json.dumps(compact_source, ensure_ascii=False, indent=2)
 
     structured_subfields = {
+        "species", "story_point", "motivations", "flaws", "mannerisms", "relationships",
         "sex", "ethnicity", "race", "job_occupation", "gender",
         "sexual_attraction", "pronouns", "appearance", "non_human_appearance",
         "personal_parts", "clothing", "accessories", "relationship_to_user",
@@ -730,6 +1007,7 @@ def regenerate_single_field(
         "kinks", "likes", "dislikes", "loves", "hates", "height", "weight", "age",
     }
     list_subfields = {
+        "motivations", "flaws", "mannerisms", "relationships",
         "appearance", "non_human_appearance", "personal_parts", "clothing",
         "accessories", "speech", "personality_traits", "kinks",
         "likes", "dislikes", "loves", "hates",
@@ -781,14 +1059,17 @@ def regenerate_single_field(
     card_json = json.dumps(compact_card, ensure_ascii=False, indent=2)
 
     # System: definitions + task framing
+    canon_rule = ("The source is a FAN FICTION: keep its changes to canon; use canon only where it is silent."
+                  if _is_fic_source(source) else "Stay canon-consistent.")
     system = f"""{CHARACTER_CARD_DEFINITION}
 
 ---
 
 You are rewriting exactly ONE field of a SillyTavern character card.
 Return ONLY valid JSON in the exact shape specified. No markdown fences.
-Stay canon-consistent. Do not invent facts beyond the source or current card.
-Do not write actions or dialogue for {{{{user}}}}."""
+{canon_rule} Do not invent facts beyond the source or current card.
+Do not write actions or dialogue for {{{{user}}}}.
+If the character is under 18 or reads as a minor, write no sexual content and leave kinks, personal_parts and sexual_attraction empty."""
 
     # User: build the task
     template_text = templates.get("field_regeneration_template", "").strip()
@@ -814,7 +1095,7 @@ Do not write actions or dialogue for {{{{user}}}}."""
         if field_name == "structured_profile":
             parts += [
                 'Return this shape exactly:',
-                '{"structured_profile": {"sex":"","ethnicity":"","race":"","job_occupation":"","gender":"","sexual_attraction":"","pronouns":"","appearance":[],"non_human_appearance":[],"personal_parts":[],"clothing":[],"accessories":[],"relationship_to_user":"","relationship_status":"","backstory":"","speech":[],"personality_traits":[],"kinks":[],"likes":[],"dislikes":[],"loves":[],"hates":[],"height":"","weight":"","age":""}}',
+                '{"structured_profile": {"sex":"","ethnicity":"","race":"","job_occupation":"","gender":"","sexual_attraction":"","pronouns":"","appearance":[],"non_human_appearance":[],"personal_parts":[],"clothing":[],"accessories":[],"relationship_to_user":"","relationship_status":"","backstory":"","speech":[],"personality_traits":[],"kinks":[],"likes":[],"dislikes":[],"loves":[],"hates":[],"height":"","weight":"","age":"","species":"","story_point":"","motivations":[],"flaws":[],"mannerisms":[],"relationships":[]}}',
             ]
         elif field_name in structured_subfields:
             if field_name in list_subfields:
@@ -846,6 +1127,13 @@ Do not write actions or dialogue for {{{{user}}}}."""
                 'Return this shape: {"mes_example": "<START>\\n{{char}}: ...\\n\\n<START>\\n{{char}}: ..."}',
                 "Rules: 3-6 examples. Format: <START>\\n{{char}}: line\\n\\n<START>\\n{{char}}: line — TWO newlines (\\n\\n) between blocks. Never run <START> onto same line as previous dialogue. Show different moods. No {{user}} lines.",
             ]
+        elif field_name == "depth_prompt":
+            parts += ['Return this shape: {"depth_prompt": ""}',
+                      "Rules: the Character's Note SillyTavern injects deep in the chat: 1-3 short sentences (max ~60 tokens) "
+                      "restating the traits and speech habits that matter most. Third person, present tense."]
+        elif field_name == "system_prompt":
+            parts += ['Return this shape: {"system_prompt": ""}',
+                      "Rules: short roleplay instructions for this character (2-5 sentences). Never control {{user}}."]
         else:
             parts += [f'Return this shape: {{"{field_name}": ""}}']
 
@@ -899,6 +1187,7 @@ def generate_lore_entry(
     purpose: str = "Create lorebook entries from this wiki page.",
     criteria: str = "The page must be a detailed article about a specific subject, not a list or category page.",
     extraction_notes: str = "Focus on relationships, affiliations, and worldbuilding context. Ignore gameplay mechanics.",
+    deep: bool = False,
 ) -> Dict[str, Any]:
     """
     Generate one or more lore entries from a source page.
@@ -913,6 +1202,17 @@ def generate_lore_entry(
     The valid/reason pattern lets the model
     explicitly skip bad pages rather than generating garbage entries.
     """
+    if deep:
+        # Multi-pass extraction (inventory -> gleaning -> name check -> details -> events).
+        # Slower (several calls per ~4k chars) but does not stall at a handful of entries.
+        from lore_extract import source_to_text
+        from text_module import deep_entries_from_text
+        page_text = source_to_text(source)
+        if len(page_text.strip()) < 200:
+            return {"valid": False, "reason": "Not enough text on the page for deep extraction.", "entries": []}
+        return {"valid": True, "reason": None,
+                "entries": deep_entries_from_text(page_text, provider, model)}
+
     # Build source content - prefer structured normalized data, fall back to raw text
     normalized = source.get("normalized", {})
     title = source.get("title") or normalized.get("title") or source.get("url", "")

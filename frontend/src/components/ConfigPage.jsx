@@ -27,6 +27,7 @@
  */
 
 import { useState, useEffect } from "react";
+import AdminPanels from "./AdminPanels";
 
 const DEFAULT_CHAR_TEMPLATE = `You are converting scraped fandom wiki data into a SillyTavern character card.
 
@@ -83,6 +84,7 @@ export default function ConfigPage({ t = {}, showToast }) {
     use_templates: false,
     temperature: 0.7,
     max_tokens: 4096,
+    extract_max_tokens: 8000,
   });
   const [envKeys, setEnvKeys] = useState({
     NANOGPT_API_KEY: "",
@@ -210,27 +212,46 @@ export default function ConfigPage({ t = {}, showToast }) {
 
           {/* Max Tokens */}
           <div>
-            <label style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>
-              Max Tokens
-            </label>
-            <select
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em" }}>Max Tokens</label>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>{(templates.max_tokens ?? 4096).toLocaleString()}</span>
+            </div>
+            <input
+              type="range" min="512" max="16384" step="256"
               value={templates.max_tokens ?? 4096}
               onChange={e => setTemplates(p => ({ ...p, max_tokens: parseInt(e.target.value) }))}
-              style={{
-                width: "100%", padding: "8px 10px",
-                border: "1px solid var(--signal-border)",
-                background: "var(--signal-bg-field)",
-                color: "var(--signal-text)",
-                fontFamily: "inherit", fontSize: 13,
-              }}
-            >
-              <option value={1024}>1024 — fast / cheap</option>
-              <option value={2048}>2048 — balanced</option>
-              <option value={4096}>4096 — default</option>
-              <option value={8192}>8192 — long responses</option>
-            </select>
+              style={{ width: "100%", accentColor: "var(--signal-text)" }}
+            />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--signal-text-dim)", marginTop: 4 }}>
+              <span>512 — fast / cheap</span>
+              <span>16384 — long</span>
+            </div>
             <div style={{ fontSize: 10, color: "var(--signal-text-dim)", marginTop: 4 }}>
-              Higher = longer output, more tokens used
+              Output limit for cards, fields and quick lore. Higher = longer output, more tokens used.
+            </div>
+          </div>
+
+          {/* Deep extraction max tokens */}
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em" }}>Deep Extraction Max Tokens</label>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>{(templates.extract_max_tokens ?? 8000).toLocaleString()}</span>
+            </div>
+            <input
+              type="range" min="1024" max="32768" step="512"
+              value={templates.extract_max_tokens ?? 8000}
+              onChange={e => setTemplates(p => ({ ...p, extract_max_tokens: parseInt(e.target.value) }))}
+              style={{ width: "100%", accentColor: "var(--signal-text)" }}
+            />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--signal-text-dim)", marginTop: 4 }}>
+              <span>1024</span>
+              <span>32768</span>
+            </div>
+            <div style={{ fontSize: 10, color: "var(--signal-text-dim)", marginTop: 4 }}>
+              Output limit for each Deep extraction call (TEXT studio and LORE's Deep Extraction). Each entity costs about
+              200 tokens, so this fits roughly {Math.floor((templates.extract_max_tokens ?? 8000) / 200)} per call. Detail calls batch 5 entities, so
+              4096+ is plenty; raise it if inventory lists get cut off. Reasoning models spend part of this on thinking.
+              If your model or provider caps output lower, requests may fail: lower this value.
             </div>
           </div>
         </div>
@@ -318,7 +339,7 @@ export default function ConfigPage({ t = {}, showToast }) {
           {[
             { key: "NANOGPT_API_KEY", label: t.nanogptKey || "NanoGPT API Key", placeholder: "sk-...", isKey: true },
             { key: "OPENROUTER_API_KEY", label: t.openrouterKey || "OpenRouter API Key", placeholder: "sk-or-...", isKey: true },
-            { key: "NANOGPT_MODEL", label: t.nanogptModel || "Default NanoGPT Model", placeholder: "zai-org/glm-4.7:thinking", isKey: false },
+            { key: "NANOGPT_MODEL", label: t.nanogptModel || "Default NanoGPT Model", placeholder: "deepseek/deepseek-v4.1-flash", isKey: false },
             { key: "OPENROUTER_MODEL", label: t.openrouterModel || "Default OpenRouter Model", placeholder: "openai/gpt-4o-mini", isKey: false },
             { key: "LOCAL_OPENAI_BASE_URL", label: "Local Server Base URL", placeholder: "http://localhost:1234/v1", isKey: false },
             { key: "LOCAL_MODEL", label: "Local Model Name", placeholder: "local-model", isKey: false },
@@ -337,6 +358,7 @@ export default function ConfigPage({ t = {}, showToast }) {
                 />
                 {isKey && (
                   <button onClick={() => setShowKeys(p => ({ ...p, [key]: !p[key] }))}
+                    aria-label={showKeys[key] ? `Hide ${label}` : `Show ${label}`}
                     style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
                       background: "none", border: "none", cursor: "pointer", color: "var(--signal-text-dim)", fontSize: 13 }}>
                     {showKeys[key] ? "◎" : "○"}
@@ -347,6 +369,9 @@ export default function ConfigPage({ t = {}, showToast }) {
           ))}
         </div>
 
+        <div style={{ fontSize: 11, color: "var(--signal-text-dim)", marginTop: 10 }}>
+          Saved keys are shown masked (only the last 4 characters). Leave them as they are to keep them, or type a new key to replace one.
+        </div>
         <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
           <button className="signal-btn" onClick={saveEnv} disabled={savingEnv}
             style={{ ...btnStyle, opacity: savingEnv ? 0.5 : 1, background: "var(--signal-btn-active-bg)", color: "var(--signal-text-inv)" }}>
@@ -354,6 +379,8 @@ export default function ConfigPage({ t = {}, showToast }) {
           </button>
         </div>
       </section>
+
+      <AdminPanels showToast={showToast} t={t} />
     </div>
   );
 }

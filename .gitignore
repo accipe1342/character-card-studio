@@ -1,42 +1,62 @@
+# ─────────────────────────────────────────────────────────────
+# Character Card Studio — files that must never be committed
+# ─────────────────────────────────────────────────────────────
+
+# Secrets: API keys live in .env (copy _env.example to start)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Your data: cards, lore, texts and their backups
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
 # Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 .venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
 
-# Secrets
-.env
-
-# Database
-*.db
-*.sqlite
-
-# Config with keys/settings
-config/settings.json
-
-# Old template files
-fandom_chars
-generated_cards/
-prompt_templates
-field_regeneration_template
-character_generation_template
-
-# Node
+# Node / Vite
 node_modules/
-
-# Build output
 dist/
+dist-ssr/
+*.local
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# OS
+# Test output (browser test screenshots)
+tests/e2e/out/
+
+# Logs
+*.log
+logs/
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
-# Runtime data
-data/
-data/fandom_chars.db
-data/flask.log
+desktop.ini
 
-# Env
-.env
-
-# Scripts output
-scripts/*.log
+# Local exports and bundles you download from the app
+*-deeplore.zip
+card-studio-bundle-*.zip

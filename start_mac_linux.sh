@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-set -e
+# Old launcher kept for people who still run it. It used to run "python app.py" from the wrong folder.
+# start.sh is the real launcher (venv, dependencies, backend + frontend).
 cd "$(dirname "$0")"
-if [ ! -d .venv ]; then
-  python3 -m venv .venv
-fi
-source .venv/bin/activate
-pip install -r requirements.txt
-[ -f .env ] || cp .env.example .env
-python app.py
+echo "This launcher is outdated - starting start.sh instead..."
+exec ./start.sh "$@"

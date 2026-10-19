@@ -6,6 +6,129 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.4.0] - 2026-10-18
+
+### Added
+- SillyTavern World Info: every entry setting is stored and exported (JSON lorebook and the card's embedded
+  character_book): position (↑/↓ Char, ↑/↓ AN, @Depth with role, ↑/↓ EM), sticky, cooldown, delay, probability,
+  secondary keys with AND ANY / AND ALL / NOT ANY / NOT ALL, inclusion groups (weight, prioritize), character filter,
+  vectorized, constant. LORE editor: "Advanced SillyTavern settings" (empty = the default for the entry type).
+- Character entries are sticky for 2 messages by default (r/SillyTavernAI tip).
+- TEXT → LORE adds an always-on **Cast Roster** (main and supporting characters) and a **Relationships** tracker
+  ("A & B: cousins; rivals") built from the reviewed relationships.
+- TEXT: the Story So Far can be placed before the card or at depth 4 as a system note.
+- TEXT: re-sending UPDATES the LORE project made last time: hand-edited entries are kept, the rest refreshed, new ones
+  added, ones no longer kept go to the LORE trash. Shift-click makes a separate new project.
+- TEXT: ⚇ CARDS FOR MAIN CAST writes a card for every kept main character (set at the starting point, lorebook-aware),
+  plus an optional group card.
+- TEXT: + ADD TEXT appends new chapters or a SillyTavern chat (.jsonl) to a project; only the new chunks are extracted.
+- TEXT: SillyTavern chat exports (.jsonl) can be loaded as a source (a roleplay becomes lore like a fic).
+- TEXT: wiki pages (Fandom, Wikipedia, any /wiki/ link) are read through the wiki's API: infobox, sections and lists,
+  no navboxes or references.
+- AI recap: long stories are condensed in tiers (older parts become arc summaries first, recent parts stay detailed).
+- Critic: ▤ CHAPTER SWEEP scores every part on its own (weakest first), a score history across critiques, and
+  ✎ REWRITE THE PASSAGE on any quoted problem or line fix (finds the paragraph in your text and rewrites it).
+- LORE: ▶ Test Activation — paste chat text and see which entries SillyTavern would insert, why (key, recursion,
+  constant), and which the token budget or an inclusion group would cut.
+- LORE: ⌘ Links — which entries pull in which by recursion, unlinked entries, entries that never fire, mutual pairs.
+- LORE: trash with restore / delete for good / empty (deletes and "Clear entries" are restorable), an EDITED badge,
+  an always-on token budget meter, keyboard review (J/K move, X delete, U undo delete, Ctrl+S save).
+- CHARACTER: V3 JSON export (PNG exports already carry both V2 `chara` and V3 `ccv3`). Generation options: story point,
+  who {{user}} is, size (small/lean/standard/rich), style (prose/PList), in-depth mode (bible → card → check);
+  Character's Note and System Prompt fields; static card AUDIT; per-field undo/redo.
+- Config: model presets per task (extraction, critic, cards, lore), database backups (one per start at most hourly,
+  newest 12 kept, BACK UP NOW, RESTORE with a safety backup first), model usage (calls and tokens per model),
+  project bundles (.zip of TEXT/LORE projects and cards with ready-to-use SillyTavern JSON; import adds as new).
+- Ctrl+K search across cards, lore entries, TEXT projects and reviewed entities; Enter opens the hit in its studio.
+- Closing the tab while a job runs or an edit isn't saved asks first.
+- Interface strings for the new controls in EN / 日本語 / 中文; aria-labels on icon buttons; visible keyboard focus rings;
+  LORE and TEXT layouts stack on narrow windows.
+- tests/e2e: the browser tests (mock backend, no API key) with `run_all.py`.
+
+### Changed
+- Jobs survive in SQLite: a backend restart marks running jobs as interrupted instead of losing them.
+- 429 rate limits wait for the provider's Retry-After.
+- Saved API keys are shown masked in Config; saving the masked value keeps the key.
+- The narrator card stores its rules in the card's System Prompt instead of folding them into the description.
+- Insertion Order hint corrected: higher = closer to the chat, more influence, kept first under the budget.
+- Code split: lore_routes.py, lore_tools.py, critic_tools.py, admin_routes.py, bundle_routes.py, search_routes.py;
+  CriticPanel.jsx, LoreTools.jsx, AdminPanels.jsx, SearchModal.jsx.
+- Old helper scripts (start_windows.bat, setup_windows.bat, start_mac_linux.sh) now forward to start/setup.
+- Clearer button names. TEXT: RE-MERGE → **Rebuild list** (no extraction calls, keeps your review);
+  RE-CHUNK → **Resplit text**, moved under Chunk size with a red outline and a confirmation that says how much
+  extraction it deletes; PARALLEL CHUNKS → **Chunks at once**. LORE: Generate Entry → **Generate from URL**,
+  Multiple Pages → **Several URLs**, Export Lorebook → **SillyTavern (.json)**, Clear entries → **Trash all entries**,
+  Insertion Order → **Order (priority)**, Entry Depth → **Depth (@Depth only)**. Translated in 日本語 / 中文.
+
+### Fixed
+- The cast card overwrote the first member's card; it is saved as a new card.
+- Renaming a card from its title field silently failed (missing import).
+- The AI recap kept the earliest part summaries when the input was too long; it now keeps the latest.
+- Lore project entry counts included deleted entries.
+
+### Removed
+- Legacy server-rendered pages (/library, /config, /env, /card/…): the React app replaces them.
+
+## [2.3.x] - earlier changes (previously "Unreleased")
+
+### Added
+- TEXT review: trash with restore, UNDO DELETE, and EMPTY TRASH (deletes are restorable now).
+- TEXT review: keyboard shortcuts (J/K or arrows move, X keep/skip, Del to trash, U undo, Ctrl+S save).
+- TEXT review: re-extract / re-merge keep your work (hand edits, trash, keep/skip choices, manual merges).
+- TEXT: redo a single chunk (↻ in the chunk list) with the selected model.
+- TEXT: live chunk progress while extracting, and a time estimate in the job message.
+- TEXT: importance tiers (MAIN / SUP / 1×) with one-offs collapsed; one-off items/abilities start skipped.
+- TEXT: fic-specific flag (FIC = original to the story, ALT = changed from canon), filter, and an origin field in the editor;
+  sent to LORE as "Original to this story:" / "In this story (differs from canon):".
+- TEXT: relationships per character (extracted, editable), appended to the character's lore entry.
+- TEXT: Story So Far editor with a starting point ("roleplay starts after chunk N"); recap and timeline stop there.
+- TEXT: → MAKE CARD sends a reviewed character to the CHARACTER studio as a source, ready for Generate Card.
+- TEXT: ⚑ WORLD NARRATOR CARD builds a narrator/game-master V2 card with the story's lore embedded (also saved to the library).
+- CHARACTER: attach a LORE project to exported cards (JSON and PNG) as the card's own lorebook (character_book).
+- LORE: DeepLore export (.zip of markdown notes with keys, priority and a "When to select" summary).
+- TEXT: CRITIC panel under Text Sources: a brutally honest critique (verdict, scores, ranked problems with quotes,
+  step-by-step plan, line rewrites), whole text or one chapter, optional focus, own model; history, full view, .md download.
+- TEXT: ✦ WRITE RECAP WITH AI: one always-on Story So Far entry in [HEADER] / [BODY - CHAPTER LOG] / [FOOTER - CURRENT STATUS] layout.
+- TEXT: events moved to a collapsed TIMELINE section in story order (they are timeline lines, not lore entries).
+- LORE: entries autosave (and switching entries never loses edits), list badges (NO KEYS, EMPTY, DUP, ALWAYS ON),
+  token estimates, Clean Keywords (preview, then apply), dismissible errors, failed jobs shown.
+- CHARACTER: cards autosave with a saved/editing indicator.
+- backend/tests: pytest suite (cleaning, chunking, filters, the full TEXT → LORE flow, cards and exports).
+- TEXT studio: ingest fic text/files/URLs, chunk, deep-extract entities and events, review, send to LORE.
+- Parallel extraction (1-6 workers, default 3), double-start guard, call estimate.
+- Step-by-step `[TEXT]` / `[DEEP]` terminal logging with timings.
+- Per-project lorebook export with layered default order and `order_manual` tracking.
+- Max-token sliders.
+- TEXT review: autosaving editor that keeps your place, PREV/NEXT, bulk keep/skip/delete, and DUP / EMPTY / JUNK? / NO KEYS flags with select-and-delete and merge-duplicates.
+- TEXT studio defaults NanoGPT to deepseek/deepseek-v4.1-flash.
+
+### Changed
+- Default NanoGPT model is now deepseek/deepseek-v4.1-flash everywhere (was a slow thinking model).
+- Sending to LORE: events no longer become one entry each. They roll up into an always-on "Story So Far" recap (constant) and one "Story Timeline" entry.
+- Trigger keywords are cleaned on send: generic words and other entries' names are removed, so "Yuna" no longer fires 240 entries.
+- Extraction prompt and filter skip body parts, acts, feelings and generic scenery; events must be plot-significant.
+- A failed events step keeps the inventory event titles instead of saving 0 events.
+- Chub-compatible V2 card export.
+- Generator settings read at call time (no restart needed after saving Config).
+- Repeated sends to LORE get distinct project names.
+- Missing ids return 404 instead of a 500.
+
+### Fixed
+- LORE: changing an entry's type in the editor was never saved.
+- LORE: "Clear entries" recreated the project with a new id, breaking TEXT links and card lorebook attachments; it now empties it in place.
+- CHARACTER: Generate Card on a source that already has a card replaced that card; it now saves a new card and keeps the old one.
+- A 404 from an outdated backend now says to restart the backend instead of showing raw HTML.
+- Chunks whose events step failed are retried by a normal Extract (no force needed).
+- Editing or merging an entry in review now refreshes its one-line summary.
+- Duplicate trigger keywords that differ only in case are removed on send.
+- Chunking: strict chapter detection, fic-page boilerplate removal, duplicate section/chunk/page dedupe.
+- U+FFFD and mojibake repair on ingest.
+
+### Security
+- Host/Origin guard, whitelisted `.env` editor, SSRF-hardened image proxy.
+
+---
+
 ## [2.3.1] — 2026-06-17
 
 ### Changed

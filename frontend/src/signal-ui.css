@@ -643,6 +643,28 @@ html[data-theme="dark"] button.signal-fetch-btn.signal-fetch-btn-loading {
    RESPONSIVE LAYOUT
    ---------------------------------------------------------- */
 
+/* LORE studio: projects | (entry list | editor) */
+.lore-grid-projects { grid-template-columns: 220px minmax(0, 1fr); }
+.lore-grid-editor { grid-template-columns: 280px minmax(0, 1fr); }
+@media (max-width: 1180px) {
+  .lore-grid-editor { grid-template-columns: 1fr; }
+  .lore-grid-editor > section { position: static !important; }
+}
+@media (max-width: 760px) {
+  .lore-grid-projects { grid-template-columns: 1fr; }
+}
+/* TEXT studio: three columns get too narrow below ~1100px */
+@media (max-width: 1100px) {
+  .signal-main-grid.text-grid { grid-template-columns: 1fr !important; }
+}
+
+/* keyboard focus: a visible ring on every button-like control (mouse clicks don't show it) */
+.signal-btn:focus-visible, button:focus-visible, select:focus-visible, input[type="checkbox"]:focus-visible,
+[role="option"]:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--signal-text, #2b2b2b);
+  outline-offset: 2px;
+}
+
 @media (max-width: 700px) {
   /* Stack main Preview + Character System columns */
   .signal-main-grid {

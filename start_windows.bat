@@ -1,10 +1,6 @@
 @echo off
+rem Old launcher kept for people who still double-click it. It used to run "python app.py" from the
+rem wrong folder. start.bat is the real launcher (venv, dependencies, backend + frontend).
 cd /d "%~dp0"
-if not exist .venv (
-  echo Virtual environment not found. Please run setup_windows.bat first.
-  pause
-  exit /b 1
-)
-call .venv\Scripts\activate.bat
-python app.py
-pause
+echo This launcher is outdated - starting start.bat instead...
+call start.bat

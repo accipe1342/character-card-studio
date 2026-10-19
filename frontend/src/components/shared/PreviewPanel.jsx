@@ -15,8 +15,8 @@
  *
  * EXPORT BEHAVIOUR
  * ----------------
- * Clicking Export calls POST /api/card/:id/export/png which returns
- * a PNG with the SillyTavern metadata embedded as a tEXt chunk
+ * Clicking Export builds a Character Card V2 via POST /api/export/v2 and embeds
+ * it client-side in the PNG as a tEXt chunk
  * (key: "chara", value: base64-encoded V2 card JSON). This is the
  * format SillyTavern expects for character card imports.
  *
@@ -38,6 +38,7 @@
  */
 
 import { useRef, useState } from "react";
+import { exportCardV2 } from "../../lib/api";
 
 // ── PNG tEXt chunk injector ───────────────────────────────────────────────────
 // SillyTavern expects: tEXt chunk with key="chara", value=base64(JSON)
@@ -81,10 +82,10 @@ function makeTEXtChunk(keyword, text) {
   return chunk;
 }
 
-function injectCharaChunk(pngBytes, cardJson) {
-  // base64-encode the JSON (SillyTavern spec)
+function injectCharaChunk(pngBytes, cardJson, keyword = "chara") {
+  // base64-encode the JSON (SillyTavern spec). "chara" = V2 (what SillyTavern reads), "ccv3" = Card V3
   const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(cardJson))));
-  const textChunk = makeTEXtChunk("chara", b64);
+  const textChunk = makeTEXtChunk(keyword, b64);
 
   // Find IEND chunk (last 12 bytes of a valid PNG)
   const iend = new Uint8Array([73, 69, 78, 68]); // "IEND"
@@ -107,7 +108,7 @@ function injectCharaChunk(pngBytes, cardJson) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card, t = {} }) {
+export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card, viewMode: studioMode = "natural", t = {}, loreProjectId = null }) {
   const canvasRef = useRef(null);
   const [includeFields, setIncludeFields] = useState(false);
   const [viewMode, setViewMode] = useState("natural");
@@ -260,7 +261,10 @@ export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card,
       const pngBytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) pngBytes[i] = binary.charCodeAt(i);
 
-      const withMeta = injectCharaChunk(pngBytes, card);
+      // Embed a proper Character Card V2 (not the raw editor object)
+      const v2 = await exportCardV2(card, studioMode, loreProjectId);   // embeds the chosen lorebook, if any
+      const v3 = await exportCardV2(card, studioMode, loreProjectId, "v3");
+      const withMeta = injectCharaChunk(injectCharaChunk(pngBytes, v2, "chara"), v3, "ccv3");
       const blob = new Blob([withMeta], { type: "image/png" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

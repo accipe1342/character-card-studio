@@ -62,6 +62,7 @@ DB_PATH = str(Path(__file__).resolve().parent.parent / "data" / "fandom_chars.db
 
 DEFAULT_STRUCTURED_PROFILE = {
     "sex": "",
+    "species": "",
     "ethnicity": "",
     "race": "",
     "job_occupation": "",
@@ -86,6 +87,11 @@ DEFAULT_STRUCTURED_PROFILE = {
     "height": "",
     "weight": "",
     "age": "",
+    "story_point": "",
+    "motivations": [],
+    "flaws": [],
+    "mannerisms": [],
+    "relationships": [],
 }
 
 
@@ -228,6 +234,28 @@ def init_db() -> None:
     for migration in [
         "ALTER TABLE lore_crawls ADD COLUMN project_name TEXT DEFAULT 'Untitled Project'",
         "ALTER TABLE cards ADD COLUMN alternate_greetings_json TEXT DEFAULT '[]'",
+        # card fields SillyTavern uses that the editor never stored
+        "ALTER TABLE cards ADD COLUMN system_prompt TEXT DEFAULT ''",
+        "ALTER TABLE cards ADD COLUMN depth_prompt TEXT DEFAULT ''",        # Character's Note
+        "ALTER TABLE cards ADD COLUMN creator_notes TEXT DEFAULT ''",
+        "ALTER TABLE cards ADD COLUMN post_history TEXT DEFAULT ''",
+        # full World Info fields per lore entry (NULL = use the type default at export)
+        "ALTER TABLE lore_entries ADD COLUMN constant INTEGER",
+        "ALTER TABLE lore_entries ADD COLUMN position INTEGER",
+        "ALTER TABLE lore_entries ADD COLUMN role INTEGER DEFAULT 0",
+        "ALTER TABLE lore_entries ADD COLUMN probability INTEGER DEFAULT 100",
+        "ALTER TABLE lore_entries ADD COLUMN sticky INTEGER",
+        "ALTER TABLE lore_entries ADD COLUMN cooldown INTEGER DEFAULT 0",
+        "ALTER TABLE lore_entries ADD COLUMN delay INTEGER DEFAULT 0",
+        "ALTER TABLE lore_entries ADD COLUMN secondary_keys_json TEXT DEFAULT '[]'",
+        "ALTER TABLE lore_entries ADD COLUMN selective_logic INTEGER DEFAULT 0",
+        "ALTER TABLE lore_entries ADD COLUMN char_filter_json TEXT DEFAULT '[]'",
+        "ALTER TABLE lore_entries ADD COLUMN vectorized INTEGER DEFAULT 0",
+        "ALTER TABLE lore_entries ADD COLUMN group_name TEXT DEFAULT ''",
+        "ALTER TABLE lore_entries ADD COLUMN group_weight INTEGER DEFAULT 100",
+        "ALTER TABLE lore_entries ADD COLUMN group_prioritize INTEGER DEFAULT 0",
+        "ALTER TABLE lore_entries ADD COLUMN deleted INTEGER DEFAULT 0",       # trash
+        "ALTER TABLE lore_entries ADD COLUMN user_edited INTEGER DEFAULT 0",   # hand-edited in LORE: re-send keeps it
         "ALTER TABLE lore_entries ADD COLUMN scan_depth INTEGER DEFAULT 2",
         "ALTER TABLE lore_entries ADD COLUMN insertion_order INTEGER DEFAULT 100",
         "ALTER TABLE lore_entries ADD COLUMN entry_depth INTEGER DEFAULT 4",
@@ -237,6 +265,20 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass  # Column already exists
+
+    # one-time: remember which entries had their order set by hand, so export can tell
+    # "left at the default 100" from "chose 100" (see api_export_lorebook)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(lore_entries)")}
+    conn.execute("""CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY, data_json TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS model_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT CURRENT_TIMESTAMP, provider TEXT, model TEXT,
+        prompt_tokens INTEGER DEFAULT 0, completion_tokens INTEGER DEFAULT 0, seconds REAL DEFAULT 0)""")
+    conn.commit()
+    if "order_manual" not in cols:
+        conn.execute("ALTER TABLE lore_entries ADD COLUMN order_manual INTEGER DEFAULT 0")
+        conn.execute("UPDATE lore_entries SET order_manual = 1 WHERE insertion_order IS NOT NULL AND insertion_order != 100")
+        conn.commit()
 
     conn.close()
 
@@ -276,15 +318,16 @@ def save_source(source: Dict[str, Any]) -> int:
 
 
 def create_or_update_card(
-    source_id: int, card_data: Dict[str, Any], card_id: int | None = None
+    source_id: int, card_data: Dict[str, Any], card_id: int | None = None, force_new: bool = False
 ) -> int:
+    """Update card_id (or the latest card made from this source); force_new always inserts a new card."""
     conn = _conn()
     cur = conn.cursor()
 
     structured_profile = card_data.get("structured_profile", DEFAULT_STRUCTURED_PROFILE)
     tags = card_data.get("tags", [])
 
-    if card_id is None:
+    if card_id is None and not force_new:
         cur.execute(
             "SELECT id FROM cards WHERE source_id = ? ORDER BY id DESC LIMIT 1",
             (source_id,),
@@ -300,8 +343,8 @@ def create_or_update_card(
             INSERT INTO cards (
                 source_id, name, structured_profile_json, description, personality,
                 scenario, first_mes, mes_example, tags_json, provider, model,
-                alternate_greetings_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                alternate_greetings_json, system_prompt, depth_prompt, creator_notes, post_history
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 source_id,
@@ -316,6 +359,10 @@ def create_or_update_card(
                 card_data.get("provider", "nanogpt"),
                 card_data.get("model", ""),
                 json.dumps(alternate_greetings, ensure_ascii=False),
+                card_data.get("system_prompt", "") or "",
+                card_data.get("depth_prompt", card_data.get("character_note", "")) or "",
+                card_data.get("creator_notes", "") or "",
+                card_data.get("post_history", card_data.get("post_history_instructions", "")) or "",
             ),
         )
         conn.commit()
@@ -336,6 +383,10 @@ def create_or_update_card(
                 provider = ?,
                 model = ?,
                 alternate_greetings_json = ?,
+                system_prompt = COALESCE(?, system_prompt),
+                depth_prompt = COALESCE(?, depth_prompt),
+                creator_notes = COALESCE(?, creator_notes),
+                post_history = COALESCE(?, post_history),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
@@ -351,6 +402,10 @@ def create_or_update_card(
                 card_data.get("provider", "nanogpt"),
                 card_data.get("model", ""),
                 json.dumps(alternate_greetings, ensure_ascii=False),
+                card_data.get("system_prompt"),          # None = keep what is stored
+                card_data.get("depth_prompt", card_data.get("character_note")),
+                card_data.get("creator_notes"),
+                card_data.get("post_history", card_data.get("post_history_instructions")),
                 card_id,
             ),
         )
@@ -453,7 +508,7 @@ def list_lore_projects() -> list[Dict[str, Any]]:
         SELECT lc.id, lc.project_name, lc.seed_url, lc.created_at,
                COUNT(le.id) as entry_count
         FROM lore_crawls lc
-        LEFT JOIN lore_entries le ON le.crawl_id = lc.id
+        LEFT JOIN lore_entries le ON le.crawl_id = lc.id AND COALESCE(le.deleted, 0) = 0
         GROUP BY lc.id
         ORDER BY lc.created_at DESC
     """)
@@ -500,7 +555,9 @@ def save_lore_entry(
     content: str,
     provider: str = "",
     model: str = "",
+    **wi,
 ) -> int:
+    """wi: optional World Info fields (constant, position, role, sticky, ...) — see set_lore_wi_fields."""
     conn = _conn()
     cur = conn.cursor()
     cur.execute(
@@ -532,7 +589,33 @@ def save_lore_entry(
     conn.commit()
     lore_id = cur.lastrowid
     conn.close()
+    if wi:
+        set_lore_wi_fields(lore_id, wi)
     return lore_id
+
+
+WI_FIELDS = {"constant", "position", "role", "probability", "sticky", "cooldown", "delay", "selective_logic",
+             "vectorized", "group_name", "group_weight", "group_prioritize", "secondary_keys", "char_filter",
+             "scan_depth", "entry_depth", "insertion_order", "order_manual", "user_edited"}
+
+
+def set_lore_wi_fields(lore_id: int, fields: Dict[str, Any]) -> None:
+    sets, vals = [], []
+    for k, v in fields.items():
+        if k not in WI_FIELDS:
+            continue
+        if k in ("secondary_keys", "char_filter"):
+            sets.append(f"{k if k != 'secondary_keys' else 'secondary_keys'}_json = ?")
+            vals.append(json.dumps([str(x).strip() for x in (v or []) if str(x).strip()], ensure_ascii=False))
+        else:
+            sets.append(f"{k} = ?")
+            vals.append(v)
+    if not sets:
+        return
+    conn = _conn()
+    conn.execute(f"UPDATE lore_entries SET {', '.join(sets)} WHERE id = ?", vals + [lore_id])
+    conn.commit()
+    conn.close()
 
 
 def get_lore_entry(lore_id: int) -> Dict[str, Any]:
@@ -547,23 +630,31 @@ def get_lore_entry(lore_id: int) -> Dict[str, Any]:
 
     entry = dict(row)
     entry["keywords"] = json.loads(entry.get("keywords_json") or "[]")
+    for k in ("secondary_keys", "char_filter"):
+        try:
+            entry[k] = json.loads(entry.get(f"{k}_json") or "[]")
+        except Exception:
+            entry[k] = []
     entry.setdefault("scan_depth", 2)
     entry.setdefault("insertion_order", 100)
+    entry.setdefault("order_manual", 0)
     entry.setdefault("entry_depth", 4)
     return entry
 
 
-def list_lore_entries() -> list[Dict[str, Any]]:
-    conn = _conn()
-    cur = conn.cursor()
-    cur.execute(
-        """
+def list_lore_entries(crawl_id: int | None = None, deleted: bool = False) -> list[Dict[str, Any]]:
+    """All lore entries, or only those of one project when crawl_id is given. deleted=True lists the trash."""
+    sql = """
         SELECT
             le.id,
             le.crawl_id,
             le.title,
             le.entry_type,
             le.summary,
+            le.keywords_json,
+            LENGTH(COALESCE(le.content, '')) AS content_chars,
+            le.constant,
+            le.user_edited,
             le.provider,
             le.model,
             le.updated_at,
@@ -572,14 +663,24 @@ def list_lore_entries() -> list[Dict[str, Any]]:
             s.url AS source_url
         FROM lore_entries le
         LEFT JOIN sources s ON s.id = le.source_id
-        ORDER BY le.updated_at DESC, le.id DESC
-        """
-    )
+    """
+    sql += " WHERE COALESCE(le.deleted, 0) = ?"
+    params: tuple = (1 if deleted else 0,)
+    if crawl_id is not None:
+        sql += " AND le.crawl_id = ?"
+        params = params + (crawl_id,)
+    sql += " ORDER BY le.updated_at DESC, le.id DESC"
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute(sql, params)
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
 
     for row in rows:
-        row["keywords"] = json.loads(row.get("keywords_json") or "[]")
+        try:
+            row["keywords"] = json.loads(row.get("keywords_json") or "[]")
+        except Exception:
+            row["keywords"] = []
 
     return rows
 
@@ -644,3 +745,66 @@ def save_lore_crawl_page(
     page_id = cur.lastrowid
     conn.close()
     return page_id
+
+
+# ---------------------------------------------------------------------------
+# Jobs (persisted so progress survives a restart) and model usage
+# ---------------------------------------------------------------------------
+def save_job_row(job: Dict[str, Any]) -> None:
+    conn = _conn()
+    conn.execute("INSERT OR REPLACE INTO jobs (id, data_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                 (job["id"], json.dumps(job, ensure_ascii=False, default=str)))
+    conn.commit()
+    conn.close()
+
+
+def load_job_row(job_id: str) -> Dict[str, Any] | None:
+    conn = _conn()
+    row = conn.execute("SELECT data_json FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    conn.close()
+    return json.loads(row[0]) if row else None
+
+
+def mark_interrupted_jobs() -> int:
+    """At start-up: jobs still 'running'/'queued' were cut off by a restart."""
+    conn = _conn()
+    rows = conn.execute("SELECT id, data_json FROM jobs").fetchall()
+    n = 0
+    for jid, data in rows:
+        try:
+            job = json.loads(data)
+        except Exception:
+            continue
+        if job.get("status") in ("queued", "running"):
+            job.update(status="failed", stage="failed", progress=100,
+                       message="Interrupted: the backend restarted while this was running. Run it again.",
+                       error="Interrupted by a backend restart. Run it again.")
+            conn.execute("UPDATE jobs SET data_json = ? WHERE id = ?", (json.dumps(job, ensure_ascii=False, default=str), jid))
+            n += 1
+    conn.execute("DELETE FROM jobs WHERE updated_at < datetime('now', '-14 days')")
+    conn.commit()
+    conn.close()
+    return n
+
+
+def record_usage(provider: str, model: str, prompt_tokens: int, completion_tokens: int, seconds: float) -> None:
+    try:
+        conn = _conn()
+        conn.execute("INSERT INTO model_usage (provider, model, prompt_tokens, completion_tokens, seconds) VALUES (?,?,?,?,?)",
+                     (provider, model, int(prompt_tokens or 0), int(completion_tokens or 0), float(seconds or 0)))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass   # usage logging must never break a generation
+
+
+def usage_summary(days: int = 30) -> list[Dict[str, Any]]:
+    conn = _conn()
+    rows = conn.execute(
+        """SELECT provider, model, COUNT(*) AS calls, SUM(prompt_tokens) AS prompt_tokens,
+                  SUM(completion_tokens) AS completion_tokens, ROUND(SUM(seconds), 1) AS seconds,
+                  MAX(ts) AS last_used
+           FROM model_usage WHERE ts >= datetime('now', ?) GROUP BY provider, model ORDER BY calls DESC""",
+        (f"-{int(days)} days",)).fetchall()
+    conn.close()
+    return [dict(zip(("provider", "model", "calls", "prompt_tokens", "completion_tokens", "seconds", "last_used"), r)) for r in rows]

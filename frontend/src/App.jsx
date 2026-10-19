@@ -38,10 +38,13 @@ import ConfigPage from "./components/ConfigPage";
 import TopNav from "./components/TopNav";
 import CharacterStudio from "./components/studio/CharacterStudio";
 import LoreStudio from "./components/studio/LoreStudio";
+import TextStudio from "./components/studio/TextStudio";
+import SearchModal from "./components/SearchModal";
+import { anyBusy } from "./lib/leaveGuard";
 import { listCards, loadCard, deleteCard, renameCard, duplicateCard } from "./lib/api";
 
 export default function App() {
-  const [mode, setMode] = useState("character"); // "character" | "lore" | "config"
+  const [mode, setMode] = useState("character"); // "character" | "lore" | "text" | "config"
   const [modeDir, setModeDir] = useState("right");
   const [lang, setLang] = useState(() => localStorage.getItem("signal-lang") || "en");
   const t = useStrings(lang);
@@ -76,6 +79,41 @@ export default function App() {
   const [selectedField, setSelectedField] = useState("description");
   const [customPrompt, setCustomPrompt] = useState("");
   const [regenPreview, setRegenPreview] = useState(null);
+  const [handoff, setHandoff] = useState(null);   // TEXT "Make card" -> CHARACTER: {lore_project_id, story_point}
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [focus, setFocus] = useState(null);       // search hit to open: {kind: "lore"|"text", project_id, id}
+
+  // Ctrl+K / Cmd+K opens the search everywhere
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearchOpen(true); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  // closing the tab while a job runs or an edit isn't saved yet: ask first
+  useEffect(() => {
+    function onLeave(e) {
+      if (!anyBusy()) return;
+      e.preventDefault();
+      e.returnValue = t.unsavedLeave || "A job is running or changes are not saved yet. Leave anyway?";
+      return e.returnValue;
+    }
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, [t]);
+
+  function goTo(next) {
+    const modes = ["character", "lore", "text", "config"];
+    setModeDir(modes.indexOf(next) > modes.indexOf(mode) ? "right" : "left");
+    setMode(next);
+  }
+  async function openSearchHit(it) {
+    if (it.group === "cards") { await handleLoadCard(it.id); goTo("character"); }
+    else if (it.group === "lore") { setFocus({ kind: "lore", project_id: it.project_id, id: it.id }); goTo("lore"); }
+    else if (it.group === "entities") { setFocus({ kind: "text", project_id: it.project_id, id: it.id }); goTo("text"); }
+    else if (it.group === "texts") { setFocus({ kind: "text", project_id: it.id, id: null }); goTo("text"); }
+  }
 
   function showToast(msg) {
     setToast(msg);
@@ -235,6 +273,7 @@ export default function App() {
           </div>
           <button
             onClick={() => setLibraryOpen(false)}
+            aria-label="Close library"
             style={{
               background: "none",
               border: "1px solid var(--signal-border, #3a3a3a)",
@@ -346,6 +385,7 @@ export default function App() {
                       fontFamily: "inherit",
                     }}
                     title="Duplicate card"
+                    aria-label={`Duplicate ${c.name || "card"}`}
                   >
                     ⎘
                   </button>
@@ -362,6 +402,7 @@ export default function App() {
                       fontFamily: "inherit",
                     }}
                     title={deleteConfirm === c.id ? "Click again to confirm" : "Delete card"}
+                    aria-label={deleteConfirm === c.id ? `Confirm: delete ${c.name || "card"}` : `Delete ${c.name || "card"}`}
                   >
                     {deleteConfirm === c.id ? "Sure?" : "✕"}
                   </button>
@@ -373,14 +414,12 @@ export default function App() {
       </div>
 
       <div style={{ maxWidth: 1600, margin: "0 auto" }}>
+        <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} onPick={openSearchHit} t={t} />
         <TopNav
           mode={mode}
-          setMode={(next) => {
-            const modes = ["character", "lore"];
-            setModeDir(modes.indexOf(next) > modes.indexOf(mode) ? "right" : "left");
-            setMode(next);
-          }}
+          setMode={goTo}
           onLibrary={openLibrary}
+          onSearch={() => setSearchOpen(true)}
           lang={lang}
           setLang={setLang}
           t={t}
@@ -415,11 +454,31 @@ export default function App() {
             setCustomPrompt={setCustomPrompt}
             regenPreview={regenPreview}
             setRegenPreview={setRegenPreview}
+            pendingHandoff={handoff}
+            clearPendingHandoff={() => setHandoff(null)}
+          />
+        ) : mode === "text" ? (
+          <TextStudio
+            t={t}
+            showToast={showToast}
+            focus={focus?.kind === "text" ? focus : null}
+            clearFocus={() => setFocus(null)}
+            onOpenLore={() => { setModeDir("left"); setMode("lore"); }}
+            onMakeCard={({ source: src, source_id, lore_project_id, story_point }) => {
+              // a reviewed fic character becomes the CHARACTER studio's source, ready for Generate Card
+              setSource(src); setSourceId(source_id); setCard(null); setCardId(null); setUrl("");
+              setHandoff({ lore_project_id: lore_project_id || null, story_point: story_point || "" });
+              setModeDir("left"); setMode("character");
+              showToast(`${src?.title || "Character"} is ready: press Generate Card` +
+                (lore_project_id ? " (the story's lorebook will be attached)" : ""));
+            }}
           />
         ) : (
           <LoreStudio
             t={t}
             showToast={showToast}
+            focus={focus?.kind === "lore" ? focus : null}
+            clearFocus={() => setFocus(null)}
             url={url}
             setUrl={setUrl}
             source={source}

@@ -72,6 +72,7 @@ import PreviewPanel from "../shared/PreviewPanel";
 import SourcePanel from "../shared/SourcePanel";
 import RegenModal from "../shared/RegenModal";
 import MainJobStatus from "../shared/MainJobStatus";
+import { markBusy } from "../../lib/leaveGuard";
 import {
   getJob,
   regenerateField,
@@ -83,7 +84,52 @@ import {
   newBlankCard,
   fetchModels,
   getImageProxyUrl,
+  exportCardV2,
+  listLoreProjects,
+  getPresets,
+  renameCard,
 } from "../../lib/api";
+
+// ── static card audit (no model call): what would make this card weaker in SillyTavern ──
+function auditCard(card) {
+  const issues = [];
+  let score = 100;
+  const tok = (x) => Math.round(String(x || "").length / 4);
+  const add = (sev, msg, cost) => { issues.push([sev, msg]); score -= cost; };
+  for (const f of ["description", "personality", "scenario", "first_mes", "mes_example"]) {
+    if (!String(card[f] || "").trim()) add("high", `${f.replace("_", " ")} is empty`, 12);
+  }
+  const perm = tok(card.description) + tok(card.personality) + tok(card.scenario);
+  if (perm > 1500) add("med", `About ${perm} permanent tokens: trim the description or move world detail into a lorebook`, 8);
+  if (card.description && tok(card.description) < 60) add("med", "Description is very short", 5);
+  const mes = String(card.mes_example || "").trim();
+  if (mes && !mes.startsWith("<START>")) add("med", "Example messages don't start with <START>", 6);
+  if (/<START>[^\n]/.test(mes)) add("low", "A <START> marker is not on its own line", 3);
+  if (/(^|\n)\{\{user\}\}:/.test(mes)) add("low", "Example messages include {{user}} lines", 3);
+  const fm = String(card.first_mes || "");
+  if (/(^|\n)\s*\{\{user\}\}\s*:/.test(fm) || /\*\{\{user\}\}\s+\w+s\b/.test(fm)) add("high", "First message speaks or acts for {{user}}", 10);
+  if (tok(fm) > 400) add("low", "First message is long; replies tend to copy its length", 3);
+  const tags = Array.isArray(card.tags) ? card.tags : [];
+  if (tags.length < 10) add("low", `${tags.length} tags (aim for 10-20)`, 4);
+  if (!(card.alternate_greetings || []).length) add("low", "No alternate greetings", 2);
+  if (!String(card.depth_prompt || "").trim()) add("low", "No Character's Note (helps long chats stay in character)", 2);
+  const sent = (x) => new Set(String(x || "").toLowerCase().split(/[.!?]\s+/).map((y) => y.trim()).filter((y) => y.length > 25));
+  const a = sent(card.description), b = sent(card.personality);
+  let dup = 0; a.forEach((x) => { if (b.has(x)) dup += 1; });
+  if (dup >= 2) add("med", "Description and personality repeat the same sentences", 5);
+  const sp = card.structured_profile || {};
+  const ageNum = String(sp.age || "").match(/\d+/);
+  if (ageNum) {
+    const descAges = [...String(card.description || "").matchAll(/\b(\d{1,3})[- ]years?[- ]old\b/gi)].map((m) => m[1]);
+    if (descAges.length && !descAges.includes(ageNum[0])) add("high", `Age ${ageNum[0]} in the profile but ${descAges[0]} in the description`, 8);
+    if (parseInt(ageNum[0]) < 18 && ((sp.kinks || []).length || (sp.personal_parts || []).length || String(sp.sexual_attraction || "").trim()))
+      add("high", "Under-18 character has sexual profile fields filled", 20);
+  }
+  const first = String(card.name || "").split(" ")[0];
+  if (first && card.description && !card.description.includes(first) && !/\{\{char\}\}/.test(card.description))
+    add("low", "Description never names the character", 2);
+  return { score: Math.max(0, score), issues, perm };
+}
 
 export default function CharacterStudio({
   t = {},
@@ -108,9 +154,38 @@ export default function CharacterStudio({
   setSelectedField,
   customPrompt,
   setCustomPrompt,
+  pendingHandoff = null,        // from TEXT "Make card": {lore_project_id, story_point}
+  clearPendingHandoff,
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // lorebook embedded in exported cards (data.character_book); remembered per card
+  const [loreProjects, setLoreProjects] = useState([]);
+  const [attachLore, setAttachLore] = useState("");
+  useEffect(() => {
+    listLoreProjects().then((p) => setLoreProjects(p || [])).catch(() => {});
+    getPresets().then((p) => { if (p?.card?.model) { setProvider(p.card.provider || "nanogpt"); setModel(p.card.model); } }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    let v = "";
+    try { v = (cardId && localStorage.getItem(`ccs-card-lore-${cardId}`)) || ""; } catch {}
+    setAttachLore(v);
+  }, [cardId]);
+  useEffect(() => {
+    if (!pendingHandoff) return;
+    if (pendingHandoff.story_point) { setStoryPoint(pendingHandoff.story_point); setGenOpen(true); }
+  }, [pendingHandoff]);
+  useEffect(() => {   // once the card from a TEXT hand-off exists, attach that story's lorebook to it
+    if (pendingHandoff?.lore_project_id && cardId && card) {
+      chooseLore(String(pendingHandoff.lore_project_id));
+      clearPendingHandoff && clearPendingHandoff();
+    }
+  }, [cardId]);
+
+  function chooseLore(v) {
+    setAttachLore(v);
+    try { if (cardId) localStorage.setItem(`ccs-card-lore-${cardId}`, v); } catch {}
+  }
   const [mainJob, setMainJob] = useState(null);
   const [provider, setProvider] = useState("nanogpt");
   const [model, setModel] = useState("");
@@ -132,7 +207,21 @@ export default function CharacterStudio({
   const [batchUrls, setBatchUrls] = useState(["", ""]);
   const [batchResults, setBatchResults] = useState(null);
   // Fields that live at card top-level, not in structured_profile
-  const NATURAL_FIELDS = new Set(["description","personality","scenario","first_mes","mes_example","tags"]);
+  const NATURAL_FIELDS = new Set(["description","personality","scenario","first_mes","mes_example","tags","depth_prompt","system_prompt"]);
+  const FIELD_LABELS = { depth_prompt: "Character's Note", system_prompt: "System Prompt", story_point: "story point" };
+  const fieldLabel = (f) => (t.fields && t.fields[f]) || FIELD_LABELS[f] || f.replaceAll("_", " ");
+
+  // generation options (sent with Generate Card)
+  const [genOpen, setGenOpen] = useState(false);
+  const [storyPoint, setStoryPoint] = useState("");
+  const [userRole, setUserRole] = useState("");
+  const [tokenTarget, setTokenTarget] = useState("standard");
+  const [cardStyle, setCardStyle] = useState("prose");
+  const [deepGen, setDeepGen] = useState(false);
+  const [genWarnings, setGenWarnings] = useState([]);
+  const [audit, setAudit] = useState(null);
+  // per-field history of regenerations: undo / redo
+  const [fieldHistory, setFieldHistory] = useState({});   // field -> {undo: [], redo: []}
 
   function countTokens(text) {
     if (!text) return 0;
@@ -270,9 +359,19 @@ export default function CharacterStudio({
       setError("");
       setMainJob(null);
 
-      const data = await startCharacterGenerate(sourceId, provider, model);
+      // never overwrite a card already made from this source: generate a new one, the old one stays in the library
+      const keepOld = !!(card && cardId && card.source_id === sourceId);
+      const opts = { token_target: tokenTarget, style: cardStyle, deep: deepGen };
+      if (storyPoint.trim()) opts.story_point = storyPoint.trim();
+      if (userRole.trim()) opts.user_role = userRole.trim();
+      const loreForGen = attachLore || pendingHandoff?.lore_project_id;
+      if (loreForGen) opts.lore_project_id = loreForGen;
+      setGenWarnings([]); setAudit(null);
+      const data = await startCharacterGenerate(sourceId, provider, model, keepOld, opts);
 
       pollJob(data.job_id, (jobData) => {
+        if (keepOld && showToast) showToast("Saved as a new card; the previous version is still in the Library");
+        setGenWarnings(jobData.result?.warnings || []);
         const generatedCard = jobData.result.card;
         // Merge sex -> gender if gender is missing
         if (generatedCard.structured_profile && !generatedCard.structured_profile.gender && generatedCard.structured_profile.sex) {
@@ -287,6 +386,28 @@ export default function CharacterStudio({
       setLoading(false);
     }
   }
+
+  // autosave: 1.5 s after the last edit, compared against the last saved copy of this card
+  const cardBaseline = useRef("");
+  const [cardDirty, setCardDirty] = useState(false);
+  // closing the tab mid-generation or before the autosave ran asks first
+  useEffect(() => { markBusy("character", loading || cardDirty); return () => markBusy("character", false); }, [loading, cardDirty]);
+  useEffect(() => {
+    cardBaseline.current = card ? JSON.stringify(card) : "";
+    setCardDirty(false);
+  }, [cardId]);
+  useEffect(() => {
+    if (!card || !cardId) return;
+    const json = JSON.stringify(card);
+    const changed = json !== cardBaseline.current;
+    setCardDirty(changed);
+    if (!changed || typingField) return;
+    const tm = setTimeout(async () => {
+      try { await saveCard(cardId, card); cardBaseline.current = json; setCardDirty(false); }
+      catch (e) { setError(`Autosave failed: ${e.message}`); }
+    }, 1500);
+    return () => clearTimeout(tm);
+  }, [card, cardId, typingField]);
 
   // Field regen timer
   useEffect(() => {
@@ -342,6 +463,7 @@ export default function CharacterStudio({
     try {
       setError("");
       await saveCard(cardId, card);
+      cardBaseline.current = JSON.stringify(card); setCardDirty(false);
       if (showToast) showToast(t.savedOk || "Card saved");
       // Flash animation
       setFlashSave(false);
@@ -388,12 +510,40 @@ export default function CharacterStudio({
     }
   }
 
+  function pushHistory(fieldName, oldValue) {
+    setFieldHistory((h) => {
+      const cur = h[fieldName] || { undo: [], redo: [] };
+      return { ...h, [fieldName]: { undo: [...cur.undo, oldValue].slice(-20), redo: [] } };
+    });
+  }
+  function readField(f) { return NATURAL_FIELDS.has(f) ? card?.[f] : card?.structured_profile?.[f]; }
+  function writeField(f, v) {
+    if (NATURAL_FIELDS.has(f)) setCard((prev) => ({ ...prev, [f]: v }));
+    else setCard((prev) => ({ ...prev, structured_profile: { ...(prev?.structured_profile || {}), [f]: v } }));
+  }
+  function stepHistory(f, dir) {   // dir -1 = undo, +1 = redo
+    const h = fieldHistory[f];
+    if (!h) return;
+    const from = dir < 0 ? h.undo : h.redo;
+    if (!from.length) return;
+    const value = from[from.length - 1];
+    const current = readField(f);
+    setFieldHistory((all) => {
+      const c = all[f];
+      return dir < 0
+        ? { ...all, [f]: { undo: c.undo.slice(0, -1), redo: [...c.redo, current] } }
+        : { ...all, [f]: { undo: [...c.undo, current], redo: c.redo.slice(0, -1) } };
+    });
+    writeField(f, value);
+  }
+
   async function handleRegenerateField(fieldName, options = {}) {
     if (!cardId) return;
 
     try {
       setError("");
       setFieldBusy(fieldName);
+      pushHistory(fieldName, readField(fieldName));
 
       const data = await regenerateField(cardId, fieldName, options);
 
@@ -476,6 +626,10 @@ export default function CharacterStudio({
       "dislikes",
       "loves",
       "hates",
+      "motivations",
+      "flaws",
+      "mannerisms",
+      "relationships",
     ].includes(field);
 
     setCard((prev) => ({
@@ -511,23 +665,28 @@ export default function CharacterStudio({
     URL.revokeObjectURL(objectUrl);
   }
 
-  function handleExportCard() {
+  async function handleExportCard(spec = "v2") {
     if (!card) return;
 
-    // Export structured profile JSON if structured view is active, otherwise full card
+    // Always export a real Character Card V2 (spec/data wrapper). In structured
+    // view the description is the formatted structured profile.
     const isStructured = characterViewMode === "structured";
-    const data = isStructured ? card.structured_profile : card;
-    const filename = isStructured
-      ? `${card.name || "card"}_structured_profile.json`
-      : `${card.name || "card"}.json`;
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(objectUrl);
+    try {
+      const data = await exportCardV2(card, isStructured ? "structured" : "natural", attachLore || null, spec);
+      const v3 = spec === "v3" ? "_v3" : "";
+      const filename = isStructured
+        ? `${card.name || "card"}_structured${v3}.json`
+        : `${card.name || "card"}${v3}.json`;
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (e) {
+      showToast && showToast(`Export failed: ${e.message}`);
+    }
   }
 
   return (
@@ -746,6 +905,16 @@ export default function CharacterStudio({
           {t.generateCard || "Generate Card"}
         </button>
 
+        <button className={genOpen ? "signal-btn signal-btn-active" : "signal-btn"} style={{ ...buttonStyle, flex: "1 1 0" }}
+          onClick={() => setGenOpen((v) => !v)} aria-expanded={genOpen}
+          title="Story point, your role, size, style and In-depth mode for Generate Card">
+          ⚙ {t.genOptions || "Options"}
+        </button>
+        <button className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }} disabled={!card} onClick={() => setAudit(auditCard(card || {}))}
+          title="Check the card for problems (no model call)">
+          ⚖ {t.auditCard || "Audit"}
+        </button>
+
         <button
           className="signal-btn"
           onClick={() => { setBatchMode(b => !b); setBatchResults(null); }}
@@ -754,10 +923,15 @@ export default function CharacterStudio({
           {batchMode ? (t.cancelBatch || "Cancel Batch") : (t.batchGenerate || "Batch Generate")}
         </button>
 
-        <button onClick={handleExportCard} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }}>
+        <button onClick={() => handleExportCard("v2")} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }}
+          title="Character Card V2 JSON: what SillyTavern and most sites import">
           {characterViewMode === "structured"
             ? (t.exportStructuredJson || "Export Structured JSON")
             : (t.exportCardJson || "Export Card JSON")}
+        </button>
+        <button onClick={() => handleExportCard("v3")} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }}
+          title="Character Card V3 JSON (chara_card_v3) for V3-aware sites. PNG exports already carry both V2 and V3">
+          {t.exportV3Json || "V3 JSON"}
         </button>
 
         <button
@@ -768,7 +942,91 @@ export default function CharacterStudio({
         >
           {t.viewSource || "View Source"}
         </button>
+
+        <select value={attachLore} onChange={(e) => chooseLore(e.target.value)} disabled={!card}
+          title="Embed a LORE project in exported cards (JSON and PNG) as the card's own lorebook"
+          style={{ ...buttonStyle, fontWeight: 400, maxWidth: 260 }}
+          onFocus={() => listLoreProjects().then((p) => setLoreProjects(p || [])).catch(() => {})}>
+          <option value="">{t.noLorebook || "No lorebook attached"}</option>
+          {loreProjects.map((p) => (
+            <option key={p.id} value={p.id}>📖 {p.project_name || p.name}</option>
+          ))}
+        </select>
+
+        {card && cardId && (
+          <span style={{ alignSelf: "center", fontSize: 12, color: "var(--signal-text-dim)", letterSpacing: "0.04em" }}
+            title="Edits are saved automatically 1.5 s after you stop typing">
+            {cardDirty ? "● editing (autosaves)" : "✓ saved"}
+          </span>
+        )}
       </div>
+
+      {genOpen && (
+        <div style={{ border: "1px solid var(--signal-border)", background: "var(--signal-bg-panel)", padding: 14, marginBottom: 12,
+          display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, textAlign: "left" }}>
+          <label style={{ fontSize: 11, letterSpacing: "0.08em" }}>STORY POINT
+            <input value={storyPoint} onChange={(e) => setStoryPoint(e.target.value)} placeholder="e.g. after the season finale"
+              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit", boxSizing: "border-box", marginTop: 4 }} />
+          </label>
+          <label style={{ fontSize: 11, letterSpacing: "0.08em" }}>{"{{USER}}"} IS
+            <input value={userRole} onChange={(e) => setUserRole(e.target.value)} placeholder="e.g. a new recruit on the team"
+              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit", boxSizing: "border-box", marginTop: 4 }} />
+          </label>
+          <label style={{ fontSize: 11, letterSpacing: "0.08em" }}>SIZE
+            <select value={tokenTarget} onChange={(e) => setTokenTarget(e.target.value)}
+              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit", marginTop: 4 }}>
+              <option value="small">Small model (400-600 tokens)</option>
+              <option value="lean">Lean (~800)</option>
+              <option value="standard">Standard (~1200)</option>
+              <option value="rich">Rich (~1800)</option>
+            </select>
+          </label>
+          <label style={{ fontSize: 11, letterSpacing: "0.08em" }}>STYLE
+            <select value={cardStyle} onChange={(e) => setCardStyle(e.target.value)}
+              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit", marginTop: 4 }}>
+              <option value="prose">Prose</option>
+              <option value="plist">PList + Ali:Chat</option>
+            </select>
+          </label>
+          <label style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+            <input type="checkbox" checked={deepGen} onChange={(e) => setDeepGen(e.target.checked)} />
+            <span><b>In-depth</b>: bible → card → check (3 model calls, fewer invented facts)</span>
+          </label>
+          <div style={{ fontSize: 11, color: "var(--signal-text-dim)", alignSelf: "center" }}>
+            {attachLore || pendingHandoff?.lore_project_id
+              ? "A lorebook is attached: the card keeps world facts out of the description."
+              : "Attach a lorebook (dropdown above) to keep the card lean."}
+          </div>
+        </div>
+      )}
+
+      {genWarnings.length > 0 && (
+        <div style={{ border: "1px solid #b8860b", padding: "8px 12px", marginBottom: 12, fontSize: 12, textAlign: "left", display: "flex", gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <b>Check these:</b>
+            <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{genWarnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+          </div>
+          <span style={{ cursor: "pointer" }} onClick={() => setGenWarnings([])} aria-label="Dismiss" role="button">✕</span>
+        </div>
+      )}
+
+      {audit && (
+        <div style={{ border: "1px solid var(--signal-border)", background: "var(--signal-bg-panel)", padding: 12, marginBottom: 12, textAlign: "left" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <b style={{ letterSpacing: "0.08em" }}>CARD AUDIT</b>
+            <span style={{ fontSize: 20, fontWeight: 700, color: audit.score >= 85 ? "var(--signal-text)" : audit.score >= 60 ? "#b8860b" : "#c84a3a" }}>{audit.score}/100</span>
+            <span style={{ fontSize: 11, color: "var(--signal-text-dim)" }}>~{audit.perm} permanent tokens</span>
+            <span style={{ marginLeft: "auto", cursor: "pointer" }} onClick={() => setAudit(null)} role="button" aria-label="Close audit">✕</span>
+          </div>
+          {audit.issues.length === 0 ? <div style={{ fontSize: 12 }}>No problems found.</div> : (
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
+              {audit.issues.map(([sev, msg], i) => (
+                <li key={i}><b style={{ color: sev === "high" ? "#c84a3a" : sev === "med" ? "#b8860b" : "var(--signal-text-dim)" }}>{sev.toUpperCase()}</b> {msg}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {batchMode && (
         <div style={{
@@ -884,6 +1142,7 @@ export default function CharacterStudio({
             card={card}
             viewMode={characterViewMode}
             t={t}
+            loreProjectId={attachLore || null}
           />
         </div>
 
@@ -994,7 +1253,7 @@ export default function CharacterStudio({
 
                   const naturalFields = ["description", "personality", "scenario", "first_mes", "mes_example", "tags"];
                   const structuredFields = [
-                    "age", "gender", "pronouns", "ethnicity", "race", "sexual_attraction",
+                    "age", "gender", "pronouns", "species", "ethnicity", "race", "sexual_attraction",
                     "job_occupation", "relationship_to_user", "relationship_status",
                     "appearance", "height", "weight", "clothing", "accessories",
                     "non_human_appearance", "personal_parts",
@@ -1055,14 +1314,18 @@ export default function CharacterStudio({
                         "first_mes",
                         "mes_example",
                         "tags",
+                        "depth_prompt",
+                        "system_prompt",
                       ]
                     : [
                         // ── Identity ──
                         "age",
                         "gender",
                         "pronouns",
+                        "species",
                         "ethnicity",
                         "race",
+                        "story_point",
                         // ── Role & Relationship ──
                         "job_occupation",
                         "relationship_to_user",
@@ -1085,6 +1348,10 @@ export default function CharacterStudio({
                         "loves",
                         "hates",
                         "kinks",
+                        "motivations",
+                        "flaws",
+                        "mannerisms",
+                        "relationships",
                         // ── Card fields ──
                         "scenario",
                         "first_mes",
@@ -1120,7 +1387,7 @@ export default function CharacterStudio({
                         }}
                         onClick={() => setSelectedField(field)}
                       >
-                        <span>▸ {(t.fields && t.fields[field]) || field.replaceAll("_", " ")}</span>
+                        <span>▸ {fieldLabel(field)}</span>
                         {(() => {
                           const v = NATURAL_FIELDS.has(field) ? card?.[field] : card?.structured_profile?.[field];
                           const isEmpty = !v || (Array.isArray(v) ? v.length === 0 : String(v).trim() === "");
@@ -1180,7 +1447,7 @@ export default function CharacterStudio({
                   }}
                 >
                   {(() => {
-                    const label = ((t.fields && t.fields[selectedField]) || selectedField.replaceAll("_", " ")).toUpperCase();
+                    const label = fieldLabel(selectedField).toUpperCase();
                     return (
                       <span
                         className="signal-field-label-active signal-glitch-label"
@@ -1311,6 +1578,14 @@ export default function CharacterStudio({
                   >
                     {t.regenerateField || "Regenerate Field"}
                   </button>
+                  {(fieldHistory[selectedField]?.undo?.length > 0 || fieldHistory[selectedField]?.redo?.length > 0) && (<>
+                    <button className="signal-btn" style={{ ...buttonStyle, opacity: fieldHistory[selectedField]?.undo?.length ? 1 : 0.4 }}
+                      disabled={!fieldHistory[selectedField]?.undo?.length} onClick={() => stepHistory(selectedField, -1)}
+                      title="Go back to the version before the last regeneration" aria-label="Previous version">↶ {fieldHistory[selectedField]?.undo?.length || 0}</button>
+                    <button className="signal-btn" style={{ ...buttonStyle, opacity: fieldHistory[selectedField]?.redo?.length ? 1 : 0.4 }}
+                      disabled={!fieldHistory[selectedField]?.redo?.length} onClick={() => stepHistory(selectedField, 1)}
+                      title="Forward to the newer version" aria-label="Next version">↷ {fieldHistory[selectedField]?.redo?.length || 0}</button>
+                  </>)}
                   <button
                     className="signal-btn"
                     style={{
@@ -1351,6 +1626,7 @@ export default function CharacterStudio({
             >
               Source loaded: <strong>{source.title || "Untitled page"}</strong>
               {sourceId ? ` (ID: ${sourceId})` : ""}
+
             </div>
           )}
           {regenModal.open && (

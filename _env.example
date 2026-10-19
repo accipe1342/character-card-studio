@@ -1,13 +1,16 @@
-# NanoGPT
-NANOGPT_API_KEY=your_nanogpt_key_here
-NANOGPT_MODEL=zai-org/glm-4.7:thinking
+# Copy this file to .env and add at least one API key.
+# setup.bat / setup.sh and start.bat / start.sh do the copy for you on first run.
+# Keys can also be managed in the app: Config -> API Keys.
+
+# NanoGPT (default provider)
+NANOGPT_API_KEY=
+NANOGPT_MODEL=deepseek/deepseek-v4.1-flash
 
 # OpenRouter
-OPENROUTER_API_KEY=your_openrouter_key_here
+OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openai/gpt-4o-mini
 
-# Local / OpenAI-compatible server (LM Studio, Ollama, etc.)
-# Set LOCAL_OPENAI_BASE_URL to your server's base URL
+# Local / OpenAI-compatible server (LM Studio, Ollama, KoboldCPP, ...)
 LOCAL_OPENAI_BASE_URL=http://localhost:1234/v1
 LOCAL_MODEL=local-model
 LOCAL_API_KEY=local

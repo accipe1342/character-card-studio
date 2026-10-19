@@ -6,7 +6,7 @@
  *
  * PROPS
  * -----
- * activeTab            "character" | "lore" | "config"
+ * activeTab            "character" | "lore" | "text" | "config"
  * setActiveTab(tab)    Called when a tab is clicked
  * theme                "light" | "dark"
  * setTheme(theme)      Called when theme toggle is clicked
@@ -26,7 +26,7 @@
 
 import { useState, useEffect } from "react";
 
-export default function TopNav({ mode, setMode, onLibrary, lang, setLang, t = {} }) {
+export default function TopNav({ mode, setMode, onLibrary, onSearch, lang, setLang, t = {} }) {
   const [dark, setDark] = useState(() => {
     return localStorage.getItem("signal-theme") === "dark";
   });
@@ -100,6 +100,21 @@ export default function TopNav({ mode, setMode, onLibrary, lang, setLang, t = {}
       </button>
 
       <button
+        className={`signal-btn${mode === "text" ? " signal-btn-active" : ""}`}
+        style={mode === "text" ? activeStyle : buttonStyle}
+        onClick={() => setMode("text")}
+      >
+        {/* Signal UI text/scroll */}
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ marginRight: 6, verticalAlign: "middle" }}>
+          <path d="M3 2h8l2 2v10H3z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+          <line x1="5" y1="6" x2="11" y2="6" stroke="currentColor" strokeWidth="1"/>
+          <line x1="5" y1="8.5" x2="11" y2="8.5" stroke="currentColor" strokeWidth="1"/>
+          <line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" strokeWidth="1"/>
+        </svg>
+        {t.text || "TEXT"}
+      </button>
+
+      <button
         className={`signal-btn${mode === "config" ? " signal-btn-active" : ""}`}
         style={mode === "config" ? activeStyle : buttonStyle}
         onClick={() => setMode("config")}
@@ -113,6 +128,16 @@ export default function TopNav({ mode, setMode, onLibrary, lang, setLang, t = {}
       </button>
 
       <div style={{ flex: 1 }} />
+
+      {/* Search (Ctrl+K) */}
+      {onSearch && (
+        <button className="signal-btn" style={iconBtnStyle} onClick={onSearch} title={`${t.searchAll || "Search everything"} (Ctrl+K)`} aria-label={t.searchAll || "Search everything"}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.2"/>
+            <line x1="10.6" y1="10.6" x2="14.5" y2="14.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+        </button>
+      )}
 
       {/* Library */}
       <button className="signal-btn" style={buttonStyle} onClick={onLibrary} title="Open saved cards">
@@ -151,6 +176,7 @@ export default function TopNav({ mode, setMode, onLibrary, lang, setLang, t = {}
         style={iconBtnStyle}
         onClick={() => setDark(d => !d)}
         title={dark ? "Switch to light mode" : "Switch to dark mode"}
+        aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
       >
         {dark ? (
           /* Sun */

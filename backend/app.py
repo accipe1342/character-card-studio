@@ -28,7 +28,7 @@ DELETE /api/card/<id>               Delete a card
 POST   /api/card/<id>/field/regen   Regenerate a single field
 GET    /api/card/<id>/export/png    Export card as a SillyTavern PNG
 
-API ROUTES — LORE
+API ROUTES — LORE   (in lore_routes.py; simulator/graph/trash in lore_tools.py)
 -----------------
 POST   /api/lore/crawl              Start a single-URL lore generation job
 POST   /api/lore/multi              Start a multi-URL lore crawl job
@@ -42,7 +42,7 @@ POST   /api/lore/entry/generate     Generate a lore entry from custom text
 PATCH  /api/lore/entry/<id>         Update a lore entry
 PATCH  /api/lore/entry/<id>/project Move entry to a different project
 DELETE /api/lore/entry/<id>         Delete a lore entry
-GET    /api/lore/export/<crawl_id>  Export lorebook as SillyTavern JSON
+GET    /api/lore/export[?project_id=N]  Export a lorebook (one project, or all) as SillyTavern JSON
 
 API ROUTES — CONFIG & MODELS
 -----------------------------
@@ -84,10 +84,13 @@ HOW TO EXTEND
 """
 
 import io
+import ipaddress
 import json
 import os
+import socket
 import sqlite3
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit
 
 from dotenv import load_dotenv
 import logging
@@ -95,12 +98,8 @@ from flask import (
     Flask,
     abort,
     jsonify,
-    redirect,
-    render_template,
     request,
     send_file,
-    send_from_directory,
-    url_for,
 )
 
 from lore_crawler import crawl_worldbook
@@ -116,15 +115,11 @@ from database import (
     save_source,
     delete_card,
     duplicate_card,
-    list_lore_projects,
-    rename_lore_project,
-    delete_lore_project,
-    create_lore_project,
-    # 👇 ADD THESE
     save_lore_entry,
     create_lore_crawl,
     update_lore_crawl_status,
     save_lore_crawl_page,
+    save_job_row, load_job_row, mark_interrupted_jobs, usage_summary,
 )
 
 from generator import (
@@ -135,13 +130,14 @@ from generator import (
     _ensure_list,
     load_runtime_config,
 )
-from preview import build_export_card_json, format_structured_profile_text
+from preview import (build_export_card_json, build_export_card_v3, format_structured_profile_text, normalise_lore_items,
+                     character_book_from_items, world_info_book)
 from scraper import scrape_url
 import threading
 import uuid
 
 # Ensure UTF-8 output on Windows
-import sys, io
+import sys
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
@@ -181,8 +177,19 @@ def create_job():
 
 
 def update_job(job_id, **kwargs):
+    """Update a job; it is also written to SQLite (on status changes and at most every 1.5 s), so a page
+    polling after a backend restart gets a clear 'interrupted' result instead of a vanished job."""
+    import time as _time
     if job_id in JOBS:
-        JOBS[job_id].update(kwargs)
+        job = JOBS[job_id]
+        job.update(kwargs)
+        now = _time.time()
+        if "status" in kwargs or now - job.get("_saved_at", 0) > 1.5:
+            job["_saved_at"] = now
+            try:
+                save_job_row({"id": job_id, **{k: v for k, v in job.items() if not k.startswith("_")}})
+            except Exception:
+                pass
 
 
 def run_scrape_job(job_id: str, url: str):
@@ -238,7 +245,8 @@ def run_scrape_job(job_id: str, url: str):
         )
 
 
-def run_generate_job(job_id: str, source_id: int, provider: str, model: str):
+def run_generate_job(job_id: str, source_id: int, provider: str, model: str, as_new: bool = False,
+                     options: dict | None = None):
     try:
         log_info(f"Generate started  →  source={source_id}  {provider}/{model}")
 
@@ -268,8 +276,13 @@ def run_generate_job(job_id: str, source_id: int, provider: str, model: str):
             message=f"Sending to {provider}/{model or 'default'}...",
         )
 
-        generated = generate_full_card(source, provider, model)
+        options = dict(options or {})
+        options["progress"] = lambda msg: update_job(job_id, stage="requesting_model", progress=60, message=msg)
+        generated = generate_full_card(source, provider, model, options)
         log_dim("  model responded")
+        warnings = generated.pop("_warnings", [])
+        for w in warnings:
+            log_warn(f"  card check: {w}")
 
         generated["provider"] = provider
         generated["model"] = model
@@ -281,18 +294,20 @@ def run_generate_job(job_id: str, source_id: int, provider: str, model: str):
             message="Parsing and saving character card...",
         )
 
-        card_id = create_or_update_card(source_id, generated)
-        log_dim(f"  card saved  id={card_id}")
+        # as_new: a card from this source already exists (maybe hand-edited) — keep it and save a new one
+        card_id = create_or_update_card(source_id, generated, force_new=as_new)
+        log_dim(f"  card saved  id={card_id}" + ("  (new card; the earlier one is kept)" if as_new else ""))
 
         update_job(
             job_id,
             status="done",
             stage="done",
             progress=100,
-            message="Character card ready.",
+            message="Character card ready." + (f" {len(warnings)} thing(s) to check." if warnings else ""),
             result={
                 "card_id": card_id,
-                "card": generated,
+                "card": get_card(card_id),      # as stored (includes the Character's Note, system prompt...)
+                "warnings": warnings,
             },
         )
 
@@ -492,6 +507,73 @@ load_dotenv(ENV_PATH, override=True)
 
 app = Flask(__name__)
 init_db()
+try:
+    _n_interrupted = mark_interrupted_jobs()
+    if _n_interrupted:
+        print(f"[!] {_n_interrupted} job(s) were interrupted by the last restart", flush=True)
+except Exception:
+    pass
+
+# ── Local-only request guard ──────────────────────────────────────────────────
+# This server has no login, so it must only answer the app you are using:
+#  * Host check   - blocks DNS-rebinding (a website re-pointing its name at 127.0.0.1)
+#  * Origin check - blocks other websites from sending POST/PATCH/DELETE to it
+# Requests with no Origin header (curl, scripts) are allowed. Escape hatches:
+#   CCS_STRICT_ORIGIN=0          turn the guard off
+#   CCS_ALLOWED_ORIGINS=a,b      extra allowed origins, e.g. http://192.168.1.5:5173
+_SAFE_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_SAFE_PORTS = {5000, 5173, 4173, int(os.getenv("PORT", 5000) or 5000)}
+_EXTRA_ORIGINS = {o.strip().rstrip("/").lower() for o in os.getenv("CCS_ALLOWED_ORIGINS", "").split(",") if o.strip()}
+
+
+def _origin_allowed(origin: str) -> bool:
+    if origin.rstrip("/").lower() in _EXTRA_ORIGINS:
+        return True
+    try:
+        u = urlsplit(origin)
+        return u.scheme in ("http", "https") and u.hostname in _SAFE_HOSTS and u.port in _SAFE_PORTS
+    except ValueError:
+        return False
+
+
+@app.before_request
+def _local_only_guard():
+    if os.getenv("CCS_STRICT_ORIGIN", "1") == "0":
+        return None
+    try:
+        host = urlsplit("//" + (request.host or "")).hostname
+    except ValueError:
+        host = None
+    if host not in _SAFE_HOSTS and (request.host or "").lower() not in _EXTRA_ORIGINS \
+            and ("http://" + (request.host or "").lower()) not in _EXTRA_ORIGINS:
+        return jsonify({"error": "Blocked: unexpected Host header"}), 403
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("Origin")
+        if origin is not None and not _origin_allowed(origin):
+            return jsonify({"error": "Blocked: cross-site request"}), 403
+    return None
+
+
+@app.errorhandler(ValueError)
+def _value_error(e):
+    """get_card / get_source raise ValueError for a missing id: answer 404 instead of a 500 page."""
+    msg = str(e)
+    return jsonify({"error": msg}), (404 if "not found" in msg.lower() else 400)
+
+# TEXT studio (fanfiction / long-form text -> lorebook)
+from text_module import register_text_module
+register_text_module(app, create_job, update_job)
+from admin_routes import register_admin_routes      # backups, model presets, usage
+register_admin_routes(app)
+from lore_tools import register_lore_tools   # simulator, graph, trash
+register_lore_tools(app)
+from critic_tools import register_critic_tools   # chapter sweep, rewrite a passage
+register_critic_tools(app)
+from bundle_routes import register_bundle_routes   # project bundles (.zip export / import)
+register_bundle_routes(app)
+from search_routes import register_search_routes   # one search box across cards, lore and TEXT
+register_search_routes(app)
+# (lore_routes is registered further down, once the job and logging helpers exist)
 
 # ── Custom logging setup ──────────────────────────────────────────────────────
 
@@ -574,50 +656,10 @@ def get_table_count(table_name: str) -> int:
 
 
 # ---------- Main pages ----------
-@app.get("/")
-def index():
-    cards = list_cards()
-    return render_template("index.html", cards=cards)
-
-
-@app.get("/library")
-def library():
-    cards = list_cards()
-    return render_template("library.html", cards=cards)
-
-
 from prompt_templates import get_prompt_templates
 
 
-@app.get("/config")
-def config_page():
-    config = load_config()
-    prompts = get_prompt_templates()
-    return render_template("config.html", config=config, prompts=prompts)
-
-
 from prompt_templates import save_prompt_templates
-
-
-@app.post("/config")
-def save_config_route():
-    use_templates = request.form.get("use_templates") == "true"
-
-    character_generation_template = request.form.get(
-        "character_generation_template", ""
-    ).strip()
-    field_regeneration_template = request.form.get(
-        "field_regeneration_template", ""
-    ).strip()
-
-    # save toggle
-    config = {"use_templates": use_templates}
-    save_config(config)
-
-    # save templates
-    save_prompt_templates(character_generation_template, field_regeneration_template)
-
-    return redirect(url_for("config_page"))
 
 
 # ---------- Scrape Job ----------
@@ -645,15 +687,19 @@ def api_generate_start():
 
         source_id = data.get("source_id")
         provider = data.get("provider", "nanogpt")
-        model = data.get("model") or os.getenv("NANOGPT_MODEL", "zai-org/glm-4.7:thinking")
+        model = data.get("model") or os.getenv("NANOGPT_MODEL", "deepseek/deepseek-v4.1-flash")
 
         if not source_id:
             return jsonify({"error": "Missing source_id"}), 400
 
+        options = {k: data.get(k) for k in ("story_point", "user_role", "token_target", "style", "deep")
+                   if data.get(k) not in (None, "")}
+        if data.get("lore_project_id"):
+            options["lore_aware"] = True
         job_id = create_job()
         threading.Thread(
             target=run_generate_job,
-            args=(job_id, source_id, provider, model),
+            args=(job_id, source_id, provider, model, bool(data.get("as_new")), options),
             daemon=True,
         ).start()
 
@@ -694,7 +740,7 @@ def api_generate_batch():
                                progress=pct + 5,
                                message=f"[{i+1}/{len(urls)}] Generating {source.get('title', url.split('/')[-1])}...")
 
-                    generated = generate_full_card(source, provider, model)
+                    generated = generate_full_card(source, provider, model); generated.pop("_warnings", None)
                     generated["provider"] = provider
                     generated["model"] = model
                     # Merge sex -> gender if needed
@@ -718,555 +764,39 @@ def api_generate_batch():
         return jsonify({"error": str(e)}), 500
 
 
-@app.post("/api/lore/multi")
-def api_lore_multi():
-    """Generate lorebook entries from multiple URLs."""
-    try:
-        data = request.get_json(force=True) or {}
-        urls = [u.strip() for u in data.get("urls", []) if u.strip()]
-        provider = data.get("provider", "nanogpt")
-        model = data.get("model", "")
-        project_id = data.get("project_id")
-
-        if not urls:
-            return jsonify({"error": "No URLs provided"}), 400
-
-        job_id = create_job()
-
-        def run():
-            try:
-                total_saved = 0
-                for i, url in enumerate(urls):
-                    pct = int((i / len(urls)) * 85)
-                    update_job(job_id, status="running", stage="fetching_page", progress=pct,
-                               message=f"Processing {i+1}/{len(urls)}: {url.split('/')[-1]}...")
-
-                    try:
-                        from scraper import scrape_url
-                        source = scrape_url(url)
-                        source_id = save_source(source)
-                        raw_text = source.get("raw_text") or source.get("content") or ""
-                        title = source.get("title") or url
-
-                        update_job(job_id, status="running", stage="requesting_model", progress=pct + 5,
-                                   message=f"Generating entries for: {title}...")
-
-                        lore_result = generate_lore_entry(source, provider, model)
-
-                        if not lore_result.get("valid", True):
-                            reason = lore_result.get("reason", "not valid")
-                            short = reason[:80] + "..." if len(reason) > 80 else reason
-                            log_warn(f"  Skipped [{title}]: {short}")
-                            continue
-
-                        entries_data = lore_result.get("entries", [])
-                        for entry in entries_data:
-                            if not isinstance(entry, dict): continue
-                            save_lore_entry(
-                                crawl_id=project_id,
-                                source_id=source_id,
-                                title=entry.get("title", title),
-                                entry_type=entry.get("entry_type", "concept"),
-                                keywords=entry.get("keywords", []),
-                                summary=entry.get("summary", entry.get("content", ""))[:200],
-                                content=entry.get("content", ""),
-                                provider=provider,
-                                model=model,
-                            )
-                            total_saved += 1
-                            log_dim(f"  [{total_saved}] {entry.get('entry_type','?').upper():10} {entry.get('title','')}")
-
-                        log_ok(f"Page {i+1}/{len(urls)}: {len(entries_data)} entries from {title}")
-
-                    except Exception as page_err:
-                        log_warn(f"Failed to process {url}: {page_err}")
-
-                update_job(job_id, status="done", stage="done", progress=100,
-                           message=f"{total_saved} entries from {len(urls)} pages!")
-                log_ok(f"Multi-page lore complete: {total_saved} entries from {len(urls)} pages")
-
-            except Exception as e:
-                import traceback; traceback.print_exc()
-                update_job(job_id, status="failed", stage="failed", progress=100, message=str(e), error=str(e))
-
-        import threading
-        threading.Thread(target=run, daemon=True).start()
-        return jsonify({"job_id": job_id})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.post("/api/lore/single")
-def api_lore_single():
-    """Generate a single lorebook entry from one page."""
-    try:
-        data = request.get_json(force=True) or {}
-        url = data.get("url", "").strip()
-        provider = data.get("provider", "nanogpt")
-        model = data.get("model", "")
-        project_id = data.get("project_id")
-
-        if not url:
-            return jsonify({"error": "Missing url"}), 400
-
-        job_id = create_job()
-
-        def run():
-            try:
-                update_job(job_id, status="running", stage="fetching_page", progress=10, message="Fetching wiki page...")
-                from scraper import scrape_url
-                source = scrape_url(url)
-                source_id = save_source(source)
-                title = source.get("title") or url
-
-                update_job(job_id, status="running", stage="building_prompt", progress=40, message=f"Preparing lore generation for: {title}...")
-                raw_text = source.get("raw_text") or source.get("content") or ""
-
-                from database import save_lore_entry
-
-                update_job(job_id, status="running", stage="requesting_model", progress=50, message=f"Generating lore entries via {provider}/{model or 'default'}...")
-
-                lore_result = generate_lore_entry(source, provider, model)
-
-                if not lore_result.get("valid", True):
-                    reason = lore_result.get("reason", "Page did not meet criteria")
-                    # Truncate long model-generated reasons for the status bar
-                    short_reason = reason[:80] + "..." if len(reason) > 80 else reason
-                    update_job(job_id, status="done", stage="done", progress=100,
-                               message=f"Skipped: {short_reason}")
-                    log_warn(f"Single page lore skipped: {reason}")
-                    return
-
-                entries_data = lore_result.get("entries", [])
-                log_info(f"Model returned {len(entries_data)} entries for '{title}'")
-
-                update_job(job_id, status="running", stage="saving_card", progress=90,
-                           message=f"Saving {len(entries_data)} entries...")
-                saved = 0
-                for entry in entries_data:
-                    if not isinstance(entry, dict): continue
-                    save_lore_entry(
-                        crawl_id=project_id,
-                        source_id=source_id,
-                        title=entry.get("title", title),
-                        entry_type=entry.get("entry_type", "concept"),
-                        keywords=entry.get("keywords", []),
-                        summary=entry.get("summary", entry.get("content", ""))[:200],
-                        content=entry.get("content", ""),
-                        provider=provider,
-                        model=model,
-                    )
-                    saved += 1
-                    log_dim(f"  [{saved}] {entry.get('entry_type','?').upper():10} {entry.get('title','')}")
-
-                update_job(job_id, status="done", stage="done", progress=100,
-                           message=f"{saved} entries created!")
-                log_ok(f"Single page lore  {saved} entries  source={title}")
-
-            except Exception as e:
-                import traceback; traceback.print_exc()
-                update_job(job_id, status="failed", stage="failed", progress=100, message=str(e), error=str(e))
-
-        import threading
-        threading.Thread(target=run, daemon=True).start()
-        return jsonify({"job_id": job_id})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.post("/api/lore/crawl/start")
-def api_lore_crawl_start():
-    try:
-        data = request.get_json(force=True) or {}
-
-        seed_url = data.get("seed_url", "").strip()
-        max_pages = int(data.get("max_pages", 10))
-        max_depth = int(data.get("max_depth", 1))
-        provider = data.get("provider", "nanogpt")
-        model = data.get("model", "")
-        purpose = data.get("purpose", "Create a general lorebook")
-        criteria = data.get("criteria", "Must be a meaningful lore page")
-        extraction_notes = data.get(
-            "extraction_notes",
-            "Focus on relationships and worldbuilding context",
-        )
-        if not seed_url:
-            return jsonify({"error": "Missing seed_url"}), 400
-
-        job_id = create_job()
-
-        threading.Thread(
-            target=run_lore_crawl_job,
-            args=(
-                job_id,
-                seed_url,
-                max_pages,
-                max_depth,
-                provider,
-                model,
-                purpose,
-                criteria,
-                extraction_notes,
-            ),
-            daemon=True,
-        ).start()
-
-        return jsonify({"job_id": job_id})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.get("/api/lore/projects")
-def api_list_lore_projects():
-    try:
-        from database import list_lore_projects
-        return jsonify(list_lore_projects())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.post("/api/lore/projects")
-def api_create_lore_project():
-    try:
-        data = request.get_json(force=True) or {}
-        name = data.get("name", "Untitled Project").strip()
-        from database import create_lore_project
-        pid = create_lore_project(name)
-        return jsonify({"id": pid, "project_name": name})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.patch("/api/lore/project/<int:project_id>/name")
-def api_rename_lore_project(project_id):
-    try:
-        data = request.get_json(force=True) or {}
-        from database import rename_lore_project
-        rename_lore_project(project_id, data.get("name", "Untitled Project"))
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.delete("/api/lore/project/<int:project_id>")
-def api_delete_lore_project(project_id):
-    try:
-        from database import delete_lore_project
-        delete_lore_project(project_id)
-        log_ok(f"Lore project deleted id={project_id}")
-        return jsonify({"deleted": project_id})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.get("/api/lore/entries")
-def api_list_lore_entries():
-    try:
-        from database import list_lore_entries
-        project_id = request.args.get("project_id", type=int)
-        entries = list_lore_entries()
-        if project_id is not None:
-            entries = [e for e in entries if e.get("crawl_id") == project_id]
-        return jsonify(entries)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.post("/api/lore/entry/new")
-def api_new_lore_entry():
-    try:
-        data = request.get_json(force=True) or {}
-        project_id = data.get("project_id")
-        title = data.get("title", "New Entry").strip()
-
-        # Get any existing source_id, or create a placeholder source
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM sources LIMIT 1")
-        row = cur.fetchone()
-        source_id = row[0] if row else None
-        conn.close()
-
-        if not source_id:
-            # Create a minimal placeholder source so we can save the entry
-            from database import save_source
-            source_id = save_source({
-                "wiki_base": "manual",
-                "page_name": "manual",
-                "url": f"manual://entry/{title}",
-                "title": title,
-                "raw_html": "",
-                "raw_infobox": {},
-                "raw_sections": {},
-                "normalized": {},
-            })
-
-        lore_id = save_lore_entry(
-            crawl_id=project_id,
-            source_id=source_id,
-            title=title,
-            entry_type="concept",
-            keywords=[],
-            summary="",
-            content="",
-            provider="nanogpt",
-            model="",
-        )
-        return jsonify({"id": lore_id, "title": title})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.post("/api/lore/entry/generate")
-def api_generate_lore_entry():
-    """Generate a single lore entry from a prompt/text snippet."""
-    try:
-        data = request.get_json(force=True) or {}
-        prompt_text = data.get("prompt", "").strip()
-        title = data.get("title", "").strip()
-        entry_type = data.get("entry_type", "concept")
-        provider = data.get("provider", "nanogpt")
-        model = data.get("model", "")
-        project_id = data.get("project_id")
-
-        if not prompt_text:
-            return jsonify({"error": "No prompt provided"}), 400
-
-        # Build a minimal source dict for the unified generator
-        manual_source = {
-            "url": f"manual://prompt/{title or 'entry'}",
-            "title": title or "Manual Entry",
-            "normalized": {
-                "title": title or "",
-                "summary": prompt_text[:500],
-            },
-            "raw_text": prompt_text,
-        }
-        lore_result = generate_lore_entry(
-            manual_source, provider, model,
-            purpose=f"Generate a lorebook entry about: {title or 'the described subject'}",
-            criteria=f"The content must describe a {entry_type} in enough detail to create a useful lorebook entry.",
-            extraction_notes="Extract core facts, relationships, and key attributes.",
-        )
-        entries = lore_result.get("entries", [])
-        result = entries[0] if entries else {"title": title or "New Entry", "entry_type": entry_type, "keywords": [], "content": prompt_text[:300]}
-        result["keywords"] = _ensure_list(result.get("keywords", []))
-
-        # Optionally save it
-        if project_id is not None or data.get("save"):
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute("SELECT id FROM sources LIMIT 1")
-            row = cur.fetchone()
-            source_id = row[0] if row else None
-            conn.close()
-
-            if source_id:
-                lore_id = save_lore_entry(
-                    crawl_id=project_id,
-                    source_id=source_id,
-                    title=result.get("title", title or "New Entry"),
-                    entry_type=result.get("entry_type", entry_type),
-                    keywords=result.get("keywords", []),
-                    summary=result.get("content", "")[:200],
-                    content=result.get("content", ""),
-                    provider=provider,
-                    model=model,
-                )
-                result["id"] = lore_id
-
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.get("/api/lore/entry/<int:lore_id>")
-def api_get_lore_entry(lore_id):
-    try:
-        from database import get_lore_entry
-        return jsonify(get_lore_entry(lore_id))
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.patch("/api/lore/entry/<int:lore_id>")
-def api_update_lore_entry(lore_id):
-    try:
-        data = request.get_json(force=True) or {}
-        conn = get_db_connection()
-        conn.execute(
-            """UPDATE lore_entries SET
-               title = ?, keywords_json = ?, content = ?, summary = ?,
-               scan_depth = ?, insertion_order = ?, entry_depth = ?,
-               updated_at = CURRENT_TIMESTAMP
-               WHERE id = ?""",
-            (
-                data.get("title", ""),
-                json.dumps(data.get("keywords", []), ensure_ascii=False),
-                data.get("content", ""),
-                data.get("summary", ""),
-                int(data.get("scan_depth", 2)),
-                int(data.get("insertion_order", 100)),
-                int(data.get("entry_depth", 4)),
-                lore_id,
-            )
-        )
-        conn.commit()
-        conn.close()
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.delete("/api/lore/entry/<int:lore_id>")
-def api_delete_lore_entry(lore_id):
-    try:
-        conn = get_db_connection()
-        conn.execute("DELETE FROM lore_entries WHERE id = ?", (lore_id,))
-        conn.commit()
-        conn.close()
-        return jsonify({"deleted": lore_id})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.get("/api/lore/export")
-def api_export_lorebook():
-    try:
-        from database import list_lore_entries, get_lore_entry
-        entries = list_lore_entries()
-
-        # Layer defaults by entry_type — applied at export time
-        # Layer 1: concept (world rules) — order 900-999
-        # Layer 2: faction (anchors)     — order 700-899
-        # Layer 3: character             — order 400-599
-        # Layer 4: place/item/event/ability — order 1-399
-        def layer_defaults(entry_type: str, idx: int) -> dict:
-            if entry_type == "concept":
-                return {"order": 950 - idx, "position": 0,
-                        "preventRecursion": True, "excludeRecursion": False, "constant": False}
-            elif entry_type == "faction":
-                return {"order": 800 - idx, "position": 0,
-                        "preventRecursion": False, "excludeRecursion": False, "constant": False}
-            elif entry_type == "character":
-                return {"order": 500 - idx, "position": 1,
-                        "preventRecursion": False, "excludeRecursion": False, "constant": False}
-            else:  # place, item, event, ability
-                return {"order": 200 - min(idx, 190), "position": 1,
-                        "preventRecursion": True, "excludeRecursion": False, "constant": False}
-
-        # Build Schema 3 standalone lorebook
-        lorebook = {
-            "name": "Character Card Studio Lorebook",
-            "scan_depth": 4,
-            "token_budget": 2048,
-            "recursive_scanning": True,
-            "entries": {}
-        }
-
-        for i, e in enumerate(entries):
-            full = get_lore_entry(e["id"])
-            entry_type = full.get("entry_type", "character")
-            defaults = layer_defaults(entry_type, i)
-            keywords = full.get("keywords", [])
-            if isinstance(keywords, str):
-                try:
-                    keywords = json.loads(keywords)
-                except Exception:
-                    keywords = [keywords]
-
-            lorebook["entries"][str(i)] = {
-                "uid": i,
-                "key": keywords,
-                "keysecondary": [],
-                "comment": f"{full.get('title', '')} - {entry_type}",
-                "content": full.get("content", ""),
-                "constant": defaults["constant"],
-                "selective": False,
-                "selectiveLogic": 0,
-                "addMemo": True,
-                "order": int(full.get("insertion_order", defaults["order"])),
-                "position": defaults["position"],
-                "disable": False,
-                "excludeRecursion": defaults["excludeRecursion"],
-                "preventRecursion": defaults["preventRecursion"],
-                "probability": 100,
-                "useProbability": True,
-                "depth": int(full.get("entry_depth", 4)),
-                "group": entry_type,
-                "scanDepth": int(full.get("scan_depth", 4)),
-                "caseSensitive": None,
-                "matchWholeWords": None,
-                "displayIndex": i,
-                "sticky": 0,
-                "cooldown": 0,
-                "delay": 0,
-            }
-
-        return jsonify(lorebook)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.patch("/api/lore/entry/<int:lore_id>/project")
-def api_move_lore_entry(lore_id):
-    """Move a lore entry to a different project (or unassign)."""
-    try:
-        data = request.get_json(force=True) or {}
-        project_id = data.get("project_id")  # None = unassign
-        conn = get_db_connection()
-        conn.execute(
-            "UPDATE lore_entries SET crawl_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (project_id, lore_id)
-        )
-        conn.commit()
-        conn.close()
-        return jsonify({"ok": True, "project_id": project_id})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# LORE studio routes live in lore_routes.py
+from lore_routes import build_character_book, register_lore_routes   # noqa: E402
+register_lore_routes(app, create_job=create_job, update_job=update_job, get_db_connection=get_db_connection,
+                     run_lore_crawl_job=run_lore_crawl_job, log_info=log_info, log_ok=log_ok, log_warn=log_warn,
+                     log_dim=log_dim)
+
+
+@app.get("/")
+def api_root():
+    """The UI is the React app (http://localhost:5173 in development). The old Flask template pages are gone."""
+    return ("<!doctype html><title>Character Card Studio API</title><body style='font-family:system-ui;padding:24px'>"
+            "<h2>Character Card Studio backend is running</h2><p>Open the app at "
+            "<a href='http://localhost:5173'>http://localhost:5173</a>.</p></body>")
 
 
 @app.get("/api/job/<job_id>")
 def api_job_status(job_id):
     job = JOBS.get(job_id)
     if not job:
-        return jsonify({"error": "Job not found"}), 404
-    return jsonify(job)
+        job = load_job_row(job_id)     # finished before a restart, or cut off by one
+    if not job:
+        return jsonify({"error": "Job not found. The backend may have restarted; run it again.", "status": "failed",
+                        "message": "Job not found. The backend may have restarted; run it again."}), 404
+    return jsonify({k: v for k, v in job.items() if not k.startswith("_")})
 
 
 # ---------- Scrape / cards ----------
-@app.post("/scrape")
-def scrape():
-    wiki_base = request.form["wiki_base"].strip().rstrip("/")
-    page_name = request.form["page_name"].strip()
-    provider = request.form.get("provider", "nanogpt").strip() or "nanogpt"
-    model = request.form.get("model", "").strip() or os.getenv(
-        "NANOGPT_MODEL", "zai-org/glm-4.7:thinking"
-    )
-
-    source = scrape_url(f"{wiki_base}/{page_name}")
-    source_id = save_source(source)
-    card_id = create_or_update_card(
-        source_id,
-        {
-            "name": source["title"],
-            "provider": provider,
-            "model": model,
-        },
-    )
-    return redirect(url_for("editor", card_id=card_id))
-
-
 # ---------- React Scrap ----------
 @app.get("/api/test")
 def api_test():
     return jsonify({"ok": True})
 
 
-from urllib.parse import unquote
 
 
 @app.post("/api/scrape")
@@ -1301,7 +831,7 @@ def api_generate_card():
 
         source = get_source(source_id)
 
-        generated = generate_full_card(source, provider, model)
+        generated = generate_full_card(source, provider, model); generated.pop("_warnings", None)
         generated["provider"] = provider
         generated["model"] = model
 
@@ -1310,23 +840,6 @@ def api_generate_card():
         return jsonify({"card_id": card_id, "card": generated})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-@app.get("/card/<int:card_id>")
-def editor(card_id: int):
-    card = get_card(card_id)
-    source = get_source(card["source_id"])
-    preview_text = format_structured_profile_text(
-        card["name"], card["structured_profile"]
-    )
-    export_json = build_export_card_json(card)
-    return render_template(
-        "editor.html",
-        card=card,
-        source=source,
-        preview_text=preview_text,
-        export_json=json.dumps(export_json, ensure_ascii=False, indent=2),
-    )
 
 
 @app.get("/api/models/<provider>")
@@ -1508,24 +1021,13 @@ def api_save_card(card_id):
     return jsonify({"status": "ok"})
 
 
-@app.post("/generate/full/<int:card_id>")
-def generate_full(card_id: int):
-    card = get_card(card_id)
-    source = get_source(card["source_id"])
-    generated = generate_full_card(source, card["provider"], card["model"])
-    generated["provider"] = card["provider"]
-    generated["model"] = card["model"]
-    create_or_update_card(card["source_id"], generated, card_id=card_id)
-    return redirect(url_for("editor", card_id=card_id))
-
-
 @app.post("/api/generate/full/<int:card_id>")
 def api_generate_full(card_id: int):
     try:
         card = get_card(card_id)
         source = get_source(card["source_id"])
 
-        generated = generate_full_card(source, card["provider"], card["model"])
+        generated = generate_full_card(source, card["provider"], card["model"]); generated.pop("_warnings", None)
         generated["provider"] = card["provider"]
         generated["model"] = card["model"]
 
@@ -1687,7 +1189,7 @@ def regenerate_field(card_id: int):
 
     # Fields that live at card top-level (not structured_profile)
     NATURAL_FIELDS = {"name", "description", "personality", "scenario",
-                      "first_mes", "mes_example", "tags"}
+                      "first_mes", "mes_example", "tags", "depth_prompt", "system_prompt"}
 
     # All structured profile subfields — accepted as plain names or sp_-prefixed
     SP_SUBFIELDS = {
@@ -1697,6 +1199,7 @@ def regenerate_field(card_id: int):
         "sex", "ethnicity", "race", "job_occupation", "gender", "sexual_attraction",
         "pronouns", "relationship_to_user", "relationship_status",
         "height", "weight", "age",
+        "species", "story_point", "motivations", "flaws", "mannerisms", "relationships",
     }
 
     # Strip sp_ prefix if present
@@ -1743,82 +1246,28 @@ def regenerate_field(card_id: int):
     return jsonify({"preview_only": False, "field_name": field_name, "result": result})
 
 
-@app.post("/apply-preview/<int:card_id>")
-def apply_preview(card_id: int):
-    payload = request.get_json(force=True)
-    field_name = payload["field_name"]
-    result = payload["result"]
-
-    card = get_card(card_id)
-    updated = dict(card)
-
-    if field_name == "structured_profile":
-        old_value = json.dumps(card.get("structured_profile"), ensure_ascii=False)
-        new_value = json.dumps(result["structured_profile"], ensure_ascii=False)
-        updated["structured_profile"] = result["structured_profile"]
-    else:
-        old_value = card.get(field_name)
-        new_value = result[field_name]
-        updated.update(result)
-
-    save_field_version(card_id, field_name, old_value, new_value)
-    create_or_update_card(card["source_id"], updated, card_id=card_id)
-
-    return jsonify({"status": "ok"})
-
-
-@app.post("/save/<int:card_id>")
-def save_card(card_id: int):
-    payload = request.get_json(force=True)
-    card = get_card(card_id)
-    payload["provider"] = card["provider"]
-    payload["model"] = card["model"]
-    create_or_update_card(card["source_id"], payload, card_id=card_id)
-    return jsonify({"status": "ok"})
-
-
-@app.get("/export/<int:card_id>")
-def export(card_id: int):
-    card = get_card(card_id)
-    export_json = build_export_card_json(card)
-    bio = io.BytesIO(
-        json.dumps(export_json, ensure_ascii=False, indent=2).encode("utf-8")
-    )
-    filename = f"{card['name']}.card.json".replace("/", "-")
-    return send_file(
-        bio, mimetype="application/json", as_attachment=True, download_name=filename
-    )
+@app.post("/api/export/v2")
+def api_export_v2():
+    """Build a Character Card V2 object from the card currently in the editor.
+    Body: {"card": {...}, "mode": "natural" | "structured"}
+    Used by both the JSON download and the PNG chara-chunk embed."""
+    try:
+        data = request.get_json(force=True) or {}
+        card = data.get("card") or {}
+        structured = data.get("mode") == "structured"
+        out = (build_export_card_v3(card, structured=structured) if data.get("spec") == "v3"
+               else build_export_card_json(card, structured=structured))
+        lore_id = data.get("lore_project_id")
+        if lore_id not in (None, "", 0, "0"):
+            book = build_character_book(int(lore_id))
+            if book["entries"]:
+                out["data"]["character_book"] = book
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ---------- DB viewer ----------
-@app.get("/db")
-def db_home():
-    tables = [
-        {"name": name, "count": get_table_count(name)} for name in get_table_names()
-    ]
-    return render_template("db/home.html", tables=tables)
-
-
-@app.get("/db/<table_name>")
-def db_table(table_name: str):
-    columns, rows = get_table_rows(table_name)
-    return render_template(
-        "db/table.html", table_name=table_name, columns=columns, rows=rows
-    )
-
-
-@app.get("/db/card/<int:card_id>")
-def db_card_detail(card_id: int):
-    card = get_card(card_id)
-    return render_template("db/card_detail.html", card=card)
-
-
-@app.get("/db/source/<int:source_id>")
-def db_source_detail(source_id: int):
-    source = get_source(source_id)
-    return render_template("db/source_detail.html", source=source)
-
-
 # ---------- React Config API ----------
 @app.get("/api/config/prompts")
 def api_get_prompts():
@@ -1840,6 +1289,7 @@ def api_get_prompts():
         "use_templates": config.get("use_templates", False),
         "temperature": config.get("temperature", 0.7),
         "max_tokens": config.get("max_tokens", 4096),
+        "extract_max_tokens": config.get("extract_max_tokens", 8000),
     })
 
 
@@ -1879,6 +1329,7 @@ def api_save_prompts():
         settings["use_templates"] = data.get("use_templates", False)
         settings["temperature"] = float(data.get("temperature", 0.7))
         settings["max_tokens"] = int(data.get("max_tokens", 4096))
+        settings["extract_max_tokens"] = max(1024, min(int(data.get("extract_max_tokens", 8000)), 32768))
         with open(settings_path, "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)
 
@@ -1887,36 +1338,66 @@ def api_save_prompts():
         return jsonify({"error": str(e)}), 500
 
 
+ENV_WRITABLE = (
+    "NANOGPT_API_KEY", "OPENROUTER_API_KEY", "NANOGPT_MODEL", "OPENROUTER_MODEL",
+    "LOCAL_OPENAI_BASE_URL", "LOCAL_MODEL", "LOCAL_API_KEY",
+)
+
+
+MASK = "\u2022\u2022\u2022\u2022"   # "••••": a saved secret the page never gets back in full
+
+
+def _is_secret(key):
+    return key.endswith("_KEY") or "TOKEN" in key or "SECRET" in key
+
+
 @app.get("/api/config/env")
 def api_get_env():
-    keys = {}
-    for key in ["NANOGPT_API_KEY", "OPENROUTER_API_KEY", "NANOGPT_MODEL", "OPENROUTER_MODEL"]:
+    """Settings for the Config page. API keys come back masked (last 4 characters), never in full."""
+    out = {}
+    for key in ENV_WRITABLE:
         val = os.getenv(key, "")
-        keys[key] = val
-    return jsonify(keys)
+        out[key] = (MASK + val[-4:] if len(val) > 8 else (MASK if val else "")) if _is_secret(key) else val
+    return jsonify(out)
 
 
 @app.post("/api/config/env")
 def api_save_env():
+    """Update known settings in .env. Only ENV_WRITABLE names are accepted, values can't
+    contain line breaks, and comments / other lines in the file are left as they are."""
     try:
-        data = request.get_json(force=True) or {}
-        # Read existing .env
-        env_lines = {}
-        if ENV_PATH.exists():
-            for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
-                if "=" in line and not line.startswith("#"):
-                    k, _, v = line.partition("=")
-                    env_lines[k.strip()] = v.strip()
-        # Update with new values
+        data = request.get_json(force=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Expected a JSON object"}), 400
+        updates = {}
         for key, val in data.items():
-            if val:
-                env_lines[key] = val
-            elif key in env_lines:
-                del env_lines[key]
-        # Write back
-        new_content = "\n".join(f"{k}={v}" for k, v in env_lines.items()) + "\n"
-        ENV_PATH.write_text(new_content, encoding="utf-8")
+            if key not in ENV_WRITABLE:
+                return jsonify({"error": f"Unknown setting: {key}"}), 400
+            val = "" if val is None else str(val)
+            if val.startswith(MASK):
+                continue                      # the masked placeholder came back unchanged: keep the saved key
+            if "\n" in val or "\r" in val or len(val) > 500:
+                return jsonify({"error": f"Invalid value for {key}"}), 400
+            updates[key] = val.strip()
+
+        lines = ENV_PATH.read_text(encoding="utf-8").splitlines() if ENV_PATH.exists() else []
+        out, seen = [], set()
+        for line in lines:
+            k = line.partition("=")[0].strip() if ("=" in line and not line.lstrip().startswith("#")) else None
+            if k in updates:
+                seen.add(k)
+                if updates[k]:
+                    out.append(f"{k}={updates[k]}")  # empty value -> line dropped
+            else:
+                out.append(line)
+        for k, v in updates.items():
+            if k not in seen and v:
+                out.append(f"{k}={v}")
+        ENV_PATH.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
         load_dotenv(ENV_PATH, override=True)
+        for k, v in updates.items():
+            if not v:
+                os.environ.pop(k, None)
         log_ok("ENV saved and reloaded")
         return jsonify({"ok": True})
     except Exception as e:
@@ -1924,25 +1405,125 @@ def api_save_env():
 
 
 # ---------- .env editor ----------
-@app.get("/env")
-def env_editor():
-    env_data = ""
-    if ENV_PATH.exists():
-        env_data = ENV_PATH.read_text(encoding="utf-8")
-    return render_template("env_editor.html", env_data=env_data)
-
-
-@app.post("/env")
-def save_env():
-    content = request.form.get("env_content", "")
-    ENV_PATH.write_text(content.strip() + "\n", encoding="utf-8")
-    load_dotenv(ENV_PATH, override=True)
-    return redirect(url_for("env_editor"))
-
-
-
-
 # ── Multi-character cast card ─────────────────────────────────────────────────
+def build_cast_card(card_ids, cast_name, provider, model):
+    """One card that plays several characters. Saved as a NEW card (it used to overwrite the first member's card)."""
+    cards = [get_card(cid) for cid in card_ids]
+        # Build a combined prompt
+    sep = "=" * 40
+    chars_summary = []
+    for c in cards:
+        sp = c.get("structured_profile", {})
+        chars_summary.append(
+            f"Name: {c.get('name', 'Unknown')}\n"
+            f"Personality: {c.get('personality', '')[:300]}\n"
+            f"Description: {c.get('description', '')[:300]}\n"
+            f"Scenario: {c.get('scenario', '')[:200]}\n"
+            f"Traits: {', '.join(sp.get('personality_traits', [])[:6])}"
+        )
+    chars_block = f"\n{sep}\n".join(chars_summary)
+
+    prompt = (
+        f"You are creating a SillyTavern character card for a CAST of multiple characters.\n"
+        f"The AI will play ALL characters in this cast during the same roleplay session.\n\n"
+        f"Cast name: {cast_name}\n"
+        f"Number of characters: {len(cards)}\n\n"
+        f"Characters:\n{sep}\n{chars_block}\n\n"
+        f"Write a unified character card where:\n"
+        f'- name: the cast name (e.g. "{cast_name}")\n'
+        f"- description: introduces each character in third person, their appearance and role\n"
+        f"- personality: describes how each character behaves and interacts with each other and {{{{user}}}}\n"
+        f"- scenario: a roleplay-ready setup featuring all characters together\n"
+        f'- first_mes: an opening message where all characters are present (write each character\'s line as "CharName: ...")\n'
+        f"- mes_example: 3 example exchanges showing how the characters interact differently\n"
+        f"- tags: tags for the whole cast\n\n"
+        f"Output valid JSON only with these keys: name, description, personality, scenario, first_mes, mes_example, tags\n"
+    )
+    result = _gen_request(provider, model, prompt)
+
+    # Get a source_id from one of the cards
+    source_id = cards[0]["source_id"]
+    result["provider"] = provider
+    result["model"] = model
+    result.setdefault("structured_profile", {})
+    result.setdefault("tags", [])
+    card_id = create_or_update_card(source_id, result, force_new=True)
+
+    return card_id, result
+
+
+def _card_exists_for_source(source_id):
+    conn = get_db_connection()
+    row = conn.execute("SELECT 1 FROM cards WHERE source_id = ? LIMIT 1", (source_id,)).fetchone()
+    conn.close()
+    return row is not None
+
+
+def run_cast_cards_job(job_id, pid, eids, provider, model, options, group):
+    """Cards for several reviewed TEXT characters, one after another, then (optionally) one group card."""
+    import text_module as TM
+    try:
+        made, failed = [], []
+        for i, eid in enumerate(eids):
+            src = TM.entity_to_source(eid)
+            if src is None:
+                failed.append({"id": eid, "error": "character not found"})
+                continue
+            name = src["source"].get("title") or f"#{eid}"
+            update_job(job_id, status="running", stage="requesting_model", progress=int(5 + 85 * i / max(1, len(eids))),
+                       message=f"Card {i + 1}/{len(eids)}: {name}...")
+            try:
+                opts = {**options, "story_point": options.get("story_point") or src["story_point"]}
+                if src.get("lore_project_id"):
+                    opts["lore_aware"] = True
+                generated = generate_full_card(src["source"], provider, model, opts)
+                generated.pop("_warnings", None)
+                generated["provider"], generated["model"] = provider, model
+                # a card made earlier for this character (maybe hand-edited) is kept: save a new one beside it
+                cid = create_or_update_card(src["source_id"], generated,
+                                            force_new=_card_exists_for_source(src["source_id"]))
+                made.append({"card_id": cid, "name": generated.get("name") or name})
+                log_ok(f"cast cards: {name} -> card {cid}")
+            except Exception as ex:
+                failed.append({"id": eid, "name": name, "error": str(ex)[:200]})
+                log_warn(f"cast cards: {name} failed: {ex}")
+        group_id = None
+        if group and len(made) >= 2:
+            update_job(job_id, stage="requesting_model", progress=92, message="Writing the group card...")
+            r = TM._project_row(pid)
+            try:
+                group_id, _ = build_cast_card([m["card_id"] for m in made[:6]], f"{r['name']} Cast" if r else "Cast",
+                                              provider, model)
+            except Exception as ex:
+                failed.append({"name": "group card", "error": str(ex)[:200]})
+        update_job(job_id, status="done", stage="done", progress=100,
+                   message=f"{len(made)} card(s) made" + (", plus a group card" if group_id else "")
+                           + (f"; {len(failed)} failed" if failed else ""),
+                   result={"cards": made, "group_card_id": group_id, "failed": failed})
+    except Exception as e:
+        update_job(job_id, status="failed", stage="failed", error=str(e), message=str(e))
+
+
+@app.post("/api/text/project/<int:pid>/cast-cards")
+def api_text_cast_cards(pid):
+    """Body: {provider, model, ids?: [entity ids] (default: the kept MAIN characters, up to 8), group?: bool,
+    token_target?, style?, user_role?, deep?}. Starts a job; poll /api/job/<id>."""
+    import text_module as TM
+    if TM._project_row(pid) is None:
+        return jsonify({"error": "Not found"}), 404
+    data = request.get_json(force=True) or {}
+    eids = [int(x) for x in (data.get("ids") or [e["id"] for e in TM.main_cast(pid)])][:8]
+    if not eids:
+        return jsonify({"error": "No kept main characters. Keep some characters (main tier) or pick them."}), 400
+    provider = data.get("provider") or "nanogpt"
+    model = data.get("model") or ""
+    options = {k: data.get(k) for k in ("user_role", "token_target", "style", "deep", "story_point") if data.get(k)}
+    job_id = create_job()
+    threading.Thread(target=run_cast_cards_job,
+                     args=(job_id, pid, eids, provider, model, options, bool(data.get("group"))), daemon=True).start()
+    return jsonify({"job_id": job_id, "count": len(eids)})
+
+
 @app.post("/api/generate/cast")
 def api_generate_cast():
     """Generate a single combined card with multiple characters as a cast."""
@@ -1958,49 +1539,8 @@ def api_generate_cast():
         if len(card_ids) > 6:
             return jsonify({"error": "Maximum 6 characters per cast card"}), 400
 
-        cards = [get_card(cid) for cid in card_ids]
-
-        # Build a combined prompt
-        sep = "=" * 40
-        chars_summary = []
-        for c in cards:
-            sp = c.get("structured_profile", {})
-            chars_summary.append(
-                f"Name: {c.get('name', 'Unknown')}\n"
-                f"Personality: {c.get('personality', '')[:300]}\n"
-                f"Description: {c.get('description', '')[:300]}\n"
-                f"Scenario: {c.get('scenario', '')[:200]}\n"
-                f"Traits: {', '.join(sp.get('personality_traits', [])[:6])}"
-            )
-        chars_block = f"\n{sep}\n".join(chars_summary)
-
-        prompt = (
-            f"You are creating a SillyTavern character card for a CAST of multiple characters.\n"
-            f"The AI will play ALL characters in this cast during the same roleplay session.\n\n"
-            f"Cast name: {cast_name}\n"
-            f"Number of characters: {len(cards)}\n\n"
-            f"Characters:\n{sep}\n{chars_block}\n\n"
-            f"Write a unified character card where:\n"
-            f'- name: the cast name (e.g. "{cast_name}")\n'
-            f"- description: introduces each character in third person, their appearance and role\n"
-            f"- personality: describes how each character behaves and interacts with each other and {{{{user}}}}\n"
-            f"- scenario: a roleplay-ready setup featuring all characters together\n"
-            f'- first_mes: an opening message where all characters are present (write each character\'s line as "CharName: ...")\n'
-            f"- mes_example: 3 example exchanges showing how the characters interact differently\n"
-            f"- tags: tags for the whole cast\n\n"
-            f"Output valid JSON only with these keys: name, description, personality, scenario, first_mes, mes_example, tags\n"
-        )
-        result = _gen_request(provider, model, prompt)
-
-        # Get a source_id from one of the cards
-        source_id = cards[0]["source_id"]
-        result["provider"] = provider
-        result["model"] = model
-        result.setdefault("structured_profile", {})
-        result.setdefault("tags", [])
-        card_id = create_or_update_card(source_id, result)
-
-        log_ok(f"Cast card generated: {cast_name} ({len(cards)} chars) → id={card_id}")
+        card_id, result = build_cast_card(card_ids, cast_name, provider, model)
+        log_ok(f"Cast card generated: {cast_name} ({len(card_ids)} chars) → id={card_id}")
         return jsonify({"card_id": card_id, "card": result})
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -2008,21 +1548,54 @@ def api_generate_cast():
 
 
 # ── Image proxy ──────────────────────────────────────────────────────────────
+def _is_public_host(host: str) -> bool:
+    """True only if every address the name resolves to is a normal public one."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+                or ip.is_multicast or ip.is_unspecified):
+            return False
+    return bool(infos)
+
+
 @app.get("/api/image-proxy")
 def api_image_proxy():
-    """Proxy an external image URL so the frontend can load cross-origin images."""
+    """Proxy an external image so the frontend can load cross-origin images.
+    Public http(s) hosts only (no localhost / LAN / metadata addresses), images only, 10 MB max."""
     import requests as req
     img_url = request.args.get("url", "").strip()
-    if not img_url or not img_url.startswith("http"):
-        return jsonify({"error": "Invalid URL"}), 400
     try:
-        r = req.get(img_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}, stream=True)
+        for _hop in range(4):  # follow redirects by hand so every hop is re-checked
+            u = urlsplit(img_url)
+            if u.scheme not in ("http", "https") or not u.hostname or not _is_public_host(u.hostname):
+                return jsonify({"error": "URL not allowed"}), 400
+            r = req.get(img_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"},
+                        stream=True, allow_redirects=False)
+            if r.is_redirect and r.headers.get("Location"):
+                img_url = urljoin(img_url, r.headers["Location"])
+                r.close()
+                continue
+            break
+        else:
+            return jsonify({"error": "Too many redirects"}), 400
         r.raise_for_status()
-        content_type = r.headers.get("Content-Type", "image/jpeg")
-        return send_file(
-            io.BytesIO(r.content),
-            mimetype=content_type,
-        )
+        content_type = r.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if not content_type.startswith("image/"):
+            return jsonify({"error": "Not an image"}), 400
+        body, size = [], 0
+        for chunk in r.iter_content(65536):
+            size += len(chunk)
+            if size > 10 * 1024 * 1024:
+                return jsonify({"error": "Image too large"}), 400
+            body.append(chunk)
+        resp = send_file(io.BytesIO(b"".join(body)), mimetype=content_type)
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+        return resp
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
