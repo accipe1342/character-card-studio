@@ -64,10 +64,11 @@
 import React, { useState, useEffect } from "react";
 import MainJobStatus from "../shared/MainJobStatus";
 import { markBusy } from "../../lib/leaveGuard";
-import { AdvancedWI, BudgetMeter, LinksPanel, SimulatorPanel, TrashPanel, isAlwaysOn } from "./LoreTools";
+import { QuickRepliesButton, StoryExportsButton, TrimButton } from "./AssistPanels";
+import { AdvancedWI, BudgetMeter, EntryHints, LinksPanel, SimulatorPanel, TrashPanel, isAlwaysOn, ENTRY_TOKEN_SOFT_LIMIT } from "./LoreTools";
 import {
   startLoreCrawl, startLoreSingle, startLoreMulti, listLoreEntries, getLoreEntry,
-  updateLoreEntry, deleteLoreEntry, exportLorebook, exportDeepLore, getJob, fetchModels,
+  updateLoreEntry, deleteLoreEntry, exportLorebook, exportDeepLore, getJob, fetchModels, pushLoreToST,
   listLoreProjects, createLoreProject, renameLoreProject, deleteLoreProject,
   newLoreEntry, generateLoreEntry, moveEntryToProject, clearLoreProject, cleanLoreKeywords, getPresets,
   restoreLoreEntry,
@@ -81,6 +82,7 @@ function loreIssues(e, dupTitles) {
   if (!(e.keywords || []).length && !on) out.push(["NO KEYS", "#6b6b6b", "No trigger keywords: it will never load"]);
   if (e.user_edited && e.provider === "text-module") out.push(["EDITED", "#6b6458", "Edited by hand: re-sending from TEXT keeps your version"]);
   if ((e.content_chars ?? 1) < 15) out.push(["EMPTY", "#c84a3a", "Almost no content"]);
+  if (!on && (e.content_chars ?? 0) / 4 > ENTRY_TOKEN_SOFT_LIMIT * 2) out.push(["LONG", "#b8860b", `Over ${ENTRY_TOKEN_SOFT_LIMIT * 2} tokens: long entries crowd out others`]);
   if (dupTitles.has((e.title || "").trim().toLowerCase())) out.push(["DUP", "#b8860b", "Another entry has the same title"]);
   return out;
 }
@@ -390,6 +392,13 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
     }
   }
 
+  async function handleSendToST() {
+    try {
+      const r = await pushLoreToST(activeProject.id);
+      showToast && showToast(`Sent to SillyTavern as the lorebook "${r.name}" (${r.entries} entries)`);
+    } catch (e) { setError(e.message); }
+  }
+
   async function handleExport() {
     try {
       const data = await exportLorebook(activeProject?.id);
@@ -597,6 +606,14 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
             ↓ {t.exportSillyTavern || "SillyTavern (.json)"}
           </button>
         )}
+        {activeProject && entries.length > 0 && (
+          <button className="signal-btn" onClick={handleSendToST} style={btnStyle}
+            title="Save this project as a World Info lorebook in a running SillyTavern (Config → SillyTavern). Same name = replaced.">
+            ⇢ {t.sendToSTShort || "Send to SillyTavern"}
+          </button>
+        )}
+        {activeProject && entries.length > 0 && <QuickRepliesButton kind="lore" projectId={activeProject.id} style={btnStyle} label={t.quickReplies || "Quick Replies"} />}
+        {activeProject && entries.length > 0 && <StoryExportsButton kind="lore" projectId={activeProject.id} style={btnStyle} label={t.storyExports || "Bible / Data Bank"} />}
         {activeProject && entries.length > 0 && (
           <button className="signal-btn" onClick={handleCleanKeywords} style={btnStyle}
             title="Remove generic trigger words and other entries' names from keywords, so each entry fires only for itself">
@@ -1051,6 +1068,12 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                 rows={12}
                 style={{ ...inputStyle, resize: "vertical" }}
               />
+              <EntryHints entry={entry}>
+                {Math.ceil((entry.content || "").length / 4) > ENTRY_TOKEN_SOFT_LIMIT && !isAlwaysOn(entry) && (
+                  <TrimButton text={entry.content} target={ENTRY_TOKEN_SOFT_LIMIT} kind="lore" name={entry.title} provider={provider} model={model}
+                    onAccept={(text) => setEntry((prev) => ({ ...prev, content: text }))} />
+                )}
+              </EntryHints>
 
               {/* SillyTavern lorebook settings */}
               <div className="signal-divider" style={{ margin: "12px 0 10px" }}>

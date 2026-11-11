@@ -34,7 +34,7 @@ with sync_playwright() as p:
     ok(hidden == 1, "one-offs collapsed by default")
     # edit Yuna + relationships + origin, autosave
     pg.locator("div", has_text=re.compile(r"^Yuna$")).first.click(); pg.wait_for_timeout(400)
-    rel = pg.get_by_placeholder(re.compile("Rikku — cousin"))
+    rel = pg.get_by_placeholder(re.compile("Mara — sister"))
     ok(rel.input_value().startswith("Rikku"), "relationships shown in editor")
     content = pg.locator("textarea").nth(2)
     pg.locator("xpath=//div[normalize-space(text())='CONTENT']/following-sibling::textarea[1]").fill("Hand-written Yuna notes.")

@@ -26,6 +26,7 @@
  *   prompt_templates.py's default dict.
  */
 
+import { testSillyTavern } from "../lib/api";
 import { useState, useEffect } from "react";
 import AdminPanels from "./AdminPanels";
 
@@ -380,7 +381,64 @@ export default function ConfigPage({ t = {}, showToast }) {
         </div>
       </section>
 
+      <SillyTavernSection envKeys={envKeys} setEnvKeys={setEnvKeys} saveEnv={saveEnv} savingEnv={savingEnv} inputStyle={inputStyle} btnStyle={btnStyle} />
+
       <AdminPanels showToast={showToast} t={t} />
     </div>
+  );
+}
+
+/** Where "Send to SillyTavern" goes. Saved in .env with the API keys; the password comes back masked. */
+function SillyTavernSection({ envKeys, setEnvKeys, saveEnv, savingEnv, inputStyle, btnStyle }) {
+  const [show, setShow] = useState(false);
+  const [test, setTest] = useState(null);
+  const [testing, setTesting] = useState(false);
+  async function runTest() {
+    setTesting(true); setTest(null);
+    try {
+      const r = await testSillyTavern({ url: envKeys.ST_URL || "", user: envKeys.ST_USER || "", password: envKeys.ST_PASSWORD || "" });
+      setTest({ ok: true, text: `Connected to SillyTavern ${r.version} at ${r.url}.` });
+    } catch (e) { setTest({ ok: false, text: e.message }); }
+    finally { setTesting(false); }
+  }
+  const field = (key, label, placeholder, secret) => (
+    <label key={key} style={{ fontSize: 12, color: "var(--signal-text-dim)", display: "flex", flexDirection: "column", gap: 4 }}>
+      {label}
+      <div style={{ position: "relative" }}>
+        <input type={secret && !show ? "password" : "text"} value={envKeys[key] || ""} placeholder={placeholder} autoComplete="off"
+          aria-label={label} onChange={(e) => { setEnvKeys((p) => ({ ...p, [key]: e.target.value })); setTest(null); }}
+          style={{ ...inputStyle, paddingRight: secret ? 40 : undefined }} />
+        {secret && (
+          <button onClick={() => setShow((v) => !v)} aria-label={show ? "Hide password" : "Show password"}
+            style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none",
+              cursor: "pointer", color: "var(--signal-text-dim)", fontSize: 13 }}>{show ? "◎" : "○"}</button>
+        )}
+      </div>
+    </label>
+  );
+  return (
+    <section className="signal-panel" style={{ border: "1px solid var(--signal-border)", background: "var(--signal-bg-panel)", padding: 20, marginTop: 20 }}>
+      <h2 className="signal-heading" style={{ margin: "0 0 6px", fontSize: 15 }}>SillyTavern</h2>
+      <div style={{ fontSize: 11, color: "var(--signal-text-dim)", marginBottom: 14, lineHeight: 1.5 }}>
+        For the SEND TO SILLYTAVERN buttons: cards, lorebooks and Quick Reply sets go straight into a running SillyTavern.
+        User name and password are only needed if SillyTavern has basic auth turned on (basicAuthMode in its config.yaml).
+        If SillyTavern runs on another computer, that computer's whitelist must allow this one.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+        {field("ST_URL", "SillyTavern address", "http://127.0.0.1:8000")}
+        {field("ST_USER", "User name (basic auth)", "leave empty if not used")}
+        {field("ST_PASSWORD", "Password (basic auth)", "", true)}
+      </div>
+      {test && <div role="status" style={{ fontSize: 12, marginTop: 10, color: test.ok ? "var(--signal-text)" : "#c84a3a" }}>{test.ok ? "✓" : "⊗"} {test.text}</div>}
+      <div style={{ marginTop: 14, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button className="signal-btn" onClick={runTest} disabled={testing} style={{ ...btnStyle, opacity: testing ? 0.5 : 1 }}>
+          {testing ? "TESTING…" : "TEST CONNECTION"}
+        </button>
+        <button className="signal-btn" onClick={saveEnv} disabled={savingEnv}
+          style={{ ...btnStyle, opacity: savingEnv ? 0.5 : 1, background: "var(--signal-btn-active-bg)", color: "var(--signal-text-inv)" }}>
+          {savingEnv ? "SAVING…" : "SAVE"}
+        </button>
+      </div>
+    </section>
   );
 }

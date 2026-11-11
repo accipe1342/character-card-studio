@@ -703,7 +703,7 @@ def generate_full_card(
 # ---------------------------------------------------------------------------
 PROFILE_TEXT_FIELDS = ["sex", "species", "ethnicity", "race", "job_occupation", "gender", "sexual_attraction",
                        "pronouns", "relationship_to_user", "relationship_status", "backstory", "height", "weight",
-                       "age", "story_point"]
+                       "age", "story_point", "with_strangers", "with_close"]
 PROFILE_LIST_FIELDS = ["appearance", "non_human_appearance", "personal_parts", "clothing", "accessories", "speech",
                        "personality_traits", "kinks", "likes", "dislikes", "loves", "hates", "motivations", "flaws",
                        "mannerisms", "relationships"]
@@ -733,7 +733,8 @@ CHECK_SYSTEM = """You check a SillyTavern character card against its character b
 {"fixes": {"<field>": "<corrected value>"}, "issues": ["short description of each problem you fixed or could not fix"]}
 Fix ONLY: facts that contradict the bible; invented facts the bible does not support; any text that speaks or acts
 for {{user}}; a missing or empty required field (description, personality, scenario, first_mes, mes_example);
-a mes_example not in the <START> block format; fields far over their size target.
+a mes_example not in the <START> block format; fields far over their size target; structured_profile.with_strangers
+and with_close saying the same thing when the bible shows the character acts differently with strangers and friends.
 Field names: description, personality, scenario, first_mes, mes_example, alternate_greetings (list), character_note,
 tags (list), or structured_profile.<subfield>. Leave everything else out. If nothing is wrong, return {"fixes": {}, "issues": []}."""
 
@@ -825,8 +826,11 @@ RULES:
     Infer from stated preferences, behavioral descriptions, dialogue.
   Level 3 — story_sections and uncategorized_sections. Read as raw narrative.
     Infer only what the text genuinely supports. Never fabricate.
-  species = what kind of being they are (human, Al Bhed, android, elf...).
+  species = what kind of being they are (human, elf, android, demon...).
   motivations / flaws / mannerisms: short specific phrases. relationships: "Name - relation" phrases.
+  with_strangers / with_close: 1-2 sentences each on how they act with strangers versus with people they trust
+  (guarded vs. teasing, formal vs. blunt...). They should differ unless the source says the character is the same with
+  everyone.
   Never leave likes/dislikes/loves/hates all blank if ANY behavioral content
   exists in the source. relationship_to_user: fill with a source-consistent
   default (or from the {{{{user}}}} role given below). List fields: short specific phrases. Leave blank only if no basis
@@ -848,6 +852,7 @@ Return this exact JSON shape:
     "kinks": [], "likes": [], "dislikes": [],
     "loves": [], "hates": [],
     "motivations": [], "flaws": [], "mannerisms": [], "relationships": [],
+    "with_strangers": "", "with_close": "",
     "height": "", "weight": "", "age": "", "story_point": ""
   }},
   "description": "",
@@ -964,6 +969,13 @@ def validate_card(card, options=None):
     limit = TOKEN_TARGETS[target_key][0]
     if perm > limit * 1.25:
         warnings.append(f"Permanent tokens about {perm} (target ~{limit}). Consider trimming the description.")
+    try:
+        from prose_scan import card_text_warnings
+        hits = card_text_warnings(card)
+        if hits:
+            warnings.append("Stock phrases worth rewriting: " + "; ".join(hits))
+    except Exception:
+        pass
     return card, warnings
 
 
@@ -1000,6 +1012,7 @@ def regenerate_single_field(
 
     structured_subfields = {
         "species", "story_point", "motivations", "flaws", "mannerisms", "relationships",
+        "with_strangers", "with_close",
         "sex", "ethnicity", "race", "job_occupation", "gender",
         "sexual_attraction", "pronouns", "appearance", "non_human_appearance",
         "personal_parts", "clothing", "accessories", "relationship_to_user",
@@ -1095,7 +1108,7 @@ If the character is under 18 or reads as a minor, write no sexual content and le
         if field_name == "structured_profile":
             parts += [
                 'Return this shape exactly:',
-                '{"structured_profile": {"sex":"","ethnicity":"","race":"","job_occupation":"","gender":"","sexual_attraction":"","pronouns":"","appearance":[],"non_human_appearance":[],"personal_parts":[],"clothing":[],"accessories":[],"relationship_to_user":"","relationship_status":"","backstory":"","speech":[],"personality_traits":[],"kinks":[],"likes":[],"dislikes":[],"loves":[],"hates":[],"height":"","weight":"","age":"","species":"","story_point":"","motivations":[],"flaws":[],"mannerisms":[],"relationships":[]}}',
+                '{"structured_profile": {"sex":"","ethnicity":"","race":"","job_occupation":"","gender":"","sexual_attraction":"","pronouns":"","appearance":[],"non_human_appearance":[],"personal_parts":[],"clothing":[],"accessories":[],"relationship_to_user":"","relationship_status":"","backstory":"","speech":[],"personality_traits":[],"kinks":[],"likes":[],"dislikes":[],"loves":[],"hates":[],"height":"","weight":"","age":"","species":"","story_point":"","motivations":[],"flaws":[],"mannerisms":[],"relationships":[],"with_strangers":"","with_close":""}}',
             ]
         elif field_name in structured_subfields:
             if field_name in list_subfields:

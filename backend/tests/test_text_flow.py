@@ -115,7 +115,9 @@ def test_recap_starting_point_and_commit(client, H, project):
     by = {e["comment"].rsplit(" - ", 1)[0]: e for e in ex["entries"].values()}
     assert by["Story So Far"]["content"] == "My own recap." and by["Story So Far"]["constant"] is True
     assert "chunk 0" in by["Story Timeline"]["content"] and "chunk 1" not in by["Story Timeline"]["content"]
-    assert by["Trinket1"]["content"].startswith("Original to this story:")
+    assert by["Yuna"]["content"].startswith("In this story (differs from canon): Hand-written Yuna.")  # hand edit wins
+    assert by["Rikku"]["content"].startswith("Rikku fact 0.") and "Rikku fact 1" not in by["Rikku"]["content"]
+    assert "Trinket1" not in by          # first appears after the starting point (only facts up to it are used)
     assert "Relationships: Rikku (cousin)" in by["Yuna"]["content"]
     pytest.lore_id = res["lore_project_id"]
 

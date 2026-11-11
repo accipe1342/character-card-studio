@@ -6,11 +6,63 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.5.0] - 2026-11-11
+
+### Added
+- TEXT: **lore as of the starting point.** With "roleplay starts after" set, LORE entries and cards use only what the
+  chapters up to that point say (age, relations, voice, facts); characters who first appear later are left out.
+  A checkbox turns it off. Hand-edited entries are always used as written.
+- TEXT: entry tabs **BY CHAPTER** (what each chapter's extraction said, with a ROLEPLAY STARTS HERE line) and
+  **MENTIONS** (every line of the text that names the entry, by chapter; one-word names keep their capital letter
+  so ordinary words don't match).
+- TEXT: **UPDATE IN LORE preview.** Before anything is written, see each entry that would be refreshed (word diff),
+  added, sent to the LORE trash or kept as you edited it, and untick any to leave them as they are.
+- TEXT: places can get an **"Often here:"** line (who is usually found there, counted from events and shared
+  chapters; no model call). On by default, with a checkbox.
+- TEXT: **INTERVIEW** tab on characters (and an Interview button in CHARACTER): ask the character questions to test
+  its voice, then ✓ CHECK AGAINST NOTES lists answers that contradict its notes. Not saved.
+- TEXT: **◇ RELATIONSHIP MAP**: who is linked to whom, drawn as a map (squares are characters, diamonds factions,
+  size by number of links). Drag, click for both sides of each relation, open in review, download as SVG.
+- TEXT: **secrets / who knows this** (optional, per entry): a fact only some characters know becomes its own LORE
+  entry with SillyTavern's character filter, so it only reaches the prompt when one of them is speaking. The
+  character's interview knows its own secrets. Never put in the Data Bank pack.
+- TEXT and LORE: **story bible** as Markdown or a printable page (portraits, print / save as PDF), and a
+  **Data Bank pack** (.zip, one Markdown note per entry, with instructions) for SillyTavern's Data Bank.
+- TEXT and LORE: **SillyTavern Quick Replies**: a Quick Reply set with a button per place and character plus
+  recap / time skip / scene check, to download or send.
+- Critic: **✓ PROSE SCAN** (instant, no model call): stock "AI-sounding" phrases with examples, overused words,
+  filler, -ly adverbs, dialogue tags, repeated sentence starts, and a by-chapter table (story order or worst first).
+  The phrase list is `backend/config/ai_cliches.txt`; edit it to taste.
+- LORE: entries over ~150 tokens show a size hint and stock phrases; long ones get a LONG badge. **✂ TRIM** asks
+  the model for a shorter version and shows it next to the original before anything changes.
+- CHARACTER: profile fields **With strangers** and **With people close to them** (how the character changes with
+  closeness). AUDIT now also flags heavy trauma wording, many absolutes ("always", "never"), oversized group cards,
+  missing or identical layers, and stock phrases; a long description gets ✂ TRIM DESCRIPTION.
+- **Send to SillyTavern**: cards (PNG with the portrait and the attached lorebook; sending again replaces the card
+  instead of adding a copy), lorebooks (World Info) and Quick Reply sets go straight into a running SillyTavern.
+  Config → SillyTavern: address, optional basic-auth user and password (stored masked), TEST CONNECTION.
+  Tested against SillyTavern 1.19 with basic auth.
+- **Saved portraits**: card pictures are stored in `data/images` and come back when a card is reopened; the
+  Library shows thumbnails. TEXT characters can have a picture that MAKE CARD carries over. Project bundles
+  include the pictures, plus a ready-to-use card PNG for each card that has one.
+- CHARACTER: **CHARX** export (Character Card V3 zip with the portrait and the attached lorebook).
+- tests: pytest for every new endpoint (including live SillyTavern tests, skipped when none is running) and
+  browser suites e2e7–e2e10.
+
+### Changed
+- CHARACTER toolbar is two rows: making and checking cards on top, exports below.
+- Rebuild list and hand merges keep pictures and secrets.
+
+### Fixed
+- Opening a card from the Library kept showing the previous card's picture.
+- Dialogs opened from inside a panel (trim compare, update preview) could be clipped by the panel; they now open
+  above the whole page.
+
 ## [2.4.0] - 2026-10-18
 
 ### Added
 - SillyTavern World Info: every entry setting is stored and exported (JSON lorebook and the card's embedded
-  character_book): position (↑/↓ Char, ↑/↓ AN, @Depth with role, ↑/↓ EM), sticky, cooldown, delay, probability,
+  character_book): position (↑/↓ Char, ↑/↓ AN, `@Depth` with role, ↑/↓ EM), sticky, cooldown, delay, probability,
   secondary keys with AND ANY / AND ALL / NOT ANY / NOT ALL, inclusion groups (weight, prioritize), character filter,
   vectorized, constant. LORE editor: "Advanced SillyTavern settings" (empty = the default for the entry type).
 - Character entries are sticky for 2 messages by default (r/SillyTavernAI tip).
@@ -58,7 +110,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   RE-CHUNK → **Resplit text**, moved under Chunk size with a red outline and a confirmation that says how much
   extraction it deletes; PARALLEL CHUNKS → **Chunks at once**. LORE: Generate Entry → **Generate from URL**,
   Multiple Pages → **Several URLs**, Export Lorebook → **SillyTavern (.json)**, Clear entries → **Trash all entries**,
-  Insertion Order → **Order (priority)**, Entry Depth → **Depth (@Depth only)**. Translated in 日本語 / 中文.
+  Insertion Order → **Order (priority)**, Entry Depth → **Depth (`@Depth` only)**. Translated in 日本語 / 中文.
 
 ### Fixed
 - The cast card overwrote the first member's card; it is saved as a new card.

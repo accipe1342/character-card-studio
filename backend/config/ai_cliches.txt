@@ -1,0 +1,82 @@
+# One phrase per line. Matching ignores case. A trailing * matches any word ending (shiver* = shiver, shivers, shivered).
+shiver* down * spine
+shiver* * down * spine
+sent shiver*
+barely above a whisper
+voice barely a whisper
+a mix of
+a mixture of
+eyes sparkl* with mischief
+glint in * eye*
+mischievous glint
+ministrations
+couldn't help but
+can't help but
+let out a breath * didn't know
+breath * didn't know * holding
+a testament to
+tapestry of
+the air thick with
+air was thick with
+palpable tension
+the weight of * words
+hung heavy in the air
+hung in the air
+smirk* playing on * lips
+a smile tugging at
+tugging at the corners of
+padded over
+padded across
+orbs
+with a newfound
+newfound determination
+steeled * resolve
+a wave of
+waves of pleasure
+jolts of electricity
+electricity shot through
+sent a jolt
+her heart skipped a beat
+his heart skipped a beat
+time seemed to stand still
+world seemed to fade away
+the world around them faded
+in that moment
+little did * know
+it's not like that
+maybe, just maybe
+for what felt like an eternity
+something shifted
+something primal
+a dance of
+dance as old as time
+bite your lip
+bit * lip
+eyes darkened with
+swallowed hard
+released a breath
+let out a shaky breath
+heart pounding in * chest
+pulse quickened
+a delicate dance
+nestled
+in the grand scheme of things
+it's worth noting
+navigate the complexities
+delve into
+embark on a journey
+journey of self-discovery
+unspoken understanding
+an unspoken bond
+the scent of * filled
+smelled of sandalwood
+husky voice
+low growl
+voice dripping with
+words dripping with
+oh, how the tables have turned
+the game has just begun
+you're playing with fire
+mine, all mine
+whispered in * ear
+eyes wide with

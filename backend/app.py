@@ -573,6 +573,18 @@ from bundle_routes import register_bundle_routes   # project bundles (.zip expor
 register_bundle_routes(app)
 from search_routes import register_search_routes   # one search box across cards, lore and TEXT
 register_search_routes(app)
+from story_tools import register_story_tools   # chapters per entity, mentions, prose scan
+register_story_tools(app)
+from assist_tools import register_assist_tools   # trim to a target size, character interview
+register_assist_tools(app)
+from st_bridge import register_st_bridge   # send cards, lorebooks, Quick Replies to a running SillyTavern
+register_st_bridge(app)
+from images import register_images   # portraits saved with cards and TEXT characters
+register_images(app)
+from charx import register_charx   # Character Card V3 .charx (zip with the portrait)
+register_charx(app)
+from story_export import register_story_export   # story bible (md / printable html), Data Bank pack
+register_story_export(app)
 # (lore_routes is registered further down, once the job and logging helpers exist)
 
 # ── Custom logging setup ──────────────────────────────────────────────────────
@@ -1200,6 +1212,7 @@ def regenerate_field(card_id: int):
         "pronouns", "relationship_to_user", "relationship_status",
         "height", "weight", "age",
         "species", "story_point", "motivations", "flaws", "mannerisms", "relationships",
+        "with_strangers", "with_close",
     }
 
     # Strip sp_ prefix if present
@@ -1341,6 +1354,7 @@ def api_save_prompts():
 ENV_WRITABLE = (
     "NANOGPT_API_KEY", "OPENROUTER_API_KEY", "NANOGPT_MODEL", "OPENROUTER_MODEL",
     "LOCAL_OPENAI_BASE_URL", "LOCAL_MODEL", "LOCAL_API_KEY",
+    "ST_URL", "ST_USER", "ST_PASSWORD",          # Send to SillyTavern (st_bridge.py)
 )
 
 
@@ -1348,7 +1362,7 @@ MASK = "\u2022\u2022\u2022\u2022"   # "••••": a saved secret the page ne
 
 
 def _is_secret(key):
-    return key.endswith("_KEY") or "TOKEN" in key or "SECRET" in key
+    return key.endswith("_KEY") or "TOKEN" in key or "SECRET" in key or "PASSWORD" in key
 
 
 @app.get("/api/config/env")

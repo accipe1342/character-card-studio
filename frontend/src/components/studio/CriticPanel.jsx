@@ -6,7 +6,8 @@
  *   REWRITE          a line fix or a sweep problem -> the paragraph rewritten with the fix applied
  */
 import { useEffect, useState } from "react";
-import { startCritique, listCritiques, getCritique, deleteCritique, startSweep, rewritePassage, getJob, getPresets } from "../../lib/api";
+import { startCritique, listCritiques, getCritique, deleteCritique, startSweep, rewritePassage, getJob, getPresets, scanProject } from "../../lib/api";
+import ProseScanModal from "./ProseScan";
 import { markBusy } from "../../lib/leaveGuard";
 import { DEFAULT_MODELS, Divider, btnPrimary, btnTool, headingStyle, hint, input, label, panelStyle, toolbarGrid } from "./textUi";
 
@@ -169,6 +170,17 @@ export default function CriticPanel({ project, parallel = 3, showToast, setError
   const [critiques, setCritiques] = useState([]);
   const [critView, setCritView] = useState(null);
   const [critOpen, setCritOpen] = useState(false);
+  const [prose, setProse] = useState(null);            // prose scan result (no model call)
+  const [proseBusy, setProseBusy] = useState(false);
+  async function runProseScan() {
+    if (!project) return;
+    setProseBusy(true);
+    try {
+      const g = critScope === "all" ? null : chapterGroups()[parseInt(critScope, 10)];
+      setProse(await scanProject(project.id, g ? g.idx : null));
+    } catch (e) { setError(e.message); }
+    finally { setProseBusy(false); }
+  }
 
   useEffect(() => { markBusy("critic", !!critJobId); return () => markBusy("critic", false); }, [critJobId]);
   useEffect(() => {
@@ -304,6 +316,10 @@ export default function CriticPanel({ project, parallel = 3, showToast, setError
               title="Score every part on its own, so the weakest chapters stand out">
               ▤ {(t.chapterSweep || "Chapter sweep").toUpperCase()}
             </button>
+            <button className="signal-btn" style={{ ...btnTool, flex: "1 1 130px", opacity: proseBusy ? 0.6 : 1 }} disabled={proseBusy} onClick={runProseScan}
+              title="Instant, free: stock AI-sounding phrases, overused words, filler, adverbs and dialogue tags (uses the scope above)">
+              {proseBusy ? "SCANNING…" : `✓ ${(t.proseScan || "Prose scan").toUpperCase()}`}
+            </button>
           </div>
           {critJobId && critJob && (
             <div style={{ marginTop: 8 }}>
@@ -344,6 +360,7 @@ export default function CriticPanel({ project, parallel = 3, showToast, setError
         </>)}
       </section>
 
+      {prose && <ProseScanModal res={prose} name={project?.name || ""} onClose={() => setProse(null)} />}
       {critOpen && critView && (
         <div onClick={() => setCritOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 300,
           display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>

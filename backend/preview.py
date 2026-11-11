@@ -75,6 +75,9 @@ def format_structured_profile_text(name: str, profile: Dict[str, Any]) -> str:
                        ("Relationships", "relationships")):
         if profile.get(key):
             lines.append(f'{label} ({join_items(profile.get(key, []))})')
+    for label, key in (("With Strangers", "with_strangers"), ("With People Close To Them", "with_close")):
+        if str(profile.get(key) or "").strip():
+            lines.append(f'{label} ("{q(profile.get(key, ""))}")')
     if profile.get("story_point"):
         lines.append(f'Story Point ("{q(profile.get("story_point", ""))}")')
     return "\n".join(lines)

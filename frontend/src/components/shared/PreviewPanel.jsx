@@ -38,7 +38,12 @@
  */
 
 import { useRef, useState } from "react";
-import { exportCardV2 } from "../../lib/api";
+import { exportCardV2, pushCardToST } from "../../lib/api";
+
+// the file name SillyTavern gave each card, so sending again replaces it instead of adding a copy (per browser)
+const ST_KEY = "ccs.stFiles";
+function stFiles() { try { return JSON.parse(localStorage.getItem(ST_KEY) || "{}"); } catch { return {}; } }
+function rememberStFile(cardKey, name) { try { localStorage.setItem(ST_KEY, JSON.stringify({ ...stFiles(), [cardKey]: name })); } catch { /* storage off */ } }
 
 // ── PNG tEXt chunk injector ───────────────────────────────────────────────────
 // SillyTavern expects: tEXt chunk with key="chara", value=base64(JSON)
@@ -114,11 +119,13 @@ export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card,
   const [viewMode, setViewMode] = useState("natural");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [stStatus, setStStatus] = useState(null);     // {ok, text} after SEND TO SILLYTAVERN
 
-  async function handleExportPng() {
+  async function handleExportPng(target = "download") {
     if (!card) return;
     setExporting(true);
     setExportError("");
+    setStStatus(null);
 
     try {
       const canvas = canvasRef.current;
@@ -256,6 +263,13 @@ export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card,
 
       // ── embed chara JSON metadata & download ─────────────
       const dataUrl = canvas.toDataURL("image/png");
+      if (target === "st") {
+        const key = card.id ? `card:${card.id}` : `name:${card.name}`;
+        const r = await pushCardToST({ card, mode: studioMode, lore_project_id: loreProjectId, image: dataUrl, file_name: stFiles()[key] });
+        rememberStFile(key, r.file_name);
+        setStStatus({ ok: true, text: `Sent to SillyTavern as ${r.file_name}${loreProjectId ? ", with the lorebook" : ""}. Refresh its character list to see it.` });
+        return;
+      }
       const base64 = dataUrl.split(",")[1];
       const binary = atob(base64);
       const pngBytes = new Uint8Array(binary.length);
@@ -274,7 +288,8 @@ export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card,
       URL.revokeObjectURL(url);
 
     } catch (e) {
-      setExportError(e.message);
+      if (target === "st") setStStatus({ ok: false, text: e.message });
+      else setExportError(e.message);
     } finally {
       setExporting(false);
     }
@@ -387,7 +402,7 @@ export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card,
           )}
 
           {/* Export button */}
-          <button className="signal-btn" onClick={handleExportPng} disabled={exporting}
+          <button className="signal-btn" onClick={() => handleExportPng()} disabled={exporting}
             style={{
               ...btnStyle,
               width: "100%",
@@ -405,6 +420,12 @@ export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card,
             </svg>
             {exporting ? (t.exporting || "EXPORTING…") : (t.exportPng || "EXPORT AS .CARD.PNG")}
           </button>
+          <button className="signal-btn" onClick={() => handleExportPng("st")} disabled={exporting}
+            title="Import this card into a running SillyTavern (address in Config → SillyTavern). Sending again replaces it."
+            style={{ ...btnStyle, width: "100%", marginTop: 6, opacity: exporting ? 0.6 : 1 }}>
+            ⇢ {t.sendToST || "SEND TO SILLYTAVERN"}
+          </button>
+          {stStatus && <div role="status" style={{ fontSize: 12, marginTop: 6, color: stStatus.ok ? "var(--signal-text)" : "#c84a3a" }}>{stStatus.ok ? "✓" : "⊗"} {stStatus.text}</div>}
         </div>
       )}
 

@@ -14,3 +14,9 @@ OPENROUTER_MODEL=openai/gpt-4o-mini
 LOCAL_OPENAI_BASE_URL=http://localhost:1234/v1
 LOCAL_MODEL=local-model
 LOCAL_API_KEY=local
+
+# SillyTavern, for the "Send to SillyTavern" buttons (also in Config -> SillyTavern).
+# User and password only if SillyTavern has basicAuthMode on in its config.yaml.
+ST_URL=http://127.0.0.1:8000
+ST_USER=
+ST_PASSWORD=

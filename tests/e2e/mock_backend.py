@@ -4,6 +4,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import database
 database.DB_PATH = os.path.join(tempfile.mkdtemp(), "e2e.db")
 import app as A, text_module as T
+from pathlib import Path
+A.ENV_PATH = Path(tempfile.mkdtemp()) / ".env"     # Config saves go to a scratch .env, never the real one
 def fake(chunk, provider, model, mode):
     time.sleep(0.6)
     i = chunk["idx"]
@@ -49,6 +51,14 @@ def _req(provider, model, user, system=None, **k):
                 "plot_hooks": ["Trema's orb"], "chapters": [{"title": "The Trap", "summary": "The girls are caged."}]}
     return NARR
 T._request = _req
+import assist_tools as AT
+def _assist(provider, model, user, system=None, **k):
+    if system and system.startswith("You shorten text"):
+        return {"text": "A trimmed entry that keeps the names."}
+    if system and "check an interview" in system:
+        return {"issues": ["Claims to dislike her cousin."], "verdict": "Mostly in character."}
+    return {"reply": "Ask quick, I have places to be."}
+AT._request = _assist
 NARR = {"name": "Gamerz Narrator", "description": "The Spira of this story.",
     "personality": "Vivid.", "scenario": "After the trap.", "first_mes": "Pyreflies drift past you.", "system_prompt": "Narrate.", "tags": ["ffx2"]}
 A.generate_full_card = lambda source, provider, model, options=None: {"name": source["title"], "description": "Generated from the fic: " + (source["normalized"].get("summary") or "")[:200],

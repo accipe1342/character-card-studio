@@ -188,6 +188,7 @@ export const STRINGS = {
     rebuildList: "Rebuild list", resplitText: "Resplit text", chunksAtOnce: "Chunks at once", noTextSelected: "No text selected",
     testActivation: "Test Activation", links: "Links", trash: "Trash",
     advancedSt: "Advanced SillyTavern settings", exportV3Json: "V3 JSON",
+    interview: "Interview", sendToST: "SEND TO SILLYTAVERN", sendToSTShort: "Send to SillyTavern", quickReplies: "Quick Replies", storyExports: "Bible / Data Bank", exportCharx: "CHARX",
     modelPresets: "Model presets", savePresets: "Save presets", backups: "Backups", backUpNow: "Back up now",
     restore: "Restore", modelUsage: "Model usage", projectBundles: "Project bundles",
     importBundle: "Import bundle", exportSelected: "Export selected",
@@ -195,6 +196,7 @@ export const STRINGS = {
     runCritique: "Run critique", rewritePassage: "Rewrite the passage", recapPlacement: "Placed in SillyTavern",
     searchAll: "Search everything", unsavedLeave: "A job is running or changes are not saved yet. Leave anyway?",
     fields: {
+      with_strangers: "With Strangers", with_close: "With People Close to Them",
       age: "Age", gender: "Gender", pronouns: "Pronouns", ethnicity: "Ethnicity",
       race: "Race", job_occupation: "Job / Occupation", relationship_to_user: "Relationship to User",
       relationship_status: "Relationship Status", sexual_attraction: "Sexual Attraction",
@@ -344,6 +346,7 @@ export const STRINGS = {
     rebuildList: "リストを再構築", resplitText: "テキストを再分割", chunksAtOnce: "同時チャンク数", noTextSelected: "テキスト未選択",
     testActivation: "発動テスト", links: "リンク", trash: "ゴミ箱",
     advancedSt: "SillyTavern 詳細設定", exportV3Json: "V3 JSON",
+    interview: "インタビュー", sendToST: "SILLYTAVERN に送る", sendToSTShort: "SillyTavern に送る", quickReplies: "クイック返信", storyExports: "設定資料 / Data Bank", exportCharx: "CHARX",
     modelPresets: "モデルプリセット", savePresets: "プリセットを保存", backups: "バックアップ", backUpNow: "今すぐバックアップ",
     restore: "復元", modelUsage: "モデル使用量", projectBundles: "プロジェクトバンドル",
     importBundle: "バンドルを読み込む", exportSelected: "選択を書き出す",
@@ -351,6 +354,7 @@ export const STRINGS = {
     runCritique: "批評を実行", rewritePassage: "段落を書き直す", recapPlacement: "SillyTavern での配置",
     searchAll: "すべてを検索", unsavedLeave: "処理中、または未保存の変更があります。移動しますか？",
     fields: {
+      with_strangers: "初対面の相手には", with_close: "親しい相手には",
       age: "年齢", gender: "性別", pronouns: "代名詞", ethnicity: "民族",
       race: "人種", job_occupation: "職業", relationship_to_user: "ユーザーとの関係",
       relationship_status: "関係ステータス", sexual_attraction: "性的指向",
@@ -500,6 +504,7 @@ export const STRINGS = {
     rebuildList: "重建列表", resplitText: "重新分割文本", chunksAtOnce: "同时处理块数", noTextSelected: "未选择文本",
     testActivation: "触发测试", links: "关联", trash: "回收站",
     advancedSt: "SillyTavern 高级设置", exportV3Json: "V3 JSON",
+    interview: "访谈", sendToST: "发送到 SILLYTAVERN", sendToSTShort: "发送到 SillyTavern", quickReplies: "快速回复", storyExports: "设定集 / Data Bank", exportCharx: "CHARX",
     modelPresets: "模型预设", savePresets: "保存预设", backups: "备份", backUpNow: "立即备份",
     restore: "恢复", modelUsage: "模型用量", projectBundles: "项目打包",
     importBundle: "导入打包", exportSelected: "导出所选",
@@ -507,6 +512,7 @@ export const STRINGS = {
     runCritique: "运行评论", rewritePassage: "重写段落", recapPlacement: "在 SillyTavern 中的位置",
     searchAll: "全局搜索", unsavedLeave: "有任务正在运行或更改尚未保存。仍要离开吗？",
     fields: {
+      with_strangers: "面对陌生人", with_close: "面对亲近的人",
       age: "年龄", gender: "性别", pronouns: "代词", ethnicity: "民族",
       race: "族裔", job_occupation: "职业", relationship_to_user: "与用户的关系",
       relationship_status: "关系状态", sexual_attraction: "性取向",

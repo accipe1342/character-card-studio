@@ -6,9 +6,10 @@
  *   SimulatorPanel             paste chat text: which entries would fire, and why
  *   LinksPanel                 which entries mention which (recursion), orphans, loops
  *   TrashPanel                 deleted entries: restore or delete for good
+ *   EntryHints                 size warning and stock-phrase hits under the entry text (no model call)
  */
 import { useEffect, useState } from "react";
-import { simulateLore, getLoreGraph, listLoreTrash, restoreLoreEntry, emptyLoreTrash, deleteLoreEntry } from "../../lib/api";
+import { simulateLore, getLoreGraph, listLoreTrash, restoreLoreEntry, emptyLoreTrash, deleteLoreEntry, scanText } from "../../lib/api";
 
 export const ALWAYS_ON_TITLES = ["Story So Far", "Cast Roster", "Relationships"];
 export const isAlwaysOn = (e) => (e.constant === null || e.constant === undefined ? ALWAYS_ON_TITLES.includes(e.title) : !!e.constant);
@@ -288,5 +289,36 @@ export function TrashPanel({ project, onChanged, onClose, refreshKey, t = {} }) 
         ))}
       </div>
     </section>
+  );
+}
+
+export const ENTRY_TOKEN_SOFT_LIMIT = 150;   // r/SillyTavernAI: entries work best at ~50-150 tokens
+
+/** Under the entry text: a size warning and stock "AI-sounding" phrases found in it. */
+export function EntryHints({ entry, children }) {
+  const [hits, setHits] = useState([]);
+  const text = entry?.content || "";
+  useEffect(() => {
+    if (!text.trim()) { setHits([]); return; }
+    const tm = setTimeout(() => {
+      scanText(text).then((r) => setHits(r.cliches || [])).catch(() => setHits([]));
+    }, 800);
+    return () => clearTimeout(tm);
+  }, [text]);
+  const tok = Math.ceil(text.length / 4);
+  const long = tok > ENTRY_TOKEN_SOFT_LIMIT && !isAlwaysOn(entry || {});
+  if (!long && !hits.length && !children) return null;
+  return (
+    <div style={{ ...dim, margin: "6px 0 0", lineHeight: 1.5 }}>
+      {long && (
+        <div style={{ color: tok > ENTRY_TOKEN_SOFT_LIMIT * 2 ? "#c84a3a" : "#b8860b" }}>
+          ~{tok} tokens: keyword entries work best at about 50–{ENTRY_TOKEN_SOFT_LIMIT}. Long entries crowd out others when several fire at once.
+        </div>
+      )}
+      {hits.length > 0 && (
+        <div>Stock phrases: {hits.map((h) => `“${h.phrase.replaceAll("*", "…")}”${h.count > 1 ? ` ×${h.count}` : ""}`).join(", ")}</div>
+      )}
+      {children}
+    </div>
   );
 }

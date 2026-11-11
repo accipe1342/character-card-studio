@@ -1,7 +1,7 @@
 # Character Card Studio
 
 [![CI](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-2.4.0-informational)
+![version](https://img.shields.io/badge/version-2.5.0-informational)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 A Signal UI–themed app for making SillyTavern character cards and lorebooks with AI: from Fandom wiki pages, from fan fiction and other long text, or from your own roleplay chats.
@@ -77,7 +77,11 @@ After the first run, launching is instant.
 - Field regeneration with custom prompt support and live timer
 - Alternate greetings with per-entry AI regeneration
 - Generation options: story point, who {{user}} is, size, prose or PList style, in-depth mode; static AUDIT; per-field undo
-- PNG export with embedded V2 (`chara`) and V3 (`ccv3`) metadata; V2 and V3 JSON; attach a LORE project as the card's lorebook
+- PNG export with embedded V2 (`chara`) and V3 (`ccv3`) metadata; V2 and V3 JSON; CHARX (V3 zip with the portrait); attach a LORE project as the card's lorebook
+- Portraits are saved with the card and come back when you reopen it; the Library shows thumbnails
+- Send to SillyTavern: the card (with its portrait and lorebook) goes straight into a running SillyTavern; sending again replaces it
+- Interview: ask the character questions to hear how it plays, then check the answers against its notes
+- "With strangers / with people close to them" profile layers; AUDIT also checks wording habits and stock phrases
 - Cheatsheet bar — click to insert SillyTavern variables into any field
 - Library with save, load, search, rename, duplicate, and delete
 
@@ -89,19 +93,26 @@ After the first run, launching is instant.
 - Test Activation (which entries fire for a chat and why, with the token budget), Links (recursion map), budget meter
 - Trash with restore, keyboard review (J/K/X/U, Ctrl+S), Clean Keywords, move entries between projects
 - Manual entry creation and AI generation from custom text
-- SillyTavern World Info JSON export and DeepLore (.zip) export
+- SillyTavern World Info JSON export and DeepLore (.zip) export, or send the lorebook straight to SillyTavern
+- Size hints, stock-phrase hints and ✂ Trim (shorter version shown next to the original before anything changes)
+- Story bible (Markdown / printable page), Data Bank pack, and a SillyTavern Quick Reply set
 
 ### Text Studio (fan fiction → lorebook)
 - Load a fic by paste, file (.txt .md .html .epub), URL (AO3 full works, chapter-by-chapter "follow next", wiki pages) or a SillyTavern chat (.jsonl); + ADD TEXT appends new chapters later
 - Deep extraction in parallel: characters, places, factions, items, abilities, concepts and plot events, with tiers (main / supporting / one-off), fic-only flags, relationships and age flags
 - Review with autosave, keyboard shortcuts, duplicate/junk detection, merge, trash and undo
 - Story So Far with a starting point ("roleplay starts after chapter N"), an AI archive recap and a timeline; place it before the card or at depth 4
-- Send to LORE (re-sending updates the same project and keeps your LORE edits), with an always-on Cast Roster and Relationships entry
+- Lore as of the starting point: entries and cards only know what the story says up to there (BY CHAPTER shows it per chapter)
+- MENTIONS (every line naming an entry), INTERVIEW for characters, a relationship map, pictures for characters
+- Secrets: facts only some characters know, sent as entries SillyTavern only shows to those characters
+- Send to LORE (re-sending updates the same project and keeps your LORE edits; a preview shows every change first), with an always-on Cast Roster and Relationships entry, and "Often here" lines on places
 - Make a card for one character, for the whole main cast (plus a group card), or a World Narrator card
-- Critic: brutally honest critique, chapter sweep, score history and passage rewrites
+- Critic: brutally honest critique, chapter sweep, score history and passage rewrites, plus an instant prose scan (stock phrases, overused words, filler, adverbs, dialogue tags)
+- Story bible, Data Bank pack and Quick Reply set, as in LORE
 
 ### Config
-- Model presets per task, database backups and restore, model usage, project bundles (.zip export / import)
+- Model presets per task, database backups and restore, model usage, project bundles (.zip export / import, with pictures)
+- SillyTavern connection for the Send buttons: address, optional basic-auth login, Test connection
 - Temperature slider (0.0–1.0) — controls creativity vs precision
 - Max Tokens dropdown (1024 / 2048 / 4096 / 8192)
 - Custom system prompt templates per generation type
@@ -197,7 +208,7 @@ Delete the project folder. Nothing is written to your system, registry, or AppDa
 
 ## What's new
 
-See [docs/UPDATE-v2.4.md](docs/UPDATE-v2.4.md) for the v2.4 overview and [docs/CHANGELOG.md](docs/CHANGELOG.md) for every change.
+See [docs/UPDATE-v2.5.md](docs/UPDATE-v2.5.md) for the v2.5 overview ([v2.4](docs/UPDATE-v2.4.md)) and [docs/CHANGELOG.md](docs/CHANGELOG.md) for every change.
 
 ---
 

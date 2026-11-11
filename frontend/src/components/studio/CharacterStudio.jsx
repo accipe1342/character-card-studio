@@ -73,6 +73,7 @@ import SourcePanel from "../shared/SourcePanel";
 import RegenModal from "../shared/RegenModal";
 import MainJobStatus from "../shared/MainJobStatus";
 import { markBusy } from "../../lib/leaveGuard";
+import { InterviewPanel, TrimButton } from "./AssistPanels";
 import {
   getJob,
   regenerateField,
@@ -88,7 +89,7 @@ import {
   listLoreProjects,
   getPresets,
   renameCard,
-} from "../../lib/api";
+  scanCardProse, setCardImage, uploadImage } from "../../lib/api";
 
 // ── static card audit (no model call): what would make this card weaker in SillyTavern ──
 function auditCard(card) {
@@ -128,6 +129,17 @@ function auditCard(card) {
   const first = String(card.name || "").split(" ")[0];
   if (first && card.description && !card.description.includes(first) && !/\{\{char\}\}/.test(card.description))
     add("low", "Description never names the character", 2);
+  // lessons from r/SillyTavernAI: what makes cards misbehave in long chats
+  const desc = String(card.description || "") + " " + String(card.personality || "");
+  const trauma = (desc.match(/\b(trauma\w*|abus\w*|tortur\w*|PTSD|nightmares?|scar(red|s)? by|haunted by|grief|griev\w*|orphan\w*|massacre\w*)\b/gi) || []).length;
+  if (trauma >= 3) add("med", "The description dwells on a painful past: models tend to bring it up constantly. Keep one line here and move the backstory into a lorebook entry", 5);
+  const absolutes = (desc.match(/\b(always|never|every time|constantly|at all times)\b/gi) || []).length;
+  if (absolutes >= 5) add("low", `${absolutes} "always/never" rules: very specific cards get parroted back. Show it in example messages instead`, 3);
+  if (perm > 900) add("low", "Big for group chats: in a group every card is in context at once. Consider a 'lean' version for groups", 2);
+  if (!String(sp.with_strangers || "").trim() && !String(sp.with_close || "").trim())
+    add("low", "No 'with strangers / with people close to them' layers: they make a character feel less one-note", 2);
+  else if (String(sp.with_strangers || "").trim() && String(sp.with_strangers).trim() === String(sp.with_close || "").trim())
+    add("low", "'With strangers' and 'with people close to them' say the same thing", 2);
   return { score: Math.max(0, score), issues, perm };
 }
 
@@ -208,7 +220,8 @@ export default function CharacterStudio({
   const [batchResults, setBatchResults] = useState(null);
   // Fields that live at card top-level, not in structured_profile
   const NATURAL_FIELDS = new Set(["description","personality","scenario","first_mes","mes_example","tags","depth_prompt","system_prompt"]);
-  const FIELD_LABELS = { depth_prompt: "Character's Note", system_prompt: "System Prompt", story_point: "story point" };
+  const FIELD_LABELS = { depth_prompt: "Character's Note", system_prompt: "System Prompt", story_point: "story point",
+    with_strangers: "With strangers", with_close: "With people close to them" };
   const fieldLabel = (f) => (t.fields && t.fields[f]) || FIELD_LABELS[f] || f.replaceAll("_", " ");
 
   // generation options (sent with Generate Card)
@@ -220,6 +233,41 @@ export default function CharacterStudio({
   const [deepGen, setDeepGen] = useState(false);
   const [genWarnings, setGenWarnings] = useState([]);
   const [audit, setAudit] = useState(null);
+  const [interviewOpen, setInterviewOpen] = useState(false);
+  // portraits: whatever image is showing is saved to data/images and attached once the card has an id
+  const imageNames = useRef({});        // shown URL -> stored file name (uploads, wiki pictures)
+  const attached = useRef("");          // "cardId:name" last attached, so card edits don't re-send it
+  useEffect(() => {
+    if (!cardId || !card || !imageUrl) return;
+    let alive = true;
+    (async () => {
+      let name = imageUrl.startsWith("/api/images/") ? imageUrl.slice(12) : imageNames.current[imageUrl];
+      if (!name) {
+        try {
+          const blob = await (await fetch(imageUrl)).blob();
+          name = await uploadImage(blob);
+          imageNames.current[imageUrl] = name;
+        } catch { return; }       // a wiki picture that can't be fetched just stays unsaved
+      }
+      const key = `${cardId}:${name}`;
+      if (!alive || attached.current === key || card.image === name) { attached.current = key; return; }
+      try { await setCardImage(cardId, name); attached.current = key; if (alive) setCard((c) => (c && (c.id == null || c.id === cardId) ? { ...c, image: name } : c)); }
+      catch { /* shown again next time the card changes */ }
+    })();
+    return () => { alive = false; };
+  }, [cardId, card, imageUrl, setCard]);
+  // AUDIT: instant checks here, plus the stock-phrase scan from the backend (also no model call)
+  async function runAudit() {
+    const a = auditCard(card || {});
+    setAudit(a);
+    try {
+      const r = await scanCardProse(card || {});
+      if (r.warnings?.length) {
+        setAudit({ ...a, score: Math.max(0, a.score - Math.min(10, r.warnings.length * 2)),
+          issues: [...a.issues, ...r.warnings.map((w) => ["low", `Stock phrase: ${w}`])] });
+      }
+    } catch { /* the instant checks are still shown */ }
+  }
   // per-field history of regenerations: undo / redo
   const [fieldHistory, setFieldHistory] = useState({});   // field -> {undo: [], redo: []}
 
@@ -689,6 +737,29 @@ export default function CharacterStudio({
     }
   }
 
+  // .charx: Character Card V3 zip with the portrait inside (SillyTavern, RisuAI and other V3 apps import it)
+  async function handleExportCharx() {
+    if (!card) return;
+    try {
+      let image;
+      if (!card.image && imageUrl) {          // a picture not saved yet: send it along
+        const blob = await (await fetch(imageUrl)).blob();
+        image = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
+      }
+      const r = await fetch("/api/export/charx", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ card, mode: characterViewMode, lore_project_id: attachLore || null, image }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${(card.name || "card").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "card"}.charx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      showToast && showToast(`Export failed: ${e.message}`);
+    }
+  }
+
   return (
     <>
       <h1 className="signal-title signal-heading" style={{ marginTop: 0, marginBottom: 4, display: 'block', textAlign: 'center' }}>Character Card Studio</h1>
@@ -888,11 +959,11 @@ export default function CharacterStudio({
 
       {/* Row 2: actions — evenly spaced across the bar */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <button onClick={handleNewCard} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }}>
+        <button onClick={handleNewCard} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}>
           {t.newCard || "New Card"}
         </button>
 
-        <button onClick={handleScrape} disabled={loading} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }}>
+        <button onClick={handleScrape} disabled={loading} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}>
           {loading ? (t.working || "Working...") : (t.scrape || "Scrape")}
         </button>
 
@@ -900,45 +971,54 @@ export default function CharacterStudio({
           onClick={handleGenerate}
           disabled={loading || !sourceId}
           className="signal-btn"
-          style={{ ...buttonStyle, flex: "1 1 0" }}
+          style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
         >
           {t.generateCard || "Generate Card"}
         </button>
 
-        <button className={genOpen ? "signal-btn signal-btn-active" : "signal-btn"} style={{ ...buttonStyle, flex: "1 1 0" }}
+        <button className={genOpen ? "signal-btn signal-btn-active" : "signal-btn"} style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
           onClick={() => setGenOpen((v) => !v)} aria-expanded={genOpen}
           title="Story point, your role, size, style and In-depth mode for Generate Card">
           ⚙ {t.genOptions || "Options"}
         </button>
-        <button className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }} disabled={!card} onClick={() => setAudit(auditCard(card || {}))}
+        <button className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }} disabled={!card} onClick={runAudit}
           title="Check the card for problems (no model call)">
           ⚖ {t.auditCard || "Audit"}
+        </button>
+        <button className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }} disabled={!card} onClick={() => setInterviewOpen(true)}
+          title="Ask the character questions to test its voice (one model call per answer, not saved)">
+          ◇ {t.interview || "Interview"}
         </button>
 
         <button
           className="signal-btn"
           onClick={() => { setBatchMode(b => !b); setBatchResults(null); }}
-          style={{ ...buttonStyle, flex: "1 1 0" }}
+          style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
         >
           {batchMode ? (t.cancelBatch || "Cancel Batch") : (t.batchGenerate || "Batch Generate")}
         </button>
 
-        <button onClick={() => handleExportCard("v2")} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }}
+        <div aria-hidden="true" style={{ flexBasis: "100%", height: 0, margin: "-4px 0" }} />{/* row break: make / check above, export below */}
+        <button onClick={() => handleExportCard("v2")} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
           title="Character Card V2 JSON: what SillyTavern and most sites import">
           {characterViewMode === "structured"
             ? (t.exportStructuredJson || "Export Structured JSON")
             : (t.exportCardJson || "Export Card JSON")}
         </button>
-        <button onClick={() => handleExportCard("v3")} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 0" }}
+        <button onClick={() => handleExportCard("v3")} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
           title="Character Card V3 JSON (chara_card_v3) for V3-aware sites. PNG exports already carry both V2 and V3">
           {t.exportV3Json || "V3 JSON"}
+        </button>
+        <button onClick={handleExportCharx} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
+          title="Character Card V3 .charx: a zip with the card and its portrait (and the attached lorebook). SillyTavern imports it like a PNG">
+          {t.exportCharx || "CHARX"}
         </button>
 
         <button
           onClick={() => setSourceOpen(true)}
           disabled={!source}
           className="signal-btn"
-          style={{ ...buttonStyle, flex: "1 1 0" }}
+          style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
         >
           {t.viewSource || "View Source"}
         </button>
@@ -1018,6 +1098,13 @@ export default function CharacterStudio({
             <span style={{ fontSize: 11, color: "var(--signal-text-dim)" }}>~{audit.perm} permanent tokens</span>
             <span style={{ marginLeft: "auto", cursor: "pointer" }} onClick={() => setAudit(null)} role="button" aria-label="Close audit">✕</span>
           </div>
+          {card && Math.round(String(card.description || "").length / 4) > 500 && (
+            <div style={{ fontSize: 12, marginBottom: 6 }}>
+              Description is ~{Math.round(String(card.description).length / 4)} tokens.{" "}
+              <TrimButton text={card.description} target={400} kind="card_field" field="description" name={card.name} provider={provider} model={model}
+                label="TRIM DESCRIPTION" onAccept={(text) => { pushHistory("description", card.description); writeField("description", text); setAudit(null); }} />
+            </div>
+          )}
           {audit.issues.length === 0 ? <div style={{ fontSize: 12 }}>No problems found.</div> : (
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
               {audit.issues.map(([sev, msg], i) => (
@@ -1025,6 +1112,20 @@ export default function CharacterStudio({
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {interviewOpen && card && (
+        <div onClick={() => setInterviewOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 300,
+          display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+          <div onClick={(e) => e.stopPropagation()} className="signal-panel" role="dialog" aria-label="Interview"
+            style={{ border: "1px solid var(--signal-border)", background: "var(--signal-bg-panel)", width: "min(720px, 100%)", padding: 20, textAlign: "left" }}>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+              <b style={{ letterSpacing: "0.08em" }}>INTERVIEW · {card.name}</b>
+              <span style={{ marginLeft: "auto", cursor: "pointer" }} onClick={() => setInterviewOpen(false)} role="button" aria-label="Close interview">✕</span>
+            </div>
+            <InterviewPanel card={card} provider={provider} model={model} name={card.name} />
+          </div>
         </div>
       )}
 
@@ -1352,6 +1453,8 @@ export default function CharacterStudio({
                         "flaws",
                         "mannerisms",
                         "relationships",
+                        "with_strangers",
+                        "with_close",
                         // ── Card fields ──
                         "scenario",
                         "first_mes",

@@ -9,8 +9,9 @@ POST /api/bundle/import        multipart "file": a bundle .zip. Everything is ad
                                overwritten); links between them (TEXT -> LORE, card -> source) are kept.
                                A backup of the database is made first.
 
-The zip holds data.json (the rows, for importing) plus ready-to-use copies: lorebooks/*.json (SillyTavern World Info)
-and cards/*.json (Character Card V2), so a bundle is useful even without this app.
+The zip holds data.json (the rows, for importing), images/ (portraits of the cards and TEXT characters in it) plus
+ready-to-use copies: lorebooks/*.json (SillyTavern World Info), cards/*.json (Character Card V2) and cards/*.png (the
+card inside its portrait, when it has a PNG one), so a bundle is useful even without this app.
 """
 
 import io
@@ -92,11 +93,23 @@ def build_zip(tables):
         for lc in tables["lore_crawls"]:
             name, items = lorebook_entries(lc["id"])
             z.writestr(f"lorebooks/{_safe(name)}-{lc['id']}.json", json.dumps(world_info_book(name, items), ensure_ascii=False, indent=2))
+        import images
+        import png_card
+        from preview import build_export_card_v3
+        pics = {r.get("image") for t in ("cards", "text_entities") for r in tables.get(t) or []} - {None, ""}
+        for name in sorted(pics):
+            raw, _ = images.load(name)
+            if raw:
+                z.writestr(f"images/{name}", raw)
         for c in tables["cards"]:
             try:
                 card = database.get_card(c["id"])
-                z.writestr(f"cards/{_safe(card.get('name'))}-{c['id']}.json",
-                           json.dumps(build_export_card_json(card), ensure_ascii=False, indent=2))
+                base = f"cards/{_safe(card.get('name'))}-{c['id']}"
+                v2 = build_export_card_json(card)
+                z.writestr(base + ".json", json.dumps(v2, ensure_ascii=False, indent=2))
+                raw, ext = images.load(card.get("image"))
+                if raw and ext == "png":
+                    z.writestr(base + ".png", png_card.embed(raw, v2, build_export_card_v3(card)))
             except Exception:
                 pass
     buf.seek(0)
@@ -211,11 +224,20 @@ def api_import():
         backup = make_backup("before-import")
     except Exception:
         backup = None
+    import images
+    pics = 0
+    for info in z.infolist():                         # portraits first, so the rows that name them find them
+        if info.filename.startswith("images/") and images.NAME_RE.match(info.filename[7:]) and info.file_size <= images.MAX_BYTES:
+            try:
+                images.store(z.read(info))
+                pics += 1
+            except ValueError:
+                pass
     try:
         added, ids = import_tables({t: v for t, v in tables.items() if t in TABLES and isinstance(v, list)})
     except Exception as e:
         return jsonify({"error": f"Import failed, nothing was changed: {e}"}), 500
-    return jsonify({"added": added, "ids": ids, "backup": backup})
+    return jsonify({"added": added, "ids": ids, "backup": backup, "images": pics})
 
 
 def register_bundle_routes(app):

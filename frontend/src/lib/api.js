@@ -559,8 +559,16 @@ export async function mergeTextEntities(projectId, ids) {
   return _textJson(await _post(`/api/text/project/${projectId}/merge`, { ids }), "Merge failed");
 }
 /** mode: undefined = update the LORE project made last time (if it still exists), "new" = always a new project. */
-export async function commitTextProject(projectId, mode) {
-  return _textJson(await _post(`/api/text/project/${projectId}/commit`, mode ? { mode } : {}), "Commit failed");
+export async function commitTextProject(projectId, mode, skip) {
+  const body = {};
+  if (mode) body.mode = mode;
+  if (skip && skip.length) body.skip = skip;
+  return _textJson(await _post(`/api/text/project/${projectId}/commit`, body), "Commit failed");
+}
+
+/** What re-sending to LORE would change, without writing anything. */
+export async function previewCommit(projectId) {
+  return _textJson(await _post(`/api/text/project/${projectId}/commit/preview`, {}), "Could not preview the update");
 }
 
 /** Build a Character Card V2 object server-side (single source of truth for JSON + PNG export). */
@@ -650,4 +658,83 @@ export async function importBundle(file) {
 /** One search across cards, lore entries, TEXT projects and reviewed TEXT entities. */
 export async function searchAll(q, limit = 8) {
   return _json(await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`), "Search failed");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prose scan (no model calls), entity chapters and mentions
+// ─────────────────────────────────────────────────────────────────────────────
+export async function scanCardProse(card) { return _json(await _postJson("/api/prose/scan", { card }), "Scan failed"); }
+export async function scanText(text, label = "") { return _json(await _postJson("/api/prose/scan", { text, label }), "Scan failed"); }
+export async function scanProject(projectId, chunks) {
+  return _json(await _postJson(`/api/text/project/${projectId}/prose-scan`, chunks ? { chunks } : {}), "Scan failed");
+}
+export async function getEntityChapters(id) { return _json(await fetch(`/api/text/entity/${id}/chapters`), "Could not load chapters"); }
+export async function getEntityMentions(id, anyCase = false) {
+  return _json(await fetch(`/api/text/entity/${id}/mentions${anyCase ? "?any_case=1" : ""}`), "Could not load mentions");
+}
+export async function setLoreCutoff(projectId, cutoff) {
+  return _textJson(await fetch(`/api/text/project/${projectId}/recap`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cutoff }) }),
+    "Could not save the setting");
+}
+
+export async function setOftenHere(projectId, often_here) {
+  return _textJson(await fetch(`/api/text/project/${projectId}/recap`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ often_here }) }),
+    "Could not save the setting");
+}
+
+/** Shorten one lore entry or card field to about `target_tokens`. Nothing is saved. */
+export async function trimText(body) {
+  return _json(await _postJson("/api/trim", body), "Trim failed");
+}
+
+/** One in-character reply, or with check: true a list of answers that contradict the notes. */
+export async function interviewCharacter(body) {
+  return _json(await _postJson("/api/interview", body), "Interview failed");
+}
+
+// ── SillyTavern (st_bridge.py) ────────────────────────────────────────────────
+/** {url?, user?, password?}: unsaved values from the form are tried first. -> {ok, version, url} */
+export async function testSillyTavern(body = {}) {
+  return _json(await _postJson("/api/st/test", body), "Connection test failed");
+}
+/** {card, mode, lore_project_id?, image? (PNG data URL), file_name?} -> {file_name, image} */
+export async function pushCardToST(body) {
+  return _json(await _postJson("/api/st/push/card", body), "Send to SillyTavern failed");
+}
+export async function pushLoreToST(projectId, name) {
+  return _json(await _postJson("/api/st/push/lore", { project_id: projectId, name }), "Send to SillyTavern failed");
+}
+export async function pushQuickRepliesToST(set) {
+  return _json(await _postJson("/api/st/push/quick-replies", { set }), "Send to SillyTavern failed");
+}
+/** A SillyTavern Quick Reply set built from a TEXT project ("text") or a LORE project ("lore"). */
+export async function getQuickReplySet(kind, projectId) {
+  const r = await fetch(`/api/${kind === "lore" ? "lore" : "text"}/project/${projectId}/quick-replies`);
+  return _json(r, "Could not build the Quick Reply set");
+}
+
+// ── saved portraits (images.py) ───────────────────────────────────────────────
+export const imageSrc = (name) => (name ? `/api/images/${name}` : "");
+/** Upload a File/Blob; resolves to the stored file name. */
+export async function uploadImage(blob) {
+  const fd = new FormData();
+  fd.append("file", blob, blob.name || "portrait");
+  const r = await fetch("/api/images", { method: "POST", body: fd });
+  return (await _json(r, "Could not save the image")).image;
+}
+export async function setCardImage(cardId, image) {
+  return _json(await fetch(`/api/card/${cardId}/image`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: image || "" }) }), "Could not attach the image");
+}
+export async function setEntityImage(entityId, image) {
+  return _json(await fetch(`/api/text/entity/${entityId}/image`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: image || "" }) }), "Could not attach the image");
+}
+
+/** {nodes:[{id,name,type,tier,image,degree}], edges:[{a,b,a_to_b,b_to_a}], upto, cutoff} for the relationship map. */
+export async function getRelationGraph(projectId) {
+  return _json(await fetch(`/api/text/project/${projectId}/relations`), "Could not load relations");
+}
+
+/** Facts only some characters know: [{text, known_by: [names]}]. Each becomes a LORE entry filtered to them. */
+export async function setEntitySecrets(entityId, secrets) {
+  return _json(await fetch(`/api/text/entity/${entityId}/secrets`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ secrets }) }), "Could not save the secrets");
 }

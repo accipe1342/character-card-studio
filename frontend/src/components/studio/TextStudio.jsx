@@ -34,6 +34,9 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import MainJobStatus from "../shared/MainJobStatus";
 import CriticPanel from "./CriticPanel";
+import { EntityChapters, EntityMentions, EntityTabs, PortraitSlot, SecretsEditor } from "./EntityPanels";
+import { InterviewPanel, QuickRepliesButton, ResendPreviewModal, StoryExportsButton } from "./AssistPanels";
+import RelationshipMap from "./RelationshipMap";
 import { markBusy } from "../../lib/leaveGuard";
 import { DEFAULT_MODELS, Divider, btn, btnPrimary, btnSm, btnTool, headingStyle, hint, input, label, panelStyle, toolbarGrid } from "./textUi";
 import {
@@ -41,7 +44,7 @@ import {
   textIngest, textIngestFile, textIngestUrls, appendText,
   listTextProjects, getTextProject, deleteTextProject, rechunkTextProject,
   startTextExtract, patchTextEntity, deleteTextEntity, mergeTextEntities, commitTextProject,
-  restoreTextEntity, emptyTextTrash, getTextRecap, saveTextRecap, saveRecapPosition, textEntityToSource, makeNarratorCard, startCastCards, writeRecapAI,
+  restoreTextEntity, emptyTextTrash, getTextRecap, saveTextRecap, saveRecapPosition, setLoreCutoff, setOftenHere, getRelationGraph, textEntityToSource, makeNarratorCard, startCastCards, writeRecapAI,
   getPresets,
 } from "../../lib/api";
 
@@ -193,6 +196,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
   // review
   const [selectedId, setSelectedId] = useState(null);
   const [draft, setDraft] = useState(null);
+  const [entTab, setEntTab] = useState("edit");        // review editor tab: edit | chapters | mentions | interview
   const [checked, setChecked] = useState(new Set());
   const [filterType, setFilterType] = useState("all");
   const [filterFlag, setFilterFlag] = useState("all");
@@ -205,6 +209,8 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
   const [showOneOffs, setShowOneOffs] = useState(false);   // one-off entries are collapsed by default
   const [showTrash, setShowTrash] = useState(false);
   const [lastDeleted, setLastDeleted] = useState([]);      // ids of the last delete, for UNDO
+  const [resendOpen, setResendOpen] = useState(false);     // UPDATE IN LORE preview
+  const [relGraph, setRelGraph] = useState(null);          // relationship map data while it is open
   const [recap, setRecap] = useState(null);                // {text, edited, upto, chunks, limit}
   const [recapDirty, setRecapDirty] = useState(false);     // starting point or text changed, not saved yet
   const [recapTyped, setRecapTyped] = useState(false);     // the text itself was edited by hand
@@ -652,6 +658,11 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
     const flagged = kept.filter((e) => e.age_flag === "minor" || e.age_flag === "check").length;
     const sendCount = countToSend(kept);
     const resend = !!project.lore_project_id && !asNew;
+    if (resend) {                                   // show what would change, entry by entry, before writing
+      if (recapDirty) { try { await saveRecap(false, true); } catch (e) { setError(e.message); return; } }
+      setResendOpen(true);
+      return;
+    }
     const msg = (resend
       ? `Update the LORE project made last time with ${sendCount} entries?\n\nEntries you edited by hand in LORE are kept as they are; the rest are refreshed, new ones added, and ones you no longer keep go to the LORE trash. (Cancel, then hold Shift while clicking, to make a separate new project instead.)`
       : `Send ${sendCount} entries to a new LORE project?`) +
@@ -666,6 +677,16 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
         : `${r.entries} entries sent to a new LORE project`);
       await loadProjects(); await openProject(project.id);
     } catch (e) { setError(e.message); }
+  }
+
+  async function applyResend(skip) {
+    try {
+      const r = await commitTextProject(project.id, "update", skip);
+      showToast && showToast(`LORE updated: ${r.updated} refreshed, ${r.added} added, ${r.kept_edited} hand-edited kept, ${r.trashed} to trash` +
+        (r.skipped ? `, ${r.skipped} left as they were` : ""));
+      setResendOpen(false);
+      await loadProjects(); await openProject(project.id);
+    } catch (e) { setError(e.message); setResendOpen(false); }
   }
 
   const entities = project?.entities || [];
@@ -707,6 +728,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
         {t.textSubtitle || "Fanfiction & long text • chapters • characters • events"}
       </p>
 
+      {resendOpen && project && <ResendPreviewModal projectId={project.id} onClose={() => setResendOpen(false)} onApply={applyResend} />}
       {error && (
         <div style={{ color: "#c84a3a", fontSize: 13, marginBottom: 10, padding: "8px 12px", border: "1px solid #c84a3a",
           display: "flex", justifyContent: "space-between", gap: 8, textAlign: "left" }}>
@@ -947,6 +969,30 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                 <option value={-1}>the end of the text</option>
                 {recap.chunks.map((lbl, i) => <option key={i} value={i}>{i + 1}. {lbl}</option>)}
               </select>
+              {(recap.upto ?? -1) >= 0 && (
+                <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, marginTop: 6, cursor: "pointer" }}
+                  title="Characters, places and the rest are rebuilt from the chapters up to the starting point, so later facts and spoilers stay out. Entries you edited by hand are used as you wrote them.">
+                  <input type="checkbox" checked={recap.cutoff !== false} style={{ marginTop: 2 }}
+                    onChange={async (e) => {
+                      const cutoff = e.target.checked;
+                      try { await setLoreCutoff(project.id, cutoff); setRecap((r) => ({ ...r, cutoff })); }
+                      catch (er) { setError(er.message); }
+                    }} />
+                  <span>Lore and cards only use facts up to this point <span style={{ color: "var(--signal-text-dim)" }}>(characters who appear later are left out; see BY CHAPTER on any entry)</span></span>
+                </label>
+              )}
+              {entities.some((e) => e.keep && e.entity_type === "place") && (
+                <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, marginTop: 6, cursor: "pointer" }}
+                  title="Counted from events at the place and chapters where both appear (no model call). Up to 5 names, only people seen there at least twice.">
+                  <input type="checkbox" checked={recap.often_here !== false} style={{ marginTop: 2 }}
+                    onChange={async (e) => {
+                      const often_here = e.target.checked;
+                      try { await setOftenHere(project.id, often_here); setRecap((r) => ({ ...r, often_here })); }
+                      catch (er) { setError(er.message); }
+                    }} />
+                  <span>Add an "Often here:" line to places <span style={{ color: "var(--signal-text-dim)" }}>(who is usually found there)</span></span>
+                </label>
+              )}
               <div style={label}>
                 RECAP (always in context) {recap.edited && !recapDirty ? "· hand-edited" : ""}
               </div>
@@ -1018,6 +1064,8 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                 {cardBusy === "narrator" ? "WRITING NARRATOR CARD…" : "⚑ WORLD NARRATOR CARD"}
               </button>
             )}
+            {entities.length > 0 && <div style={{ marginTop: 8 }}><QuickRepliesButton kind="text" projectId={project.id} style={{ ...btn, width: "100%" }} label="SILLYTAVERN QUICK REPLIES" /></div>}
+            {entities.length > 0 && <div style={{ marginTop: 8 }}><StoryExportsButton kind="text" projectId={project.id} style={{ ...btn, width: "100%" }} /></div>}
             {project.lore_project_id && (
               <button className="signal-btn" style={{ ...btn, width: "100%", marginTop: 8 }} onClick={onOpenLore}>OPEN LORE STUDIO</button>
             )}
@@ -1027,6 +1075,16 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
         {/* ───────── RIGHT: review ───────── */}
         <section className="signal-panel signal-panel-delay-3" style={panelStyle}>
           <h2 className="signal-heading" style={headingStyle}>REVIEW</h2>
+          {entities.some((e) => e.relations?.length) && (
+            <button className="signal-btn" style={{ ...btnTool, width: "100%", marginBottom: 8 }}
+              title="Who is linked to whom, drawn from the Relations of kept characters and factions"
+              onClick={async () => {
+                if (draft && dirty) await saveDraft(true);
+                try { setRelGraph(await getRelationGraph(project.id)); } catch (e) { setError(e.message); }
+              }}>◇ RELATIONSHIP MAP</button>
+          )}
+          {relGraph && <RelationshipMap graph={relGraph} title={project.name} onClose={() => setRelGraph(null)}
+            onOpen={(id) => { const e = entities.find((x) => x.id === id); setRelGraph(null); if (e) { setEntTab("edit"); selectEntity(e); } }} />}
           {!entities.length && (
             <div style={{ color: "var(--signal-text-dim)", fontSize: 13, padding: "12px 0", textAlign: "center" }}>Extracted entities appear here.</div>
           )}
@@ -1202,6 +1260,17 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                   <button className="signal-btn" style={btnSm} onClick={() => toggleKeep(draft)}
                     title={draft.keep ? "Included — click to exclude" : "Excluded — click to include"}>{draft.keep ? "KEEP" : "SKIP"}</button>
                 </div>
+                <EntityTabs tab={entTab} setTab={setEntTab} isCharacter={draft.entity_type === "character"} extra={[["interview", "INTERVIEW"]]} />
+                {entTab === "interview" && draft.entity_type === "character" && <InterviewPanel entityId={draft.id} name={draft.name} provider={provider} model={model} />}
+                {entTab === "chapters" && <EntityChapters entityId={draft.id} />}
+                {entTab === "mentions" && <EntityMentions entityId={draft.id} />}
+                {entTab === "edit" && (<>
+                {draft.entity_type === "character" && (
+                  <PortraitSlot entityId={draft.id} image={draft.image} onChange={(image) => {
+                    setDraft((d) => ({ ...d, image }));
+                    setProject((p) => p && { ...p, entities: p.entities.map((x) => (x.id === draft.id ? { ...x, image } : x)) });
+                  }} />
+                )}
                 <div style={label}>NAME</div>
                 <input style={input} value={draft.name} onChange={(e) => editDraft({ name: e.target.value })} />
                 <div style={{ display: "flex", gap: 8 }}>
@@ -1238,9 +1307,17 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                 {draft.entity_type === "character" && (<>
                   <div style={label}>RELATIONSHIPS (one per line: Name — relation)</div>
                   <textarea style={{ ...input, height: 70, resize: "vertical" }} value={draft.relText}
-                    placeholder={"Rikku — cousin; teammate\nPaine — friend"} onChange={(e) => editDraft({ relText: e.target.value })} />
+                    placeholder={"Mara — sister; rival\nTomas — old friend"} onChange={(e) => editDraft({ relText: e.target.value })} />
                   <div style={label}>VOICE SAMPLES (one per line)</div>
                   <textarea style={{ ...input, height: 70, resize: "vertical" }} value={draft.voiceText} onChange={(e) => editDraft({ voiceText: e.target.value })} />
+                </>)}
+                {draft.entity_type !== "event" && (
+                  <SecretsEditor entity={draft} characterNames={entities.filter((x) => x.entity_type === "character" && x.keep).map((x) => x.name)}
+                    onChange={(secrets) => {
+                      setDraft((d) => ({ ...d, secrets }));
+                      setProject((p) => p && { ...p, entities: p.entities.map((x) => (x.id === draft.id ? { ...x, secrets } : x)) });
+                    }} />
+                )}
                 </>)}
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <button className="signal-btn" style={btnPrimary} onClick={() => saveDraft(false)}>SAVE</button>

@@ -41,7 +41,7 @@ import LoreStudio from "./components/studio/LoreStudio";
 import TextStudio from "./components/studio/TextStudio";
 import SearchModal from "./components/SearchModal";
 import { anyBusy } from "./lib/leaveGuard";
-import { listCards, loadCard, deleteCard, renameCard, duplicateCard } from "./lib/api";
+import { listCards, loadCard, deleteCard, renameCard, duplicateCard, imageSrc } from "./lib/api";
 
 export default function App() {
   const [mode, setMode] = useState("character"); // "character" | "lore" | "text" | "config"
@@ -178,6 +178,8 @@ export default function App() {
       }
       setCard(loaded);
       setCardId(loaded.id);
+      setImageFile(null);
+      setImageUrl(imageSrc(loaded.image));      // its own saved portrait (or none), never the previous card's
       setSourceId(loaded.source_id);
       setSource(loadedSource);
       setUrl(loaded.url || loadedSource?.url || "");
@@ -344,6 +346,7 @@ export default function App() {
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                {c.image && <img src={imageSrc(c.image)} alt="" loading="lazy" style={{ width: 34, height: 44, objectFit: "cover", border: "1px solid var(--signal-border)", flex: "0 0 auto" }} />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {c.name || "Unnamed"}
@@ -464,9 +467,10 @@ export default function App() {
             focus={focus?.kind === "text" ? focus : null}
             clearFocus={() => setFocus(null)}
             onOpenLore={() => { setModeDir("left"); setMode("lore"); }}
-            onMakeCard={({ source: src, source_id, lore_project_id, story_point }) => {
+            onMakeCard={({ source: src, source_id, lore_project_id, story_point, image }) => {
               // a reviewed fic character becomes the CHARACTER studio's source, ready for Generate Card
               setSource(src); setSourceId(source_id); setCard(null); setCardId(null); setUrl("");
+              setImageFile(null); setImageUrl(imageSrc(image));   // its TEXT portrait, attached when the card is made
               setHandoff({ lore_project_id: lore_project_id || null, story_point: story_point || "" });
               setModeDir("left"); setMode("character");
               showToast(`${src?.title || "Character"} is ready: press Generate Card` +

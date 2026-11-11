@@ -165,10 +165,15 @@ def init_text_tables():
                        ("text_entities", "origin TEXT DEFAULT ''"),         # canon | altered | original
                        ("text_entities", "relations_json TEXT DEFAULT '[]'"),
                        ("text_entities", "first_chunk INTEGER DEFAULT -1"),
+                       ("text_entities", "image TEXT DEFAULT ''"),            # portrait (images.py)
+                       ("text_entities", "secrets_json TEXT DEFAULT '[]'"),   # [{text, known_by}] (story_tools.py)
                        ("text_projects", "recap_text TEXT DEFAULT ''"),     # hand-edited Story So Far ('' = automatic)
                        ("text_projects", "recap_upto INTEGER DEFAULT -1"),  # roleplay starts after this chunk (-1 = end)
-                       ("text_projects", "timeline_text TEXT DEFAULT ''"),
-                       ("text_projects", "recap_position TEXT DEFAULT 'before'")):  # before (card) | depth (@4, system)  # AI/hand-written chapter log ('' = event lines)
+                       ("text_projects", "timeline_text TEXT DEFAULT ''"),       # AI/hand-written chapter log ('' = event lines)
+                       ("text_projects", "recap_position TEXT DEFAULT 'before'"),  # before (card) | depth (@4, system)
+                       # 1 = with a starting point set, lore and cards only use facts from chapters up to it
+                       ("text_projects", "lore_cutoff INTEGER DEFAULT 1"),
+                       ("text_projects", "often_here INTEGER DEFAULT 1")):   # 'Often here: ...' lines on places
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
             conn.commit()
@@ -179,7 +184,7 @@ def init_text_tables():
 
 def _row_entity(r):
     d = dict(r)
-    for k in ("aliases", "keywords", "voice", "relations"):
+    for k in ("aliases", "keywords", "voice", "relations", "secrets"):
         try:
             d[k] = json.loads(d.pop(f"{k}_json", None) or "[]")
         except Exception:
@@ -216,7 +221,7 @@ def entity_tier(e, chunk_total):
 
 ENTITY_COLS = ("name", "aliases_json", "entity_type", "age", "age_flag", "keywords_json", "summary", "content",
                "voice_json", "mentions", "keep", "evidence", "confidence", "story_order", "deleted", "edited",
-               "origin", "relations_json", "first_chunk")
+               "origin", "relations_json", "first_chunk", "image", "secrets_json")
 
 
 def _insert_entity(conn, pid, d):
@@ -231,6 +236,7 @@ def _insert_entity(conn, pid, d):
         "deleted": 1 if d.get("deleted") else 0, "edited": 1 if d.get("edited") else 0,
         "origin": d.get("origin") or "", "relations_json": json.dumps(d.get("relations") or [], ensure_ascii=False),
         "first_chunk": int(d.get("first_chunk", -1) if d.get("first_chunk") is not None else -1),
+        "image": d.get("image") or "", "secrets_json": json.dumps(d.get("secrets") or [], ensure_ascii=False),
     }
     conn.execute(f"INSERT INTO text_entities (project_id,{','.join(ENTITY_COLS)}) VALUES (?{',?' * len(ENTITY_COLS)})",
                  [pid] + [vals[c] for c in ENTITY_COLS])
@@ -1341,6 +1347,8 @@ def _save_entities(pid, merged, labels, provider, model, condense, job_id=None):
                 "evidence": m.get("evidence", ""), "confidence": m.get("confidence", ""),
                 "story_order": m.get("story_order", ""), "origin": m.get("origin", ""),
                 "relations": m.get("relations", []), "first_chunk": m.get("first_chunk", -1),
+                # added by hand in review, so a rebuild must not drop them
+                "image": (match or {}).get("image") or "", "secrets": (match or {}).get("secrets") or [],
             })
         conn.commit()
         conn.close()
@@ -1631,13 +1639,18 @@ def api_text_manual_merge(pid):
                 relations.append(x)
     origin = base["origin"] or next((o["origin"] for o in ents[1:] if o["origin"]), "")
     age = base["age"] or (ages[0] if ages else "")
+    image = base.get("image") or next((o.get("image") for o in ents[1:] if o.get("image")), "")
+    secrets = list(base.get("secrets") or [])
+    for o in ents[1:]:
+        secrets += [x for x in o.get("secrets") or [] if x not in secrets]
     conn.execute(
         """UPDATE text_entities SET aliases_json=?, keywords_json=?, voice_json=?, content=?, summary=?, age=?,
-           age_flag=?, mentions=?, relations_json=?, origin=?, edited=1 WHERE id=?""",
+           age_flag=?, mentions=?, relations_json=?, origin=?, image=?, secrets_json=?, edited=1 WHERE id=?""",
         (json.dumps(aliases[:12], ensure_ascii=False), json.dumps(keywords[:12], ensure_ascii=False),
          json.dumps(voice[:5], ensure_ascii=False), content, _first_sentence(content), age,
          classify_age(ages, base["entity_type"]), sum(e["mentions"] for e in ents),
-         json.dumps(relations[:8], ensure_ascii=False), origin, base["id"]),
+         json.dumps(relations[:8], ensure_ascii=False), origin, image or "", json.dumps(secrets, ensure_ascii=False),
+         base["id"]),
     )
     conn.execute(f"DELETE FROM text_entities WHERE id IN ({','.join('?' * (len(ents) - 1))})",
                  [e["id"] for e in ents[1:]])
@@ -1688,6 +1701,159 @@ def build_recap(summaries):
     while parts and len(" ".join(parts)) > RECAP_CHARS:
         parts.pop(0)
     return ("(earlier events omitted) " if parts else "") + " ".join(parts)
+
+
+# ── progressions: what was true at the starting point ─────────────────────────
+AS_OF_MAX_CHARS = 900
+
+
+def chunk_results(pid):
+    """{chunk idx: extraction result} for every extracted chunk of a project."""
+    conn = _conn()
+    rows = conn.execute("SELECT idx, result_json FROM text_chunk_results WHERE project_id=? AND idx>=0 ORDER BY idx",
+                        (pid,)).fetchall()
+    conn.close()
+    out = {}
+    for r in rows:
+        try:
+            out[r["idx"]] = json.loads(r["result_json"])
+        except Exception:
+            pass
+    return out
+
+
+def entity_keys(e):
+    return {norm_name(n) for n in [e["name"]] + list(e.get("aliases") or [])} - {""}
+
+
+def entity_slices(e, results):
+    """What each chunk said about one reviewed entity, in story order:
+    [{chunk, facts, voice, relations, age}]. Built from the saved per-chunk extraction, so it needs no model call."""
+    keys = entity_keys(e)
+    out = []
+    for idx in sorted(results):
+        res = results[idx] or {}
+        recs = [x for x in res.get("entities", []) or []
+                if ({norm_name(x.get("name", ""))} | {norm_name(a) for a in x.get("aliases") or []}) & keys]
+        changes = [f"{sc.get('change', '').strip()} (after '{b.get('title', '')}')."
+                   for b in res.get("beats", []) or [] for sc in b.get("state_changes", []) or []
+                   if sc.get("change") and norm_name(sc.get("entity", "")) in keys]
+        if not recs and not changes:
+            continue
+        facts = list(dict.fromkeys([r["facts"] for r in recs if r.get("facts")] + changes))
+        out.append({"chunk": idx, "facts": " ".join(facts),
+                    "voice": list(dict.fromkeys(v for r in recs for v in r.get("voice") or [])),
+                    "relations": [x for r in recs for x in r.get("relations") or [] if isinstance(x, dict)],
+                    "age": next((r["age"] for r in reversed(recs) if r.get("age")), ""),
+                    "origin": next((r["origin"] for r in recs if r.get("origin") == "altered"),
+                                   next((r["origin"] for r in recs if r.get("origin")), ""))})
+    return out
+
+
+def _cap(text, limit=AS_OF_MAX_CHARS):
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    return cut[:cut.rfind(". ") + 1] if ". " in cut else cut
+
+
+def entity_as_of(e, results, upto):
+    """The entity as the story stood after chunk `upto`: None if it has not appeared yet, otherwise a copy whose
+    content, voice lines, relationships and age only use chunks up to `upto`. Hand-edited entries are returned
+    as the user wrote them. Entities with nothing after `upto` keep their stored (maybe condensed) content."""
+    if upto is None or upto < 0:
+        return e
+    if e.get("first_chunk", -1) > upto:
+        return None
+    if e.get("edited") or e["entity_type"] == "event":
+        return e
+    sl = entity_slices(e, results)
+    if not sl or all(x["chunk"] <= upto for x in sl):
+        return e
+    early = [x for x in sl if x["chunk"] <= upto]
+    if not early:
+        return None
+    content = _cap(" ".join(x["facts"] for x in early if x["facts"]).strip()) or e.get("content", "")
+    voice = list(dict.fromkeys(v for x in early for v in x["voice"]))[:5]
+    rel = {}
+    own = entity_keys(e)
+    for x in early:
+        for r in x["relations"]:
+            k = norm_name(str(r.get("with") or ""))
+            if not k or k in own:
+                continue
+            cur = rel.setdefault(k, {"with": r.get("with"), "relation": []})
+            for part in re.split(r"[;,/]", str(r.get("relation") or "")):
+                part = part.strip()
+                if part and part.lower() not in [q.lower() for q in cur["relation"]]:
+                    cur["relation"].append(part)
+    relations = [{"with": v["with"], "relation": "; ".join(v["relation"][:3])} for v in rel.values() if v["relation"]][:8]
+    age = next((x["age"] for x in reversed(early) if x["age"]), "") or e.get("age", "")
+    origins = Counter(x["origin"] for x in early if x.get("origin"))
+    origin = origins.most_common(1)[0][0] if origins else ""
+    if origin == "canon" and origins.get("altered"):
+        origin = "altered"                      # same rule as the merge: any change makes it fic-specific
+    return {**e, "content": content, "summary": _first_sentence(content), "voice": voice or [],
+            "relations": relations, "age": age, "origin": origin or e.get("origin", ""), "as_of": upto}
+
+
+def lore_cutoff(r):
+    return bool(r["lore_cutoff"]) if r is not None and "lore_cutoff" in r.keys() and r["lore_cutoff"] is not None else True
+
+
+def entities_as_of(pid, ents, upto):
+    """Apply entity_as_of to a list when the project's cutoff is on and a starting point is set."""
+    r = _project_row(pid)
+    if upto is None or upto < 0 or not lore_cutoff(r):
+        return ents
+    results = chunk_results(pid)
+    out = []
+    for e in ents:
+        x = entity_as_of(e, results, upto)
+        if x is not None:
+            out.append(x)
+    return out
+
+
+OFTEN_HERE_MAX = 5
+OFTEN_HERE_MIN = 2       # a character must turn up at the place in at least this many scenes/chunks
+
+
+def often_here_on(r):
+    return bool(r["often_here"]) if r is not None and "often_here" in r.keys() and r["often_here"] is not None else True
+
+
+def often_here(pid, ents, upto=-1):
+    """{place entity id: [character names]}: who is usually at each kept place, counted from events whose place is
+    that location (with the character taking part) and from chunks where both are extracted. No model call.
+    Only chunks up to the starting point count when one is set."""
+    places = [e for e in ents if e["entity_type"] == "place"]
+    chars = [e for e in ents if e["entity_type"] == "character"]
+    if not places or not chars:
+        return {}
+    results = chunk_results(pid)
+    if upto is not None and upto >= 0:
+        results = {k: v for k, v in results.items() if k <= upto}
+    chunks_of = {e["id"]: {x["chunk"] for x in entity_slices(e, results)} for e in places + chars}
+    ckeys = {c["id"]: entity_keys(c) for c in chars}
+    out = {}
+    for p in places:
+        pkeys = entity_keys(p)
+        score = Counter()
+        for idx, res in results.items():
+            for b in (res or {}).get("beats", []) or []:
+                if norm_name(b.get("place", "")) in pkeys:
+                    ppl = {norm_name(x) for x in b.get("participants", []) or []}
+                    for c in chars:
+                        if ppl & ckeys[c["id"]]:
+                            score[c["id"]] += 1
+        for c in chars:
+            score[c["id"]] += len(chunks_of[p["id"]] & chunks_of[c["id"]])
+        names = [next(c["name"] for c in chars if c["id"] == cid)
+                 for cid, n in score.most_common() if n >= OFTEN_HERE_MIN][:OFTEN_HERE_MAX]
+        if names:
+            out[p["id"]] = names
+    return out
 
 
 def lore_entry_content(e):
@@ -1760,7 +1926,7 @@ def api_text_recap(pid):
     limit = SUMMARY_CHARS if text.startswith("[HEADER]") else RECAP_CHARS
     return jsonify({"text": text, "edited": edited, "upto": upto, "chunks": _chunk_labels(r),
                     "limit": limit, "timeline": _saved_timeline(r), "timeline_limit": TIMELINE_CHARS,
-                    "position": _recap_position(r)})
+                    "position": _recap_position(r), "cutoff": lore_cutoff(r), "often_here": often_here_on(r)})
 
 
 def _recap_position(r):
@@ -1779,6 +1945,10 @@ def api_text_recap_save(pid):
     conn = _conn()
     if "text" in d:                                    # a body with only "position" changes only the placement
         conn.execute("UPDATE text_projects SET recap_text=?, recap_upto=? WHERE id=?", (text, upto, pid))
+    if "often_here" in d:
+        conn.execute("UPDATE text_projects SET often_here=? WHERE id=?", (1 if d["often_here"] else 0, pid))
+    if "cutoff" in d:                                  # only facts up to the starting point (progressions)
+        conn.execute("UPDATE text_projects SET lore_cutoff=? WHERE id=?", (1 if d["cutoff"] else 0, pid))
     if d.get("position") in ("before", "depth"):       # where SillyTavern puts the recap
         conn.execute("UPDATE text_projects SET recap_position=? WHERE id=?", (d["position"], pid))
     if "timeline" in d:                                # "" = go back to one line per kept event
@@ -1786,6 +1956,44 @@ def api_text_recap_save(pid):
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "edited": bool(text), "upto": upto})
+
+
+SECRET_MAX = 12
+
+
+def norm_secrets(raw):
+    """[{text, known_by: [names]}], cleaned: empty texts dropped, at most 12, names de-duplicated."""
+    out = []
+    for x in raw if isinstance(raw, list) else []:
+        if not isinstance(x, dict):
+            continue
+        text = re.sub(r"\s+", " ", str(x.get("text") or "")).strip()[:1000]
+        names, seen = [], set()
+        for n in x.get("known_by") or []:
+            n = str(n).strip()[:80]
+            if n and n.lower() not in seen:
+                seen.add(n.lower())
+                names.append(n)
+        if text:
+            out.append({"text": text, "known_by": names[:10]})
+    return out[:SECRET_MAX]
+
+
+def secret_items(e, keys):
+    """One LORE entry per secret, limited with SillyTavern's character filter to the characters who know it, so it
+    only reaches the prompt when one of them is the one speaking (solo or group chat). A character's own secret is
+    known to them unless the list says otherwise."""
+    out = []
+    for i, sct in enumerate(norm_secrets(e.get("secrets"))):
+        names = sct["known_by"] or ([e["name"]] if e["entity_type"] == "character" else [])
+        if not names:
+            continue
+        who = ", ".join(names)
+        out.append({"title": f"{e['name']} — secret {i + 1}", "entry_type": e["entity_type"], "keys": list(keys),
+                    "summary": f"Secret about {e['name']}, known only to {who}.",
+                    "content": f"[Secret about {e['name']}, known only to {who}] {sct['text']}",
+                    "char_filter": names, "secret": True})
+    return out
 
 
 def _lore_items(pid):
@@ -1796,17 +2004,21 @@ def _lore_items(pid):
     recap, _, upto = _project_recap(pid)
     events = sorted([e for e in ents if e["entity_type"] == "event"
                      and (upto < 0 or e.get("first_chunk", -1) <= upto)], key=lambda e: e["id"])
-    ents = [e for e in ents if e["entity_type"] != "event"]
+    ents = entities_as_of(pid, [e for e in ents if e["entity_type"] != "event"], upto)
     # a keyword that is really ANOTHER entry's name would make this entry fire whenever that name appears
     other_names = {}
     for e in ents:
         for nm in [e["name"]] + list(e["aliases"]):
             other_names.setdefault(norm_name(nm), e["id"])
+    here = often_here(pid, ents, upto) if often_here_on(_project_row(pid)) else {}
     items = []
     for e in ents:
         content = lore_entry_content(e)
+        if here.get(e["id"]):
+            content = content.rstrip() + "\nOften here: " + ", ".join(here[e["id"]]) + "."
         items.append({"title": e["name"], "entry_type": e["entity_type"], "keys": clean_keywords(e, other_names),
                       "summary": (e["summary"] or content)[:200], "content": content})
+        items += secret_items(e, clean_keywords(e, other_names))
     roster = cast_roster(ents, len(json.loads(_project_row(pid)["chunks_json"] or "[]")))
     if roster:
         items.append({"title": "Cast Roster", "entry_type": "concept", "keys": ["cast", "characters", "who is who"],
@@ -2052,7 +2264,19 @@ def _wi_of(it):
         wi["entry_depth"] = int(it["depth"])
     if it.get("role") is not None:
         wi["role"] = int(it["role"])
+    if it.get("char_filter") is not None:          # secrets: only the characters who know it
+        wi["char_filter_json"] = json.dumps(list(it["char_filter"]), ensure_ascii=False)
     return wi
+
+
+def _save_item(lore_pid, it):
+    """A new LORE entry from one _lore_items item, with its World Info fields."""
+    wi = _wi_of(it)
+    if wi.pop("char_filter_json", None) is not None:
+        wi["char_filter"] = list(it["char_filter"])
+    return save_lore_entry(crawl_id=lore_pid, source_id=None, title=it["title"], entry_type=it["entry_type"],
+                           keywords=it["keys"], summary=it["summary"], content=it["content"],
+                           provider="text-module", model="", **wi)
 
 
 @bp.post("/api/text/project/<int:pid>/commit")
@@ -2073,7 +2297,7 @@ def api_text_commit(pid):
         existing = None
     mode = d.get("mode") or ("update" if existing else "new")
     if mode == "update" and existing:
-        stats = _update_lore_project(existing, items)
+        stats = _update_lore_project(existing, items, d.get("skip") or [])
         _log(f"re-send project={pid} -> lore project {existing}: {stats}")
         return jsonify({"lore_project_id": existing, "entries": len(items), "mode": "update", **stats})
     # a new lore project; give repeats a distinct name so they are easy to tell apart
@@ -2084,9 +2308,7 @@ def api_text_commit(pid):
         lore_name = f"{r['name']} ({n_dup})"
     lore_pid = create_lore_project(lore_name)
     for it in items:
-        save_lore_entry(crawl_id=lore_pid, source_id=None, title=it["title"], entry_type=it["entry_type"],
-                        keywords=it["keys"], summary=it["summary"], content=it["content"],
-                        provider="text-module", model="", **_wi_of(it))
+        _save_item(lore_pid, it)
     conn = _conn()
     conn.execute("UPDATE text_projects SET lore_project_id=?, status='committed' WHERE id=?", (lore_pid, pid))
     conn.commit()
@@ -2096,49 +2318,101 @@ def api_text_commit(pid):
     return jsonify({"lore_project_id": lore_pid, "entries": len(items), "mode": "new", "added": len(items)})
 
 
-def _update_lore_project(lore_pid, items):
+def plan_lore_update(lore_pid, items):
+    """What re-sending would do to an existing LORE project, without writing anything. One action per entry:
+    refresh (changed text), same (nothing changed), add (new), keep_edited (hand-edited in LORE, left alone),
+    keep_deleted (deleted in LORE, stays deleted), trash (sent before, no longer kept)."""
     conn = _conn()
-    rows = conn.execute("SELECT id, title, provider, COALESCE(user_edited, 0) AS user_edited, COALESCE(deleted, 0) AS deleted "
-                        "FROM lore_entries WHERE crawl_id=?", (lore_pid,)).fetchall()
+    rows = conn.execute("SELECT id, title, provider, content, keywords_json, entry_type, COALESCE(user_edited, 0) AS user_edited, "
+                        "COALESCE(deleted, 0) AS deleted FROM lore_entries WHERE crawl_id=?", (lore_pid,)).fetchall()
+    conn.close()
     by_title = {}
     for row in rows:
         by_title.setdefault(row["title"].strip().lower(), row)
-    added = updated = kept_edited = trashed = 0
-    seen = set()
-    new_items = []
+    actions, seen = [], set()
     for it in items:
         key = it["title"].strip().lower()
         seen.add(key)
         row = by_title.get(key)
+        base = {"title": it["title"], "entry_type": it["entry_type"], "new_content": it["content"], "new_keys": it["keys"]}
         if row is None:
-            new_items.append(it)
+            actions.append({**base, "action": "add", "lore_id": None, "old_content": "", "old_keys": []})
             continue
+        old_keys = json.loads(row["keywords_json"] or "[]")
+        old = {"lore_id": row["id"], "old_content": row["content"] or "", "old_keys": old_keys}
         if row["user_edited"]:
-            kept_edited += 1
-            if row["deleted"]:
-                pass               # the user deleted it in LORE: leave it in the trash
-            continue
-        if row["deleted"]:
-            continue               # deleted in LORE on purpose: don't bring it back
-        conn.execute("UPDATE lore_entries SET keywords_json=?, summary=?, content=?, entry_type=?, "
-                     "updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                     (json.dumps(it["keys"], ensure_ascii=False), it["summary"], it["content"], it["entry_type"], row["id"]))
-        updated += 1
-        wi = _wi_of(it)
-        if wi:
-            conn.execute(f"UPDATE lore_entries SET {', '.join(k + '=?' for k in wi)} WHERE id=?", list(wi.values()) + [row["id"]])
+            actions.append({**base, **old, "action": "keep_deleted" if row["deleted"] else "keep_edited"})
+        elif row["deleted"]:
+            actions.append({**base, **old, "action": "keep_deleted"})
+        elif (row["content"] or "") == it["content"] and old_keys == list(it["keys"]) and row["entry_type"] == it["entry_type"]:
+            actions.append({**base, **old, "action": "same", "item": it})
+        else:
+            actions.append({**base, **old, "action": "refresh", "item": it})
     for key, row in by_title.items():
         if key not in seen and row["provider"] == "text-module" and not row["user_edited"] and not row["deleted"]:
-            conn.execute("UPDATE lore_entries SET deleted=1, updated_at=CURRENT_TIMESTAMP WHERE id=?", (row["id"],))
+            actions.append({"action": "trash", "title": row["title"], "entry_type": row["entry_type"], "lore_id": row["id"],
+                            "old_content": row["content"] or "", "old_keys": json.loads(row["keywords_json"] or "[]"),
+                            "new_content": "", "new_keys": []})
+    for x in actions:
+        if x["action"] == "add":
+            x["item"] = next(it for it in items if it["title"].strip().lower() == x["title"].strip().lower())
+    return actions
+
+
+def _update_lore_project(lore_pid, items, skip=()):
+    """Apply plan_lore_update. `skip`: titles the user unticked in the preview (left exactly as they are)."""
+    skip = {str(t).strip().lower() for t in skip or ()}
+    actions = plan_lore_update(lore_pid, items)
+    added = updated = kept_edited = trashed = skipped = 0
+    conn = _conn()
+    for x in actions:
+        if x["title"].strip().lower() in skip and x["action"] in ("refresh", "add", "trash"):
+            skipped += 1
+            continue
+        if x["action"] == "keep_edited":
+            kept_edited += 1
+        elif x["action"] == "keep_deleted" and x.get("lore_id"):
+            row = conn.execute("SELECT COALESCE(user_edited, 0) FROM lore_entries WHERE id=?", (x["lore_id"],)).fetchone()
+            if row and row[0]:
+                kept_edited += 1
+        elif x["action"] in ("refresh", "same"):
+            it = x["item"]
+            if x["action"] == "refresh":
+                conn.execute("UPDATE lore_entries SET keywords_json=?, summary=?, content=?, entry_type=?, "
+                             "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                             (json.dumps(it["keys"], ensure_ascii=False), it["summary"], it["content"], it["entry_type"],
+                              x["lore_id"]))
+                updated += 1
+            wi = _wi_of(it)
+            if wi:
+                conn.execute(f"UPDATE lore_entries SET {', '.join(k + '=?' for k in wi)} WHERE id=?",
+                             list(wi.values()) + [x["lore_id"]])
+        elif x["action"] == "trash":
+            conn.execute("UPDATE lore_entries SET deleted=1, updated_at=CURRENT_TIMESTAMP WHERE id=?", (x["lore_id"],))
             trashed += 1
     conn.commit()
     conn.close()
-    for it in new_items:
-        save_lore_entry(crawl_id=lore_pid, source_id=None, title=it["title"], entry_type=it["entry_type"],
-                        keywords=it["keys"], summary=it["summary"], content=it["content"],
-                        provider="text-module", model="", **_wi_of(it))
-        added += 1
-    return {"added": added, "updated": updated, "kept_edited": kept_edited, "trashed": trashed}
+    for x in actions:
+        if x["action"] == "add" and x["title"].strip().lower() not in skip:
+            it = x["item"]
+            _save_item(lore_pid, it)
+            added += 1
+    return {"added": added, "updated": updated, "kept_edited": kept_edited, "trashed": trashed, "skipped": skipped}
+
+
+@bp.post("/api/text/project/<int:pid>/commit/preview")
+def api_text_commit_preview(pid):
+    """What UPDATE would change in the LORE project made last time (nothing is written)."""
+    r = _project_row(pid)
+    if not r:
+        return jsonify({"error": "Not found"}), 404
+    existing = r["lore_project_id"] if "lore_project_id" in r.keys() else None
+    if not existing or not any(p["id"] == existing for p in list_lore_projects()):
+        return jsonify({"mode": "new", "actions": []})
+    items, upto = _lore_items(pid)
+    actions = [{k: v for k, v in x.items() if k != "item"} for x in plan_lore_update(existing, items)]
+    counts = Counter(x["action"] for x in actions)
+    return jsonify({"mode": "update", "lore_project_id": existing, "upto": upto, "actions": actions, "counts": counts})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2186,6 +2460,7 @@ def entity_to_source(eid):
     e = _row_entity(row)
     r = _project_row(e["project_id"])
     recap, _, upto = _project_recap(e["project_id"])
+    e = (entities_as_of(e["project_id"], [e], upto) or [e])[0]     # facts as of the starting point
     events = _events_with(e["project_id"], e["name"], e["aliases"], upto)[:12]
     rels = [f"{x['with']}: {x['relation']}" for x in e["relations"]]
     facts = lore_entry_content({**e, "voice": [], "relations": []})
@@ -2220,7 +2495,7 @@ def entity_to_source(eid):
     lore_id = r["lore_project_id"] if r is not None and "lore_project_id" in r.keys() else None
     _log(f"make card: '{e['name']}' -> character source {source_id}")
     return {"source_id": source_id, "source": get_source(source_id), "story_point": story_point,
-            "lore_project_id": lore_id}
+            "lore_project_id": lore_id, "image": e.get("image") or ""}
 
 
 NARRATOR_SYSTEM = """You write a SillyTavern character card for a NARRATOR / game master who runs a roleplay inside the

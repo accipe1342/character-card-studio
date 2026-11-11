@@ -91,6 +91,8 @@ DEFAULT_STRUCTURED_PROFILE = {
     "motivations": [],
     "flaws": [],
     "mannerisms": [],
+    "with_strangers": "",
+    "with_close": "",
     "relationships": [],
 }
 
@@ -239,6 +241,7 @@ def init_db() -> None:
         "ALTER TABLE cards ADD COLUMN depth_prompt TEXT DEFAULT ''",        # Character's Note
         "ALTER TABLE cards ADD COLUMN creator_notes TEXT DEFAULT ''",
         "ALTER TABLE cards ADD COLUMN post_history TEXT DEFAULT ''",
+        "ALTER TABLE cards ADD COLUMN image TEXT DEFAULT ''",              # portrait file in data/images (images.py)
         # full World Info fields per lore entry (NULL = use the type default at export)
         "ALTER TABLE lore_entries ADD COLUMN constant INTEGER",
         "ALTER TABLE lore_entries ADD COLUMN position INTEGER",
@@ -469,6 +472,7 @@ def list_cards() -> list[Dict[str, Any]]:
             c.provider,
             c.model,
             c.updated_at,
+            c.image,
             s.title,
             s.url
         FROM cards c
