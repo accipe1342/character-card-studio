@@ -11,6 +11,8 @@ POST /api/interview    {provider, model, messages: [{role: user|char, content}],
 """
 
 
+import re
+
 from flask import Blueprint, jsonify, request
 
 import text_module as T
@@ -43,6 +45,41 @@ quoting the answer"], "verdict": "one sentence"}. Use only the notes as the trut
 {"issues": [], "verdict": "Consistent with the notes."}"""
 
 
+REPLY_KEYS = ("reply", "response", "answer", "text", "content", "message")
+
+
+def _ask(provider, model, prompt, system, key):
+    """Model call that also copes with models that ignore the JSON instruction: a plain-text answer (common with
+    roleplay models) comes back as {key: text}, and a JSON value that isn't an object is wrapped the same way."""
+    try:
+        res = _request(provider, model, prompt, system=system)
+    except ValueError as e:                    # generator gives up on JSON and keeps the raw answer in the message
+        msg = str(e)
+        if "Raw: " not in msg:
+            raise
+        return {key: msg.split("Raw: ", 1)[1].strip(), "plain": True}
+    if isinstance(res, dict):
+        if not str(res.get(key) or "").strip():
+            alt = next((res[k] for k in REPLY_KEYS if isinstance(res.get(k), str) and res[k].strip()), None)
+            if alt:
+                res = {**res, key: alt}
+        return res
+    if isinstance(res, str):
+        return {key: res, "plain": True}
+    return {}
+
+
+def clean_reply(text, name):
+    """Strip what models add around a spoken answer: a leading 'Name:' label and wrapping quotes."""
+    t = str(text or "").strip()
+    t = re.sub(rf"^\s*\**\s*{re.escape(name)}\s*\**\s*:\s*\**\s*", "", t, flags=re.I)   # Mara: / **Mara:** / **Mara**:
+    if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'“”":
+        t = t[1:-1].strip()
+    if t.startswith("“") and t.endswith("”"):
+        t = t[1:-1].strip()
+    return t
+
+
 def _tok(text):
     return max(1, round(len(text or "") / 4))
 
@@ -63,9 +100,9 @@ def api_trim():
     kind = "character card field" if d.get("kind") == "card_field" else "lorebook entry"
     what = f"{kind} '{d.get('field') or ''}' of {d.get('name') or 'a character'}".strip()
     try:
-        res = _request(d.get("provider") or "nanogpt", d.get("model") or "",
-                       f"WHAT THIS IS: {what}\n\nTEXT:\n{text[:12000]}",
-                       system=TRIM_SYSTEM.format(kind=kind, target=target, words=int(target * 0.75)))
+        res = _ask(d.get("provider") or "nanogpt", d.get("model") or "",
+                   f"WHAT THIS IS: {what}\n\nTEXT:\n{text[:12000]}",
+                   TRIM_SYSTEM.format(kind=kind, target=target, words=int(target * 0.75)), "text")
     except Exception as e:
         return jsonify({"error": f"The model call failed: {str(e)[:200]}"}), 502
     out = str(res.get("text") or "").strip()
@@ -129,18 +166,18 @@ def api_interview():
         if d.get("check"):
             if not msgs:
                 return jsonify({"error": "Ask a few questions first"}), 400
-            res = _request(provider, model, f"CHARACTER: {name}\n\nNOTES:\n{notes[:9000]}\n\nINTERVIEW:\n{transcript}",
-                           system=CHECK_SYSTEM)
-            issues = [str(x) for x in (res.get("issues") or []) if str(x).strip()][:10]
-            return jsonify({"issues": issues, "verdict": str(res.get("verdict") or "").strip()})
+            res = _ask(provider, model, f"CHARACTER: {name}\n\nNOTES:\n{notes[:9000]}\n\nINTERVIEW:\n{transcript}",
+                       CHECK_SYSTEM, "verdict")
+            raw = res.get("issues")
+            issues = [str(x) for x in (raw if isinstance(raw, list) else [raw] if raw else []) if str(x).strip()][:10]
+            return jsonify({"issues": issues, "verdict": str(res.get("verdict") or "").strip()[:600]})
         if not msgs or msgs[-1].get("role") != "user":
             return jsonify({"error": "Ask a question"}), 400
-        res = _request(provider, model,
-                       f"INTERVIEW SO FAR:\n{transcript}\n\nAnswer the last question as {name}.",
-                       system=INTERVIEW_SYSTEM.format(name=name, notes=notes[:9000]))
+        res = _ask(provider, model, f"INTERVIEW SO FAR:\n{transcript}\n\nAnswer the last question as {name}.",
+                   INTERVIEW_SYSTEM.format(name=name, notes=notes[:9000]), "reply")
     except Exception as e:
         return jsonify({"error": f"The model call failed: {str(e)[:200]}"}), 502
-    reply = str(res.get("reply") or "").strip()
+    reply = clean_reply(res.get("reply"), name)
     if not reply:
         return jsonify({"error": "The model returned no reply. Try again."}), 502
     return jsonify({"reply": reply, "name": name})
