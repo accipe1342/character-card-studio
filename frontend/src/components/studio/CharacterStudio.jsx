@@ -74,6 +74,7 @@ import RegenModal from "../shared/RegenModal";
 import MainJobStatus from "../shared/MainJobStatus";
 import { markBusy } from "../../lib/leaveGuard";
 import { InterviewPanel, TrimButton } from "./AssistPanels";
+import { onHelperChange, registerHelperFlush, setHelperContext } from "../../lib/helperBus";
 import {
   getJob,
   regenerateField,
@@ -89,7 +90,7 @@ import {
   listLoreProjects,
   getPresets,
   renameCard,
-  scanCardProse, setCardImage, uploadImage } from "../../lib/api";
+  scanCardProse, setCardImage, uploadImage, loadCard } from "../../lib/api";
 
 // ── static card audit (no model call): what would make this card weaker in SillyTavern ──
 function auditCard(card) {
@@ -456,6 +457,35 @@ export default function CharacterStudio({
     }, 1500);
     return () => clearTimeout(tm);
   }, [card, cardId, typingField]);
+
+  // the helper side panel: what is open, save before it reads, reload what it changed
+  const cardRef = useRef(card);
+  cardRef.current = card;
+  useEffect(() => {
+    setHelperContext("character", { card_id: cardId || null, label: card?.name || "", provider, model });
+  }, [cardId, card?.name, provider, model]);
+  useEffect(() => registerHelperFlush("character", async () => {
+    const c = cardRef.current;
+    if (c && cardId && JSON.stringify(c) !== cardBaseline.current) {
+      await saveCard(cardId, c);
+      cardBaseline.current = JSON.stringify(c);
+      setCardDirty(false);
+    }
+  }), [cardId]);
+  useEffect(() => onHelperChange(async (touched) => {
+    if (!cardId || !touched.some((x) => x.kind === "card" && x.id === cardId)) return;
+    if (cardRef.current && JSON.stringify(cardRef.current) !== cardBaseline.current) {
+      showToast && showToast("You edited this card while the helper worked: your version was kept");
+      return;
+    }
+    try {
+      const { card: fresh } = await loadCard(cardId);
+      cardBaseline.current = JSON.stringify(fresh);       // what the server has: nothing to autosave
+      setCard(fresh);
+    } catch {                                             // undo removed a card the helper had created
+      setCard(null); setCardId(null);
+    }
+  }), [cardId]);    // re-subscribed per card; the latest card is read through cardRef
 
   // Field regen timer
   useEffect(() => {

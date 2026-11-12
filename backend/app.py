@@ -586,6 +586,8 @@ from charx import register_charx   # Character Card V3 .charx (zip with the port
 register_charx(app)
 from story_export import register_story_export   # story bible (md / printable html), Data Bank pack
 register_story_export(app)
+from helper import register_helper   # SCRIBE-01: the studio helper side panel (cards, lorebooks, advice)
+register_helper(app)
 # (lore_routes is registered further down, once the job and logging helpers exist)
 
 # ── Custom logging setup ──────────────────────────────────────────────────────

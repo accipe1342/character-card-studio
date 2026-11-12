@@ -37,6 +37,7 @@ import CriticPanel from "./CriticPanel";
 import { EntityChapters, EntityMentions, EntityTabs, PortraitSlot, SecretsEditor } from "./EntityPanels";
 import { InterviewPanel, QuickRepliesButton, ResendPreviewModal, StoryExportsButton } from "./AssistPanels";
 import RelationshipMap from "./RelationshipMap";
+import { registerHelperFlush, setHelperContext } from "../../lib/helperBus";
 import { markBusy } from "../../lib/leaveGuard";
 import { DEFAULT_MODELS, Divider, btn, btnPrimary, btnSm, btnTool, headingStyle, hint, input, label, panelStyle, toolbarGrid } from "./textUi";
 import {
@@ -382,6 +383,18 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
     if (t) selectEntity(t);
   }
 
+  // the helper side panel: what is open, and save the editor before the helper reads the story
+  const saveDraftRef = useRef(null);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
+  useEffect(() => {
+    const label = [project?.name, draft?.name].filter(Boolean).join(" / ");
+    setHelperContext("text", { text_project_id: project?.id || null, text_entity_id: draft?.id || null, label, provider, model });
+  }, [project?.id, project?.name, draft?.id, draft?.name, provider, model]);
+  useEffect(() => registerHelperFlush("text", async () => {
+    if (dirtyRef.current && saveDraftRef.current) await saveDraftRef.current(true);
+  }), []);
+
   async function saveDraft(silent) {
     const snap = draftRef.current;
     if (!snap) return;
@@ -688,6 +701,8 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
       await loadProjects(); await openProject(project.id);
     } catch (e) { setError(e.message); setResendOpen(false); }
   }
+
+  saveDraftRef.current = saveDraft;
 
   const entities = project?.entities || [];
   const issues = useMemo(() => findIssues(project?.entities || []), [project]);

@@ -6,6 +6,31 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.6.0] - 2026-11-12
+
+### Added
+- Helper side panel (SCRIBE-01) in the CHARACTER, LORE and TEXT studios: a support unit you talk to in plain words.
+  It can create and edit character cards, create lorebooks and add, edit or trash their entries, read TEXT
+  projects and their entries, and explain SillyTavern and card-writing ideas.
+- It works on what is open: the studio tells it the open card, lorebook, entry or story, and unsaved edits are
+  saved before it reads anything. The studio reloads whatever it changed; if you edited the same item meanwhile,
+  your version is kept and you are told.
+- Every change is applied at once and shown under the reply with OPEN, KEEP and UNDO (KEEP ALL / UNDO ALL for a
+  reply with several). UNDO restores the earlier state, removes what it created (entries go to the trash), and
+  refuses when the item was changed since, so newer work is never overwritten.
+- Keyword glossary for the helper (`backend/config/helper_glossary.json`): like World Info, entries whose keys
+  appear in the recent messages are added to its prompt. Editable.
+- Default card layout the helper follows: plain prose paragraphs (optional opening quote, overview, backstory,
+  personality with a few speech samples, likes/dislikes/relationships, appearance), no PList/W++.
+- Chats are stored and can be reopened from the panel. New routes under `/api/helper/`.
+- On wide screens the studio moves over while the panel is open instead of hiding under it.
+
+### Tests
+- `backend/tests/test_helper.py` (through the real request code, with a scripted model) and browser suite
+  `tests/e2e/e2e11.py`.
+
+---
+
 ## [2.5.1] - 2026-11-11
 
 ### Fixed

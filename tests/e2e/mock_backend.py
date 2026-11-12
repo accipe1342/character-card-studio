@@ -59,6 +59,42 @@ def _assist(provider, model, user, system=None, **k):
         return {"issues": ["Claims to dislike her cousin."], "verdict": "Mostly in character."}
     return {"reply": "Ask quick, I have places to be."}
 AT._request = _assist
+import helper as HLP, json as _json, re as _re
+def _helper(provider, model, user, system=None, **k):
+    """A scripted SCRIBE-01 for the browser tests: edits the open card, builds a small lorebook, edits an entry."""
+    step = user.count("RESULTS (step")
+    last_user = [l for l in user.splitlines() if l.startswith("USER: ")][-1][6:].lower()
+    m_card = _re.search(r"open card is card_id (\d+)", system or "")
+    m_entry = _re.search(r"selected entry is entry_id (\d+)", system or "")
+    def result(tool):
+        for line in reversed(user.splitlines()):
+            if line.startswith("{") and f'"tool": "{tool}"' in line:
+                return _json.loads(line)["result"]
+    if "description" in last_user and m_card:
+        if step == 0:
+            return {"say": "", "actions": [{"tool": "get_card", "args": {"card_id": int(m_card.group(1))}}]}
+        if step == 1:
+            return {"say": "", "actions": [{"tool": "update_card", "args": {"card_id": int(m_card.group(1)),
+                    "fields": {"description": "A courier who knows every alley of the rainy port."}}}]}
+        return {"say": "Report: description rewritten.", "actions": []}
+    if "lorebook" in last_user:
+        if step == 0:
+            return {"say": "Proposal: a small lorebook.", "actions": [{"tool": "create_lore_project", "args": {"name": "Helper Port"}}]}
+        if step == 1:
+            pid = result("create_lore_project")["project_id"]
+            return {"say": "", "actions": [
+                {"tool": "add_lore_entry", "args": {"project_id": pid, "title": "Old Harbor", "entry_type": "place",
+                                                    "keywords": "harbor, docks", "content": "Docks that never sleep."}},
+                {"tool": "add_lore_entry", "args": {"project_id": pid, "title": "Grey Watch", "entry_type": "faction",
+                                                    "keywords": "watch", "content": "The city guard."}}]}
+        return {"say": "Report: lorebook ready with 2 entries.", "actions": []}
+    if "tighten" in last_user and m_entry:
+        if step == 0:
+            return {"say": "", "actions": [{"tool": "update_lore_entry", "args": {"entry_id": int(m_entry.group(1)),
+                    "fields": {"content": "Docks. Busy all night."}}}]}
+        return {"say": "Report: entry tightened.", "actions": []}
+    return {"say": "Report: a keyword is the word that makes a lorebook entry appear.", "actions": []}
+HLP._request = _helper
 NARR = {"name": "Gamerz Narrator", "description": "The Spira of this story.",
     "personality": "Vivid.", "scenario": "After the trap.", "first_mes": "Pyreflies drift past you.", "system_prompt": "Narrate.", "tags": ["ffx2"]}
 A.generate_full_card = lambda source, provider, model, options=None: {"name": source["title"], "description": "Generated from the fic: " + (source["normalized"].get("summary") or "")[:200],

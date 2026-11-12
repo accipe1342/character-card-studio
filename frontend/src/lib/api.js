@@ -738,3 +738,22 @@ export async function getRelationGraph(projectId) {
 export async function setEntitySecrets(entityId, secrets) {
   return _json(await fetch(`/api/text/entity/${entityId}/secrets`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ secrets }) }), "Could not save the secrets");
 }
+
+// ── the studio helper (helper.py) ─────────────────────────────────────────────
+/** {message, chat_id?, context, provider, model} -> {chat_id, reply, changes, touched, actions, steps} */
+export async function helperChat(body) {
+  return _json(await _postJson("/api/helper/chat", body), "The helper could not answer");
+}
+export async function helperChats() {
+  return _json(await fetch("/api/helper/chats"), "Could not load helper chats");
+}
+export async function helperChatLoad(chatId) {
+  return _json(await fetch(`/api/helper/chat/${chatId}`), "Could not load the chat");
+}
+export async function helperKeep(changeId) {
+  return _json(await _postJson(`/api/helper/change/${changeId}/keep`, {}), "Could not keep the change");
+}
+/** Resolves {ok} or throws with the reason undo was refused (the item changed again since). */
+export async function helperUndo(changeId) {
+  return _json(await _postJson(`/api/helper/change/${changeId}/undo`, {}), "Could not undo");
+}

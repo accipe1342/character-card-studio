@@ -65,6 +65,7 @@ import React, { useState, useEffect } from "react";
 import MainJobStatus from "../shared/MainJobStatus";
 import { markBusy } from "../../lib/leaveGuard";
 import { QuickRepliesButton, StoryExportsButton, TrimButton } from "./AssistPanels";
+import { onHelperChange, registerHelperFlush, setHelperContext } from "../../lib/helperBus";
 import { AdvancedWI, BudgetMeter, EntryHints, LinksPanel, SimulatorPanel, TrashPanel, isAlwaysOn, ENTRY_TOKEN_SOFT_LIMIT } from "./LoreTools";
 import {
   startLoreCrawl, startLoreSingle, startLoreMulti, listLoreEntries, getLoreEntry,
@@ -296,6 +297,35 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
       setSaving(false);
     }
   }
+
+  // the helper side panel: what is open, save before it reads, reload what it changed
+  const selectedIdRef = React.useRef(null);
+  selectedIdRef.current = selectedId;
+  useEffect(() => {
+    const label = [activeProject?.project_name, entry?.title].filter(Boolean).join(" / ");
+    setHelperContext("lore", { lore_project_id: activeProject?.id || null, lore_entry_id: entry?.id || null, label, provider, model });
+  }, [activeProject, entry?.id, entry?.title, provider, model]);
+  useEffect(() => registerHelperFlush("lore", async () => {
+    if (entryRef.current && JSON.stringify(entryRef.current) !== baselineRef.current) await handleSaveEntry(true);
+  }), []);
+  useEffect(() => onHelperChange(async (touched) => {
+    if (!touched.some((x) => x.kind === "entry" || x.kind === "project")) return;
+    await loadProjects();
+    await loadEntries(activeProjectRef.current);
+    const sel = selectedIdRef.current;
+    if (!sel || !touched.some((x) => x.kind === "entry" && x.id === sel)) return;
+    if (entryRef.current && JSON.stringify(entryRef.current) !== baselineRef.current) {
+      showToast && showToast("You edited this entry while the helper worked: your version was kept");
+      return;
+    }
+    try {
+      const data = await getLoreEntry(sel);
+      if (data.deleted) { setSelectedId(null); setEntry(null); return; }     // the helper moved it to the trash
+      if (!Array.isArray(data.keywords)) data.keywords = [];
+      baselineRef.current = JSON.stringify(data);
+      setEntry(data); setDirty(false);
+    } catch { setSelectedId(null); setEntry(null); }
+  }), []);
 
   // autosave 1.2 s after the last edit
   useEffect(() => {

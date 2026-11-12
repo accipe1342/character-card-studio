@@ -1,7 +1,7 @@
 # Character Card Studio
 
 [![CI](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-2.5.1-informational)
+![version](https://img.shields.io/badge/version-2.6.0-informational)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 A Signal UI–themed app for making SillyTavern character cards and lorebooks with AI: from Fandom wiki pages, from fan fiction and other long text, or from your own roleplay chats.
@@ -110,6 +110,15 @@ After the first run, launching is instant.
 - Critic: brutally honest critique, chapter sweep, score history and passage rewrites, plus an instant prose scan (stock phrases, overused words, filler, adverbs, dialogue tags)
 - Story bible, Data Bank pack and Quick Reply set, as in LORE
 
+### Helper (SCRIBE-01)
+- A side panel in CHARACTER, LORE and TEXT (the ◇ SCRIBE-01 tab on the right edge)
+- Ask in plain words: it writes or edits cards, builds lorebooks and their entries, reads your TEXT stories, and explains SillyTavern settings
+- Knows what is open: "tighten this description" or "make a lorebook for this card's world" works on the open card or entry
+- Every change is saved at once and listed under the reply with OPEN, KEEP and UNDO (plus KEEP ALL / UNDO ALL); UNDO refuses if you edited the item since, so your work is never overwritten
+- Unsaved edits in the studio are saved before the helper reads, and the studio reloads what it changed
+- Keyword glossary like a lorebook: `backend/config/helper_glossary.json` (edit freely)
+- Chats are kept; pick earlier ones from the panel
+
 ### Config
 - Model presets per task, database backups and restore, model usage, project bundles (.zip export / import, with pictures)
 - SillyTavern connection for the Send buttons: address, optional basic-auth login, Test connection
@@ -208,7 +217,7 @@ Delete the project folder. Nothing is written to your system, registry, or AppDa
 
 ## What's new
 
-See [docs/UPDATE-v2.5.md](docs/UPDATE-v2.5.md) for the v2.5 overview ([v2.4](docs/UPDATE-v2.4.md)) and [docs/CHANGELOG.md](docs/CHANGELOG.md) for every change.
+New in 2.6: the helper side panel (see Features). See [docs/UPDATE-v2.5.md](docs/UPDATE-v2.5.md) for the v2.5 overview ([v2.4](docs/UPDATE-v2.4.md)) and [docs/CHANGELOG.md](docs/CHANGELOG.md) for every change.
 
 ---
 

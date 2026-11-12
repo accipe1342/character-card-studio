@@ -42,6 +42,7 @@ import TextStudio from "./components/studio/TextStudio";
 import SearchModal from "./components/SearchModal";
 import { anyBusy } from "./lib/leaveGuard";
 import { listCards, loadCard, deleteCard, renameCard, duplicateCard, imageSrc } from "./lib/api";
+import HelperPanel from "./components/HelperPanel";
 
 export default function App() {
   const [mode, setMode] = useState("character"); // "character" | "lore" | "text" | "config"
@@ -108,6 +109,13 @@ export default function App() {
     setModeDir(modes.indexOf(next) > modes.indexOf(mode) ? "right" : "left");
     setMode(next);
   }
+  // the helper's OPEN buttons: a card opens in CHARACTER, a lorebook or entry in LORE
+  async function openHelperItem(c) {
+    if (c.kind === "card") { await handleLoadCard(c.target_id); goTo("character"); }
+    else if (c.kind === "project") { setFocus({ kind: "lore", project_id: c.target_id, id: null }); goTo("lore"); }
+    else if (c.kind === "entry") { setFocus({ kind: "lore", project_id: c.project_id, id: c.target_id }); goTo("lore"); }
+  }
+
   async function openSearchHit(it) {
     if (it.group === "cards") { await handleLoadCard(it.id); goTo("character"); }
     else if (it.group === "lore") { setFocus({ kind: "lore", project_id: it.project_id, id: it.id }); goTo("lore"); }
@@ -210,6 +218,9 @@ export default function App() {
         padding: 24,
       }}
     >
+      {/* the helper side panel, in the three studios */}
+      {(mode === "character" || mode === "lore" || mode === "text") && <HelperPanel studio={mode} onOpen={openHelperItem} />}
+
       {/* Save toast */}
       {toast && (
         <div style={{
