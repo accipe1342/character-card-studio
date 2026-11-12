@@ -127,6 +127,7 @@ from generator import (
     regenerate_single_field,
     generate_lore_entry,
     _request as _gen_request,
+    request_text, text_of, list_of,
     _ensure_list,
     load_runtime_config,
 )
@@ -1090,21 +1091,21 @@ Existing first message (for reference, make this one different):
 Character card context:
 {json.dumps({"name": name, "personality": card.get("personality",""), "scenario": card.get("scenario","")}, ensure_ascii=False)}"""
 
-        result = _gen_request(card["provider"], card["model"], prompt)
-
-        if "greeting" not in result:
-            return jsonify({"error": "Generator did not return greeting"}), 500
+        result = request_text(card["provider"], card["model"], prompt, None, "greeting")
+        greeting = text_of(result.get("greeting"), "\n")      # plain-prose answers count too
+        if not greeting:
+            return jsonify({"error": "The model returned no greeting. Try again or pick another model."}), 502
 
         # Update card
         if idx is not None and idx < len(greetings):
-            greetings[idx] = result["greeting"]
+            greetings[idx] = greeting
         else:
-            greetings.append(result["greeting"])
+            greetings.append(greeting)
 
         card["alternate_greetings"] = greetings
         create_or_update_card(card["source_id"], card, card_id=card_id)
 
-        return jsonify({"greeting": result["greeting"], "idx": idx if idx is not None else len(greetings) - 1})
+        return jsonify({"greeting": greeting, "idx": idx if idx is not None else len(greetings) - 1})
 
     except Exception as e:
         import traceback
@@ -1155,16 +1156,16 @@ Current personality (may be empty or outdated):
         else:
             return jsonify({"error": f"Unknown target: {target}"}), 400
 
-        result = _gen_request(card["provider"], card["model"], prompt)
-
-        if target not in result:
-            return jsonify({"error": f"Generator did not return '{target}'"}), 500
+        result = request_text(card["provider"], card["model"], prompt, None, target)
+        value = text_of(result.get(target), "\n")
+        if not value:
+            return jsonify({"error": f"The model returned no {target}. Try again or pick another model."}), 502
 
         # Save to card
-        card[target] = result[target]
+        card[target] = value
         create_or_update_card(card["source_id"], card, card_id=card_id)
 
-        return jsonify({"field": target, "value": result[target]})
+        return jsonify({"field": target, "value": value})
 
     except Exception as e:
         import traceback
@@ -1188,16 +1189,20 @@ def regenerate_field(card_id: int):
     card = get_card(card_id)
     source = get_source(card["source_id"])
 
-    result = regenerate_single_field(
-        source=source,
-        card=card,
-        field_name=field_name,
-        provider=card["provider"],
-        model=card["model"],
-        custom_prompt=custom_prompt,
-        include_current_card=include_current_card,
-        include_source=include_source,
-    )
+    try:
+        result = regenerate_single_field(
+            source=source,
+            card=card,
+            field_name=field_name,
+            provider=card["provider"],
+            model=card["model"],
+            custom_prompt=custom_prompt,
+            include_current_card=include_current_card,
+            include_source=include_source,
+        )
+    except Exception as e:                     # a readable message for the studio instead of an HTML error page
+        log_error(f"Field regenerate failed ({field_name}): {e}")
+        return jsonify({"error": f"Regenerating {field_name} failed: {str(e)[:300]}"}), 502
 
     # Fields that live at card top-level (not structured_profile)
     NATURAL_FIELDS = {"name", "description", "personality", "scenario",
@@ -1453,7 +1458,11 @@ def build_cast_card(card_ids, cast_name, provider, model):
         f"- tags: tags for the whole cast\n\n"
         f"Output valid JSON only with these keys: name, description, personality, scenario, first_mes, mes_example, tags\n"
     )
-    result = _gen_request(provider, model, prompt)
+    raw = _gen_request(provider, model, prompt)
+    # keep the card fields as text even when the model sends lists or objects
+    result = {k: text_of(raw.get(k), "\n") for k in ("name", "description", "personality", "scenario", "first_mes", "mes_example")}
+    result["name"] = result["name"] or cast_name
+    result["tags"] = list_of(raw.get("tags"))
 
     # Get a source_id from one of the cards
     source_id = cards[0]["source_id"]

@@ -30,7 +30,7 @@ import sys
 import threading
 import time
 
-from generator import _request, load_runtime_config
+from generator import _request, load_runtime_config, list_of, text_of
 
 DEEP_MAX_TOKENS = 8000  # fallback; the real value is Config -> 'Deep extraction max tokens'
 DETAIL_BATCH = 5
@@ -192,9 +192,13 @@ def _merge_inventory(inv, new):
         known |= {_norm(a) for a in e.get("aliases", [])}
     known_beats = {_norm(b["title"]) for b in inv["beats"]}
     added = 0
-    for e in new.get("entities", []) or []:
-        if not isinstance(e, dict) or not str(e.get("name", "")).strip():
+    ents = new.get("entities")
+    for e in (ents if isinstance(ents, list) else [ents] if isinstance(ents, dict) else list_of(ents)):
+        if isinstance(e, str):                   # a bare list of names
+            e = {"name": e}
+        if not isinstance(e, dict) or not text_of(e.get("name")):
             continue
+        e = {**e, "name": text_of(e["name"])}
         n = _norm(e["name"])
         if _junk_entity(str(e["name"])):
             continue
@@ -202,11 +206,12 @@ def _merge_inventory(inv, new):
             known.add(n)
             inv["entities"].append({
                 "name": str(e["name"]).strip(), "type": _ntype(e.get("type")),
-                "aliases": [str(a).strip() for a in (e.get("aliases") or []) if str(a).strip()],
+                "aliases": list_of(e.get("aliases")),
             })
             added += 1
-    for b in new.get("beats", []) or []:
-        title = str(b.get("title", "") if isinstance(b, dict) else b).strip()
+    beats_in = new.get("beats")
+    for b in (beats_in if isinstance(beats_in, list) else [beats_in] if beats_in else []):
+        title = text_of(b.get("title", "") if isinstance(b, dict) else b)
         if title and _norm(title) not in known_beats:
             known_beats.add(_norm(title))
             inv["beats"].append({"title": title})
@@ -257,13 +262,29 @@ def norm_origin(v):
     return v if v in ("canon", "altered", "original") else ""
 
 
+_REL_SPLIT = re.compile(r"\s*(?:\u2014|\u2013|=>|->|:|\()\s*|\s+--?\s+")   # a plain hyphen only with spaces (Jean-Luc stays whole)
+
+
 def norm_relations(v):
+    """[{with, relation}] from whatever shape the model used: the asked-for list of objects, other key names
+    (name/character/target, relationship/type/role), {"Tomas": "friend"}, or lines like "Tomas - friend"."""
+    if isinstance(v, str):
+        v = list_of(v)
+    if isinstance(v, dict):
+        if any(k in v for k in ("with", "name", "character")):
+            v = [v]
+        else:
+            v = [{"with": k, "relation": text_of(x, ", ")} for k, x in v.items()]
     out = []
-    for r in (v or []) if isinstance(v, list) else []:
+    for r in v if isinstance(v, list) else []:
+        if isinstance(r, str):
+            bits = _REL_SPLIT.split(r.strip().rstrip(")"), maxsplit=1)
+            r = {"with": bits[0], "relation": bits[1] if len(bits) > 1 else ""}
         if isinstance(r, dict):
-            w, rel = str(r.get("with") or "").strip(), str(r.get("relation") or "").strip()
+            w = text_of(r.get("with") or r.get("name") or r.get("character") or r.get("target") or r.get("who"))
+            rel = text_of(r.get("relation") or r.get("relationship") or r.get("type") or r.get("role") or r.get("bond"), ", ")
             if w and rel:
-                out.append({"with": w, "relation": rel[:80]})
+                out.append({"with": w[:80], "relation": rel[:80]})
     return out[:5]
 
 
@@ -279,15 +300,10 @@ def _detail_batch(targets, text, label, provider, model):
             "\n".join(f"- {t['name']} ({t['type']})" for t in targets))
     try:
         res = _call(provider, model, DETAIL_SYSTEM, user)
-        out = [r for r in (res.get("entities") or []) if isinstance(r, dict)]
-        by = {_norm(r.get("name")): r for r in out}
-        results = []
-        for t in targets:
-            r = by.get(_norm(t["name"]))
-            if r is None:
-                r = {"name": t["name"], "facts": ""}
-            results.append((t, r))
-        return results
+        raw = res.get("entities")
+        out = [r for r in (raw if isinstance(raw, list) else [raw] if isinstance(raw, dict) else []) if isinstance(r, dict)]
+        return [(t, match_detail(t, out, i, len(targets)) or {"name": t["name"], "facts": ""})
+                for i, t in enumerate(targets)]
     except Exception as e:
         print(f"[DEEP] detail batch failed ({names}): {e}", flush=True)
         if len(targets) > 1:
@@ -295,6 +311,25 @@ def _detail_batch(targets, text, label, provider, model):
             return (_detail_batch(targets[:mid], text, label, provider, model) +
                     _detail_batch(targets[mid:], text, label, provider, model))
         return [(targets[0], {"name": targets[0]["name"], "facts": ""})]
+
+
+def match_detail(t, out, i, n):
+    """The model's detail answer for target t: same name, one of t's aliases, a fuller or shorter form of the name
+    ("Mara" / "Mara Vell"), or, when it answered exactly as many as were asked, the one in the same position."""
+    names = {_norm(t["name"])} | {_norm(a) for a in t.get("aliases") or []}
+    by = {_norm(text_of(r.get("name"))): r for r in out}
+    for k in names:
+        if k in by:
+            return by[k]
+    tn = _norm(t["name"])
+    for k, r in by.items():
+        if k and tn and (k.startswith(tn + " ") or tn.startswith(k + " ") or k.endswith(" " + tn)):
+            return r
+    if len(out) == n and i < n and not text_of(out[i].get("name")):
+        return out[i]
+    if len(out) == n == 1:
+        return out[0]
+    return None
 
 
 def extract_chunk_deep(chunk, provider, model, glean_rounds=MAX_GLEAN_ROUNDS):
@@ -349,12 +384,12 @@ def extract_chunk_deep(chunk, provider, model, glean_rounds=MAX_GLEAN_ROUNDS):
         for t, r in _detail_batch(batch, text, label, provider, model):
             entities.append({
                 "name": t["name"],
-                "aliases": list(dict.fromkeys(t.get("aliases", []) + [str(a).strip() for a in (r.get("aliases") or []) if str(a).strip()])),
+                "aliases": list(dict.fromkeys(t.get("aliases", []) + list_of(r.get("aliases")))),
                 "type": t["type"],
-                "age": str(r.get("age") or "").strip(),
-                "facts": str(r.get("facts") or "").strip() or f"Mentioned in {label}.",
-                "voice": [str(v).strip() for v in (r.get("voice") or []) if str(v).strip()][:3],
-                "keywords": [str(k).strip() for k in (r.get("keywords") or []) if str(k).strip()],
+                "age": text_of(r.get("age")),
+                "facts": text_of(r.get("facts")) or f"Mentioned in {label}.",
+                "voice": list_of(r.get("voice"), split=False)[:3],
+                "keywords": list_of(r.get("keywords")),
                 "origin": norm_origin(r.get("origin")),
                 "relations": norm_relations(r.get("relations")),
             })
@@ -365,26 +400,27 @@ def extract_chunk_deep(chunk, provider, model, glean_rounds=MAX_GLEAN_ROUNDS):
         try:
             res = _call(provider, model, BEATS_SYSTEM,
                         f"TEXT ({label}):\n{text}\n\nBEATS:\n" + "\n".join(f"- {b['title']}" for b in inv["beats"]))
-            summary = str(res.get("chapter_summary") or "").strip()
-            for b in res.get("beats") or []:
-                if not isinstance(b, dict) or not str(b.get("title", "")).strip():
+            summary = text_of(res.get("chapter_summary"))
+            raw_beats = res.get("beats")
+            for b in (raw_beats if isinstance(raw_beats, list) else [raw_beats] if isinstance(raw_beats, dict) else []):
+                if not isinstance(b, dict) or not text_of(b.get("title")):
                     continue
                 when = b.get("when") if isinstance(b.get("when"), dict) else {}
                 beats.append({
-                    "title": str(b["title"]).strip(),
-                    "what_happened": str(b.get("what_happened") or "").strip(),
-                    "participants": [str(p).strip() for p in (b.get("participants") or []) if str(p).strip()],
-                    "place": str(b.get("place") or "").strip(),
-                    "marker": str(when.get("marker") or "").strip(),
+                    "title": text_of(b["title"]),
+                    "what_happened": text_of(b.get("what_happened")),
+                    "participants": list_of(b.get("participants")),
+                    "place": text_of(b.get("place")),
+                    "marker": text_of(when.get("marker") or b.get("marker")),
                     "flashback": bool(when.get("flashback")),
-                    "order": str(when.get("order") or "").strip(),
+                    "order": text_of(when.get("order")),
                     "state_changes": [
-                        {"entity": str(s.get("entity", "")).strip(), "change": str(s.get("change", "")).strip()}
-                        for s in (b.get("state_changes") or [])
-                        if isinstance(s, dict) and str(s.get("entity", "")).strip() and str(s.get("change", "")).strip()
+                        {"entity": text_of(s.get("entity")), "change": text_of(s.get("change"))}
+                        for s in (b.get("state_changes") if isinstance(b.get("state_changes"), list) else [])
+                        if isinstance(s, dict) and text_of(s.get("entity")) and text_of(s.get("change"))
                     ],
-                    "evidence": str(b.get("evidence") or "").strip()[:200],
-                    "confidence": str(b.get("confidence") or "medium").strip().lower(),
+                    "evidence": text_of(b.get("evidence"))[:200],
+                    "confidence": text_of(b.get("confidence")).lower() or "medium",
                 })
         except Exception as e:
             print(f"[DEEP] beats call failed: {e}", flush=True)

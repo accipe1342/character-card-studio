@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Blueprint, jsonify, request
 
 import text_module as T
+from generator import number_of, request_text, text_of
 
 bp = Blueprint("critic_tools", __name__)
 
@@ -36,10 +37,15 @@ more than 30% longer). Return ONLY valid JSON, no fences: {"rewrite": "the rewri
 
 
 def _clamp(v, lo=1, hi=10):
-    try:
-        return max(lo, min(hi, int(round(float(v)))))
-    except (TypeError, ValueError):
-        return None
+    n = number_of(v)                       # 7, "7", "7/10", "7 out of 10"
+    return None if n is None else max(lo, min(hi, int(round(n))))
+
+
+def _sweep_scores(v):
+    """Per-category scores as {category: score}, whether the model sent that object or the critic's list shape."""
+    if isinstance(v, list):
+        v = {text_of(x.get("category") or x.get("name")): x.get("score") for x in v if isinstance(x, dict)}
+    return {k: _clamp(x) for k, x in (v.items() if isinstance(v, dict) else []) if k and _clamp(x)}
 
 
 def _sweep_markdown(name, rows):
@@ -91,9 +97,9 @@ def api_sweep(pid):
                     try:
                         res = fut.result()
                         row.update({
-                            "score": _clamp(res.get("score")),
-                            "scores": {k: _clamp(v) for k, v in (res.get("scores") or {}).items() if _clamp(v)},
-                            **{k: str(res.get(k) or "").strip()[:400] for k in ("summary", "worst", "quote", "fix", "best")},
+                            "score": _clamp(res.get("score") if res.get("score") is not None else res.get("overall")),
+                            "scores": _sweep_scores(res.get("scores")),
+                            **{k: text_of(res.get(k))[:400] for k in ("summary", "worst", "quote", "fix", "best")},
                         })
                     except Exception as e:
                         row["error"] = str(e)[:160]
@@ -172,14 +178,15 @@ def api_rewrite(pid):
     user = (f"PROBLEM AND FIX: {fix or 'Improve this passage as a strict editor would.'}\n"
             f"LINE IT IS ABOUT: {quote}\n\nPASSAGE:\n{passage}")
     try:
-        res = T._request(d.get("provider", "nanogpt"), d.get("model", ""), user, system=REWRITE_SYSTEM)
+        res = request_text(d.get("provider", "nanogpt"), d.get("model", ""), user, REWRITE_SYSTEM, "rewrite",
+                           call=lambda *a, **k: T._request(*a, **k))
     except Exception as e:
         return jsonify({"error": f"The model call failed: {str(e)[:200]}"}), 502
-    rewrite = str(res.get("rewrite") or "").strip()
+    rewrite = text_of(res.get("rewrite"), "\n")
     if not rewrite:
         return jsonify({"error": "The model returned no rewrite. Try again or pick another model."}), 502
     return jsonify({"found": found, "label": label, "original": passage, "rewrite": rewrite,
-                    "notes": str(res.get("notes") or "").strip()})
+                    "notes": text_of(res.get("notes"))})
 
 
 def register_critic_tools(app):

@@ -309,11 +309,31 @@ def _strip_code_fences(text: str) -> str:
     return text.strip()
 
 
+class NotJSONError(ValueError):
+    """The model answered, but not with a JSON object. `raw` holds the whole answer (the message only a part)."""
+
+    def __init__(self, raw):
+        self.raw = raw or ""
+        super().__init__(f"Model response could not be parsed as JSON even after repair attempt. Raw: {self.raw[:1200]}")
+
+
+def _as_object(parsed):
+    """A parsed JSON value as the object callers expect. A top-level list of objects (models do this for 'list of
+    entries/entities') is wrapped under the usual keys; anything else is not an object -> None."""
+    if isinstance(parsed, dict):
+        return parsed
+    if isinstance(parsed, list) and parsed and all(isinstance(x, dict) for x in parsed):
+        return {"entries": parsed, "entities": parsed, "items": parsed}
+    return None
+
+
 def _extract_json_object(text: str) -> Dict[str, Any]:
     text = _strip_code_fences(text)
 
     try:
-        return json.loads(text)
+        obj = _as_object(json.loads(text))
+        if obj is not None:
+            return obj
     except json.JSONDecodeError:
         pass
 
@@ -321,7 +341,9 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
     if match:
         candidate = match.group(0)
         try:
-            return json.loads(candidate)
+            obj = _as_object(json.loads(candidate))
+            if obj is not None:
+                return obj
         except json.JSONDecodeError:
             pass
         try:
@@ -342,10 +364,101 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
     except Exception:
         pass
 
-    raise ValueError(
-        f"Model response could not be parsed as JSON even after repair attempt. "
-        f"Raw: {text[:1200]}"
-    )
+    raise NotJSONError(text)
+
+
+# ── reading model output that doesn't follow the requested shape ──────────────
+# Models routinely send a string where a list was asked for, a list where text was asked for, numbers as "7/10",
+# or plain prose instead of JSON. These helpers turn those into what the code expects instead of crashing or
+# storing "['a', 'b']".
+
+def text_of(value: Any, sep: str = " ") -> str:
+    """Any JSON value as plain text: lists are joined, objects become 'key: value' pairs, None is ''."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, list):
+        return sep.join(t for t in (text_of(v, sep) for v in value) if t)
+    if isinstance(value, dict):
+        return "; ".join(f"{k}: {text_of(v, ', ')}" for k, v in value.items() if text_of(v, ", "))
+    return str(value).strip()
+
+
+def list_of(value: Any, split: bool = True, limit: int = 50) -> list:
+    """Any JSON value as a list of non-empty strings. A plain string becomes one item, or with split=True is
+    split on commas, semicolons and new lines ("Mar, Mara" -> ["Mar", "Mara"], never letter by letter)."""
+    if value is None or isinstance(value, bool):
+        return []
+    if isinstance(value, str):
+        v = value.strip()
+        if v.startswith("[") and v.endswith("]"):
+            try:
+                return list_of(json.loads(v), split, limit)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        parts = re.split(r"\s*[,;\n]\s*", v) if split else [v]
+        return [p for p in (_unwrap_quotes(x) for x in parts) if p][:limit]
+    if isinstance(value, dict):
+        value = list(value.values()) if all(isinstance(v, str) for v in value.values()) else [value]
+    if isinstance(value, list):
+        out = []
+        for v in value:
+            t = text_of(v) if not isinstance(v, dict) else text_of(v.get("name") or v.get("text") or v.get("value") or v)
+            if t:
+                out.append(t)
+        return out[:limit]
+    return [text_of(value)] if text_of(value) else []
+
+
+def _unwrap_quotes(t):
+    """'"tea"' -> 'tea', but '"Again?" she sighs.' stays as it is (only quotes around the WHOLE item go)."""
+    t = t.strip()
+    while len(t) > 1 and t[0] == t[-1] and t[0] in "\"'" and t.count(t[0]) == 2:
+        t = t[1:-1].strip()
+    return t
+
+
+def number_of(value: Any):
+    """A score as a number: 7, "7", "7/10", "7.5 out of 10" -> 7 / 7.5; anything else -> None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    m = re.search(r"-?\d+(?:\.\d+)?", str(value or ""))
+    return float(m.group(0)) if m else None
+
+
+REPLY_KEYS = ("reply", "response", "answer", "text", "content", "message", "output", "result")
+
+
+def request_text(provider: str, model: str, prompt: str, system: Optional[str], key: str,
+                 max_tokens: Optional[int] = None, call=None) -> Dict[str, Any]:
+    """_request for calls whose answer is mainly ONE piece of text under `key` (a greeting, a rewrite, a reply).
+    Copes with models that ignore the JSON instruction: plain prose comes back as {key: prose, "plain": True},
+    and the text under a different key ("response", "content", ...) is moved to `key`."""
+    try:
+        res = (call or _request)(provider, model, prompt, system=system, max_tokens=max_tokens)
+    except NotJSONError as e:                   # the model answered in prose: that prose is the answer
+        raw = _strip_code_fences(e.raw).strip()
+        try:
+            as_json = json.loads(raw)               # a bare JSON string ("Hello.") or a list of lines
+            if isinstance(as_json, (str, list)) and text_of(as_json, "\n"):
+                raw = text_of(as_json, "\n")
+        except (json.JSONDecodeError, ValueError):
+            pass
+        if not raw:
+            raise
+        return {key: raw, "plain": True}
+    if not text_of(res.get(key)):
+        alt = next((res[k] for k in REPLY_KEYS if k != key and text_of(res.get(k))), None)
+        if alt is not None:
+            res = {**res, key: alt}
+    return res
 
 
 def _ensure_list(value: Any) -> list:
@@ -701,6 +814,8 @@ def generate_full_card(
 # ---------------------------------------------------------------------------
 # Card prompt building, in-depth passes and validation
 # ---------------------------------------------------------------------------
+CARD_TEXT_FIELDS = ("name", "description", "personality", "scenario", "first_mes", "mes_example", "creator_notes",
+                    "system_prompt", "post_history_instructions", "character_note", "depth_prompt")
 PROFILE_TEXT_FIELDS = ["sex", "species", "ethnicity", "race", "job_occupation", "gender", "sexual_attraction",
                        "pronouns", "relationship_to_user", "relationship_status", "backstory", "height", "weight",
                        "age", "story_point", "with_strangers", "with_close"]
@@ -903,15 +1018,24 @@ def validate_card(card, options=None):
     """Repair what code can repair and list what needs a human look. Returns (card, warnings)."""
     options = options or {}
     warnings = []
+    # text fields stay text even when a model sends a list or an object
+    for k in CARD_TEXT_FIELDS:
+        if k in card and not isinstance(card[k], str):
+            card[k] = text_of(card[k], "\n")
     sp = card.get("structured_profile") or {}
+    if isinstance(sp, str):
+        try:
+            sp = json.loads(sp)
+        except (json.JSONDecodeError, ValueError):
+            sp = {}
     if not isinstance(sp, dict):
         sp = {}
     for f in PROFILE_LIST_FIELDS:
         if f in sp:
-            sp[f] = _ensure_list(sp[f])
+            sp[f] = list_of(sp[f])
     for f in PROFILE_TEXT_FIELDS:
-        if f in sp and isinstance(sp[f], list):
-            sp[f] = ", ".join(str(x) for x in sp[f])
+        if f in sp and not isinstance(sp[f], str):
+            sp[f] = text_of(sp[f], ", ")
     if not sp.get("species") and sp.get("ethnicity"):
         sp["species"] = sp["ethnicity"]          # older sources keep species in 'ethnicity'
     card["structured_profile"] = sp
@@ -935,14 +1059,11 @@ def validate_card(card, options=None):
     if not fm.strip():
         warnings.append("First message is empty.")
 
-    greetings = card.get("alternate_greetings") or []
-    if isinstance(greetings, str):
-        greetings = [greetings]
-    card["alternate_greetings"] = [str(g).strip() for g in greetings if str(g).strip()][:5]
-    card["character_note"] = str(card.get("character_note") or card.get("depth_prompt") or "").strip()
+    card["alternate_greetings"] = list_of(card.get("alternate_greetings"), split=False, limit=5)
+    card["character_note"] = text_of(card.get("character_note") or card.get("depth_prompt"), "\n")
 
     tags, seen = [], set()
-    for t in _ensure_list(card.get("tags")):
+    for t in list_of(card.get("tags")):
         t = str(t).strip().lstrip("#").lower()
         if t and t not in seen:
             seen.add(t)
@@ -1161,32 +1282,47 @@ If the character is under 18 or reads as a minor, write no sexual content and le
 
         user = "\n".join(parts)
 
-    result = _request(provider, model, user, system=system)
+    # plain prose is accepted as the answer for one field; models also often skip the wrapper object
+    result = request_text(provider, model, user, system, field_name)
+    sp = result.get("structured_profile")
+    if isinstance(sp, str):
+        try:
+            sp = json.loads(sp)
+        except (json.JSONDecodeError, ValueError):
+            sp = None
+    if not isinstance(sp, dict):
+        sp = None
 
     if field_name == "structured_profile":
-        if "structured_profile" not in result:
-            raise ValueError("Missing structured_profile in regeneration result")
-        return {"structured_profile": result["structured_profile"]}
+        if sp is None:                      # the profile itself, without the wrapper
+            sp = {k: v for k, v in result.items() if k in structured_subfields}
+        if not sp:
+            raise ValueError("The model returned no profile. Try again or pick another model.")
+        return {"structured_profile": sp}
 
     if field_name in structured_subfields:
-        if "structured_profile" not in result:
-            raise ValueError("Missing structured_profile in regeneration result")
-        if field_name not in result["structured_profile"]:
-            raise ValueError(f"Missing structured_profile.{field_name} in regeneration result")
-        val = result["structured_profile"][field_name]
-        if field_name in list_subfields:
-            val = _ensure_list(val)
+        val = (sp or {}).get(field_name, result.get(field_name))
+        if val is None or not text_of(val):
+            raise ValueError(f"The model returned nothing for {field_name}. Try again or pick another model.")
+        val = list_of(val) if field_name in list_subfields else text_of(val, ", ")
         return {"structured_profile": {field_name: val}}
 
     if field_name == "tags":
-        if "tags" not in result:
-            raise ValueError("Missing tags in regeneration result")
-        return {"tags": _ensure_list(result["tags"])}
+        tags = list_of(result.get("tags"))
+        if not tags:
+            raise ValueError("The model returned no tags. Try again or pick another model.")
+        return {"tags": tags}
 
-    if field_name not in result:
-        raise ValueError(f"Missing field in regeneration result: {field_name}")
+    if field_name == "alternate_greetings":
+        greets = list_of(result.get(field_name), split=False)
+        if not greets:
+            raise ValueError("The model returned no greetings. Try again or pick another model.")
+        return {field_name: greets}
 
-    return {field_name: result[field_name]}
+    value = text_of(result.get(field_name), "\n")
+    if not value:
+        raise ValueError(f"The model returned nothing for {field_name}. Try again or pick another model.")
+    return {field_name: value}
 
 
 # -------------------------------------------------------------------------------
@@ -1259,8 +1395,8 @@ def generate_lore_entry(
     if extra_abilities:
         structured["extra_ability_sections"] = extra_abilities
 
-    has_structured = any(
-        structured[k] for k in ["summary", "normalized_infobox", "personality_traits", "history_list",
+    has_structured = any(                   # .get: a sparse page has no abilities_raw / extra sections key at all
+        structured.get(k) for k in ["summary", "normalized_infobox", "personality_traits", "history_list",
                                   "abilities_list", "abilities_raw", "extra_ability_sections"]
     )
     if has_structured:
@@ -1337,23 +1473,40 @@ Return this exact JSON shape:
 
     result = _request(provider, model, user, system=system)
 
-    # Normalise the response
-    if "valid" not in result:
-        # Model returned entries directly without the wrapper - treat as valid
-        if "entries" in result:
-            return {"valid": True, "reason": None, "entries": result["entries"]}
-        if "title" in result:
-            return {"valid": True, "reason": None, "entries": [result]}
+    # Normalise the response: the wrapper may be missing, entries may be one object, fields may be the wrong type
+    raw = result.get("entries")
+    if raw is None and "title" in result:
+        raw = [result]
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        if "valid" in result and _truthy(result.get("valid")) is False:
+            return {"valid": False, "reason": text_of(result.get("reason")) or None, "entries": []}
         return {"valid": False, "reason": "Model returned unexpected structure", "entries": []}
-
-    entries = result.get("entries", [])
-    # Normalise keywords in every entry
-    for entry in entries:
-        if isinstance(entry, dict):
-            entry["keywords"] = _ensure_list(entry.get("keywords", []))
-
+    entries = []
+    for entry in raw:
+        if not isinstance(entry, dict) or not text_of(entry.get("title")):
+            continue
+        entry = dict(entry)
+        entry["title"] = text_of(entry["title"])
+        entry["keywords"] = list_of(entry.get("keywords"))
+        for k in ("entry_type", "summary", "content"):
+            if k in entry and not isinstance(entry[k], str):
+                entry[k] = text_of(entry[k], "\n")
+        entries.append(entry)
+    valid = _truthy(result.get("valid", True))
     return {
-        "valid":   bool(result.get("valid", True)),
-        "reason":  result.get("reason"),
+        "valid":   bool(entries) if valid is None else valid,
+        "reason":  text_of(result.get("reason")) or None,
         "entries": entries,
     }
+
+
+def _truthy(v):
+    """true / "true" / "yes" / 1 -> True, false / "false" / "no" / 0 -> False, else None."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    t = str(v or "").strip().lower()
+    return True if t in ("true", "yes", "y", "1") else False if t in ("false", "no", "n", "0") else None

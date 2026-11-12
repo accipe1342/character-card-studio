@@ -6,6 +6,31 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.5.1] - 2026-11-11
+
+### Fixed
+Every feature that calls a model now copes with the ways real models stray from the requested format, instead of
+failing or storing garbled text. Checked end to end through the real request code against a test server that
+answers like real models do.
+- Plain-text answers (common with roleplay-tuned models) are accepted wherever the answer is one piece of text:
+  interview, trim, alternate greeting, compile description/personality, field regenerate, passage rewrite,
+  entry condensing, arc summaries and the critic's per-chapter notes. Before, these failed with "the model call
+  failed" or a JSON parse error.
+- A single string where a list belongs is no longer split into letters (aliases "Mar" became M, a, r); "a, b, c"
+  becomes three items. Affects TEXT extraction (quick and deep), tags, profile lists and event participants.
+- A list or object where text belongs is joined into readable text instead of being stored as "['a', 'b']".
+- Relations are read in the shapes models actually use ({"Tomas": "friend"}, "Tomas - friend", other key names)
+  instead of being dropped; hyphenated names stay whole.
+- Deep extraction matches details to the right entry when the model writes a fuller or shorter name
+  ("Mara Vell" for "Mara"), instead of falling back to "Mentioned in ...".
+- Critic and Chapter sweep read scores like "7/10" or "8 out of 10", and per-category scores as a list or an
+  object; the score history no longer loses them.
+- Field regenerate accepts a profile field the model put at the top level, and its errors come back as a
+  readable message instead of a server error page.
+- Lore entry generation accepts a bare list of entries or a single entry object, and no longer crashes on a sparse
+  wiki page (no summary, infobox or abilities).
+- A dialogue line that starts with a quote keeps its opening quote.
+
 ## [2.5.0] - 2026-11-11
 
 ### Added

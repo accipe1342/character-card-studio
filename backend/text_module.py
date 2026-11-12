@@ -62,7 +62,12 @@ from flask import Blueprint, jsonify, request
 from database import (_conn, create_lore_project, create_or_update_card, get_card, list_lore_projects,
                       save_lore_entry, save_source)
 from preview import build_export_card_json, character_book_from_items, normalise_lore_items
-from generator import _request
+from generator import _request, request_text, text_of, list_of, number_of
+
+
+def _ask_text(provider, model, prompt, system, key):
+    """generator.request_text through this module's _request (so a stand-in model in tests is used too)."""
+    return request_text(provider, model, prompt, system, key, call=lambda *a, **k: _request(*a, **k))
 from lore_extract import extract_chunk_deep, norm_origin, norm_relations
 
 bp = Blueprint("text_module", __name__)
@@ -1013,21 +1018,22 @@ def extract_chunk(chunk, provider, model, mode="quick"):
     user = f"CHUNK: {chunk['label']}\n\n{chunk['text']}"
     res = _request(provider, model, user, system=EXTRACT_SYSTEM)
     ents = []
-    for e in res.get("entities", []) or []:
-        if not isinstance(e, dict) or not str(e.get("name", "")).strip():
+    raw = res.get("entities")
+    for e in (raw if isinstance(raw, list) else [raw] if isinstance(raw, dict) else []):
+        if not isinstance(e, dict) or not text_of(e.get("name")):
             continue
         ents.append({
-            "name": str(e["name"]).strip(),
-            "aliases": [str(a).strip() for a in (e.get("aliases") or []) if str(a).strip()],
-            "type": _norm_type(e.get("type")),
-            "age": str(e.get("age") or "").strip(),
-            "facts": str(e.get("facts") or "").strip(),
-            "voice": [str(v).strip() for v in (e.get("voice") or []) if str(v).strip()][:3],
-            "keywords": [str(k).strip() for k in (e.get("keywords") or []) if str(k).strip()],
-            "origin": norm_origin(e.get("origin")),
+            "name": text_of(e["name"]),
+            "aliases": list_of(e.get("aliases")),
+            "type": _norm_type(text_of(e.get("type"))),
+            "age": text_of(e.get("age")),
+            "facts": text_of(e.get("facts")),
+            "voice": list_of(e.get("voice"), split=False)[:3],
+            "keywords": list_of(e.get("keywords")),
+            "origin": norm_origin(text_of(e.get("origin"))),
             "relations": norm_relations(e.get("relations")),
         })
-    return {"chapter_summary": str(res.get("chapter_summary") or "").strip(), "entities": ents,
+    return {"chapter_summary": text_of(res.get("chapter_summary")), "entities": ents,
             "beats": [], "stats": {"entities": len(ents), "beats": 0}}
 
 
@@ -1279,10 +1285,10 @@ def build_content(m, labels, provider, model, condense):
     if condense:
         try:
             notes = "\n".join(f"[{labels.get(i, i)}] {f}" for i, f in frags)
-            res = _request(provider, model,
-                           f"Entity: {m['name']} ({m['type']})\n\nNotes in story order:\n{notes[:9000]}",
-                           system=CONDENSE_SYSTEM)
-            c = str(res.get("content") or "").strip()
+            res = _ask_text(provider, model,
+                               f"Entity: {m['name']} ({m['type']})\n\nNotes in story order:\n{notes[:9000]}",
+                               CONDENSE_SYSTEM, "content")
+            c = text_of(res.get("content"))
             if c:
                 return c
         except Exception as e:
@@ -2144,9 +2150,9 @@ def tier_parts(parts, provider, model):
     for n, i in enumerate(range(0, len(old), ARC_SIZE), 1):
         group = old[i:i + ARC_SIZE]
         try:
-            res = _request(provider, model, "PART SUMMARIES (in order):\n" + "\n".join(group)[:9000], system=ARC_SYSTEM)
-            title = str(res.get("title") or "").strip() or f"Parts {i + 1}-{i + len(group)}"
-            summ = str(res.get("summary") or "").strip()
+            res = _ask_text(provider, model, "PART SUMMARIES (in order):\n" + "\n".join(group)[:9000], ARC_SYSTEM, "summary")
+            title = text_of(res.get("title")) or f"Parts {i + 1}-{i + len(group)}"
+            summ = text_of(res.get("summary"))
             if not summ:
                 raise ValueError("empty arc summary")
             lines.append(f"[ARC {n}: {title}] {summ}")
@@ -2160,22 +2166,24 @@ def tier_parts(parts, provider, model):
 def format_archive(res):
     """The archivist's JSON as one lorebook entry, laid out like a summary pasted into SillyTavern World Info:
     [HEADER] / [BODY - CHAPTER LOG] / [FOOTER - CURRENT STATUS]."""
+    def objs(v):
+        return [x for x in (v if isinstance(v, list) else [v] if isinstance(v, dict) else []) if isinstance(x, dict)]
     head = []
     for label, key in (("Current Timeline", "current_timeline"), ("Current Location", "current_location"),
                        ("Dynamic", "dynamic")):
-        v = str(res.get(key) or "").strip()
+        v = text_of(res.get(key))
         if v:
             head.append(f"{label}: {v}")
     body = []
-    for i, ch in enumerate([c for c in (res.get("chapters") or []) if isinstance(c, dict)], 1):
-        title, summ = str(ch.get("title") or "").strip(), str(ch.get("summary") or "").strip()
+    for i, ch in enumerate(objs(res.get("chapters")), 1):
+        title, summ = text_of(ch.get("title")), text_of(ch.get("summary"))
         if summ:
             body.append(f"## CHAPTER {i} - {title or 'Untitled'}\n{summ}")
     foot = []
-    for c in [c for c in (res.get("characters") or []) if isinstance(c, dict) and str(c.get("name") or "").strip()][:8]:
-        bits = [str(c.get(k) or "").strip() for k in ("location", "physical", "goal")]
-        foot.append(f"* {str(c['name']).strip()}: " + "; ".join(b for b in bits if b))
-    hooks = [str(h).strip() for h in (res.get("plot_hooks") or []) if str(h).strip()]
+    for c in [c for c in objs(res.get("characters")) if text_of(c.get("name"))][:8]:
+        bits = [text_of(c.get(k)) for k in ("location", "physical", "goal")]
+        foot.append(f"* {text_of(c['name'])}: " + "; ".join(b for b in bits if b))
+    hooks = list_of(res.get("plot_hooks"), split=False)
     if hooks:
         foot.append("* Plot Hooks: " + "; ".join(hooks[:8]))
     parts = []
@@ -2555,16 +2563,17 @@ def api_text_narrator(pid):
             "\n\nWORLD RULES / KEY PLACES / FIC-SPECIFIC POINTS:\n" + "\n".join(f"- {x}" for x in rules))
     try:
         res = _request(provider, model, user, system=NARRATOR_SYSTEM)
-        card = {k: res.get(k) for k in ("name", "description", "personality", "scenario", "first_mes",
-                                          "system_prompt", "tags")}
-        if not str(card.get("description") or "").strip() or not str(card.get("first_mes") or "").strip():
+        card = {k: text_of(res.get(k), "\n") for k in ("name", "description", "personality", "scenario", "first_mes",
+                                                       "system_prompt")}
+        card["tags"] = list_of(res.get("tags"))
+        if not card["description"] or not card["first_mes"]:
             raise ValueError("model returned an incomplete card")
         _log(f"narrator card for project={pid} written by {provider}/{model or 'default'}")
     except Exception as ex:
         _log(f"narrator card: model step failed ({str(ex)[:120]}); using the template version")
         card = _narrator_fallback(r["name"], recap, cast, rules)
     card = {**card, "name": str(card.get("name") or f"{r['name']} Narrator").strip(),
-            "tags": [str(t) for t in (card.get("tags") or [])][:8], "mes_example": "",
+            "tags": list_of(card.get("tags"))[:8], "mes_example": "",
             "creator_notes": f"World narrator for '{r['name']}', built in Character Card Studio's TEXT studio. "
                              f"The story's lorebook is embedded.", "alternate_greetings": [],
             "structured_profile": {}, "provider": provider, "model": model}
@@ -2655,6 +2664,27 @@ Rules:
 - Keep quotes short (max 25 words each)."""
 
 
+def normalize_critique(res):
+    """The critic's answer in the shape the studio shows: text fields as text, scores as numbers (also from
+    "7/10" or a {category: score} object), lists as lists of objects or strings."""
+    res = dict(res)
+    res["verdict"] = text_of(res.get("verdict"), "\n")
+    sc = res.get("scores")
+    if isinstance(sc, dict):
+        sc = [{"category": k, "score": v} if not isinstance(v, dict) else {"category": k, **v} for k, v in sc.items()]
+    res["scores"] = [{**x, "category": text_of(x.get("category") or x.get("name")),
+                      "score": number_of(x.get("score")), "why": text_of(x.get("why") or x.get("reason"))}
+                     for x in (sc if isinstance(sc, list) else []) if isinstance(x, dict)
+                     and number_of(x.get("score")) is not None]
+    for k in ("problems", "plan", "line_fixes"):
+        v = res.get(k)
+        res[k] = [x for x in (v if isinstance(v, list) else [v] if isinstance(v, dict) else []) if isinstance(x, dict)]
+    for k in ("strengths", "top3"):
+        if k in res:
+            res[k] = list_of(res.get(k), split=False)
+    return res
+
+
 def _critique_markdown(name, scope, res):
     out = [f"# Critique: {name}", f"_Scope: {scope}_", "", "## Verdict", str(res.get("verdict") or "").strip(), ""]
     scores = [x for x in (res.get("scores") or []) if isinstance(x, dict)]
@@ -2725,8 +2755,8 @@ def api_text_critique(pid):
                             message=f"Critic is reading {len(sel)} parts ({workers} at a time)...")
                 done = 0
                 with ThreadPoolExecutor(max_workers=workers) as ex:
-                    futs = {ex.submit(_request, provider, model, f"PART: {c['label']}\n\n{c['text']}",
-                                      system=CRITIC_NOTES_SYSTEM): c for c in sel}
+                    futs = {ex.submit(_ask_text, provider, model, f"PART: {c['label']}\n\n{c['text']}",
+                                      CRITIC_NOTES_SYSTEM, "summary"): c for c in sel}   # prose notes kept as the summary
                     for fut in as_completed(futs):
                         c = futs[fut]
                         done += 1
@@ -2749,19 +2779,22 @@ def api_text_critique(pid):
                     n = notes.get(c["idx"])
                     if not isinstance(n, dict):
                         continue
-                    lines.append(f"### {c['label']}\nWhat happens: {n.get('summary', '')}")
-                    for s_ in n.get("strengths") or []:
+                    lines.append(f"### {c['label']}\nWhat happens: {text_of(n.get('summary'))}")
+                    for s_ in list_of(n.get("strengths"), split=False):
                         lines.append(f"+ {s_}")
-                    for p_ in n.get("problems") or []:
+                    probs = n.get("problems")
+                    for p_ in (probs if isinstance(probs, list) else [probs] if probs else []):
                         if isinstance(p_, dict):
-                            lines.append(f"- [{p_.get('category', '')}] {p_.get('issue', '')} | quote: \"{p_.get('quote', '')}\""
-                                         f" | fix: {p_.get('fix', '')}")
-                    for h in n.get("habits") or []:
+                            lines.append(f"- [{text_of(p_.get('category'))}] {text_of(p_.get('issue'))} | quote: \"{text_of(p_.get('quote'))}\""
+                                         f" | fix: {text_of(p_.get('fix'))}")
+                        elif text_of(p_):
+                            lines.append(f"- {text_of(p_)}")
+                    for h in list_of(n.get("habits"), split=False):
                         lines.append(f"~ habit: {h}")
                 body = "EDITOR'S NOTES PER PART:\n" + "\n".join(lines)[:40000]
             user = (f"STORY: {r['name']}\nSCOPE: {scope}\nCATEGORIES TO SCORE: {cats}\n"
                     + (f"FOCUS ESPECIALLY ON: {focus}\n" if focus else "") + "\n" + body)
-            res = _request(provider, model, user, system=CRITIC_SYSTEM)
+            res = normalize_critique(_ask_text(provider, model, user, CRITIC_SYSTEM, "verdict"))
             if not str(res.get("verdict") or "").strip():
                 raise RuntimeError("The model returned an empty critique. Try again or pick another model.")
             res["markdown"] = _critique_markdown(r["name"], scope, res)
@@ -2795,8 +2828,8 @@ def api_text_critiques(pid):
             res = json.loads(d.pop("result_json") or "{}")
         except Exception:
             res = {}
-        sc = {str(s_.get("category")): s_.get("score") for s_ in (res.get("scores") or [])
-              if isinstance(s_, dict) and isinstance(s_.get("score"), (int, float))}
+        sc = {str(s_.get("category")): number_of(s_.get("score")) for s_ in (res.get("scores") or [])
+              if isinstance(s_, dict) and number_of(s_.get("score")) is not None}
         d["scores"] = sc
         d["avg"] = round(sum(sc.values()) / len(sc), 1) if sc else None
         d["kind"] = "sweep" if res.get("sweep") else "critique"

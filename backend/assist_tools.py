@@ -16,7 +16,7 @@ import re
 from flask import Blueprint, jsonify, request
 
 import text_module as T
-from generator import _request
+from generator import _request, request_text, text_of
 from preview import format_structured_profile_text
 
 bp = Blueprint("assist_tools", __name__)
@@ -45,33 +45,15 @@ quoting the answer"], "verdict": "one sentence"}. Use only the notes as the trut
 {"issues": [], "verdict": "Consistent with the notes."}"""
 
 
-REPLY_KEYS = ("reply", "response", "answer", "text", "content", "message")
-
-
 def _ask(provider, model, prompt, system, key):
-    """Model call that also copes with models that ignore the JSON instruction: a plain-text answer (common with
-    roleplay models) comes back as {key: text}, and a JSON value that isn't an object is wrapped the same way."""
-    try:
-        res = _request(provider, model, prompt, system=system)
-    except ValueError as e:                    # generator gives up on JSON and keeps the raw answer in the message
-        msg = str(e)
-        if "Raw: " not in msg:
-            raise
-        return {key: msg.split("Raw: ", 1)[1].strip(), "plain": True}
-    if isinstance(res, dict):
-        if not str(res.get(key) or "").strip():
-            alt = next((res[k] for k in REPLY_KEYS if isinstance(res.get(k), str) and res[k].strip()), None)
-            if alt:
-                res = {**res, key: alt}
-        return res
-    if isinstance(res, str):
-        return {key: res, "plain": True}
-    return {}
+    """One model call whose answer is a piece of text under `key`; plain-prose answers are accepted
+    (see generator.request_text). Goes through this module's _request so tests can stand in for the model."""
+    return request_text(provider, model, prompt, system, key, call=lambda *a, **k: _request(*a, **k))
 
 
 def clean_reply(text, name):
     """Strip what models add around a spoken answer: a leading 'Name:' label and wrapping quotes."""
-    t = str(text or "").strip()
+    t = text_of(text, "\n")
     t = re.sub(rf"^\s*\**\s*{re.escape(name)}\s*\**\s*:\s*\**\s*", "", t, flags=re.I)   # Mara: / **Mara:** / **Mara**:
     if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'“”":
         t = t[1:-1].strip()
@@ -105,7 +87,7 @@ def api_trim():
                    TRIM_SYSTEM.format(kind=kind, target=target, words=int(target * 0.75)), "text")
     except Exception as e:
         return jsonify({"error": f"The model call failed: {str(e)[:200]}"}), 502
-    out = str(res.get("text") or "").strip()
+    out = text_of(res.get("text"), "\n")
     if not out:
         return jsonify({"error": "The model returned nothing. Try again or pick another model."}), 502
     return jsonify({"text": out, "tokens_before": before, "tokens_after": _tok(out)})
@@ -169,8 +151,8 @@ def api_interview():
             res = _ask(provider, model, f"CHARACTER: {name}\n\nNOTES:\n{notes[:9000]}\n\nINTERVIEW:\n{transcript}",
                        CHECK_SYSTEM, "verdict")
             raw = res.get("issues")
-            issues = [str(x) for x in (raw if isinstance(raw, list) else [raw] if raw else []) if str(x).strip()][:10]
-            return jsonify({"issues": issues, "verdict": str(res.get("verdict") or "").strip()[:600]})
+            issues = [text_of(x) for x in (raw if isinstance(raw, list) else [raw] if raw else []) if text_of(x)][:10]
+            return jsonify({"issues": issues, "verdict": text_of(res.get("verdict"))[:600]})
         if not msgs or msgs[-1].get("role") != "user":
             return jsonify({"error": "Ask a question"}), 400
         res = _ask(provider, model, f"INTERVIEW SO FAR:\n{transcript}\n\nAnswer the last question as {name}.",
