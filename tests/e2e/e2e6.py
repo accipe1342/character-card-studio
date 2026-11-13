@@ -68,7 +68,7 @@ with sync_playwright() as pw:
     ok(pg.locator("[role=option]").count() >= 1, "search finds Bram")
     pg.keyboard.press("Enter"); pg.wait_for_timeout(1500)
     title = pg.locator("section.signal-screen-panel input").first.input_value() if pg.locator("section.signal-screen-panel input").count() else ""
-    ctx = pg.locator(".nier-ctx").first.inner_text().lower()
+    ctx = pg.locator(".sui-ctx").first.inner_text().lower()
     ok(title == "Bram" and "fennmoor lore" in ctx and "bram" in ctx, f"search opened the LORE entry ({title}; header: {ctx!r})")
     # search -> TEXT entity
     pg.locator("button[aria-label='Search everything']").click(); pg.wait_for_timeout(300)

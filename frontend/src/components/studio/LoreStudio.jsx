@@ -61,7 +61,7 @@
  *   pass them to startLoreCrawl() / startMultiLore() in api.js.
  */
 
-import NierMenu, { MenuItem, MenuSep } from "../shared/NierMenu";
+import SignalMenu, { MenuItem, MenuSep } from "../shared/SignalMenu";
 import React, { useState, useEffect } from "react";
 import MainJobStatus from "../shared/MainJobStatus";
 import { markBusy } from "../../lib/leaveGuard";
@@ -605,19 +605,19 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
         </div>
       </div>
 
-      {/* Actions: Generate / New entry on the left, Tools / Export / Trash on the right (NieR-style menus) */}
+      {/* Actions: Generate / New entry on the left, Tools / Export / Trash on the right (menus) */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <NierMenu primary label={loading ? (t.working || "Working...").toUpperCase() : "⟳ " + (t.generateMenu || "GENERATE")}>
+        <SignalMenu primary label={loading ? (t.working || "Working...").toUpperCase() : "⟳ " + (t.generateMenu || "GENERATE")}>
           <MenuItem onClick={handleStartCrawl} disabled={loading || crawlMode === "multi"}>{t.generateFromUrl || "Generate from URL"}</MenuItem>
           <MenuItem onClick={() => { setCrawlMode(m => m === "multi" ? "single" : "multi"); }}>
             {crawlMode === "multi" ? (t.cancelBatch || "Cancel") + " " + (t.severalUrls || "Several URLs").toLowerCase() : (t.severalUrls || "Several URLs")}
           </MenuItem>
           <MenuItem onClick={() => setShowGenPanel(v => !v)}>{t.generateFromPrompt || "Generate from Prompt"}</MenuItem>
           <MenuSep />
-          <label className="nier-menu-check" title="Several passes per page: lists every named entity and event, re-checks for misses, then writes details. Slower and uses more model calls, but doesn't stop at a handful of entries.">
+          <label className="sui-menu-check" title="Several passes per page: lists every named entity and event, re-checks for misses, then writes details. Slower and uses more model calls, but doesn't stop at a handful of entries.">
             <input type="checkbox" checked={deep} onChange={e => setDeep(e.target.checked)} /> Deep extraction (slower, more entries)
           </label>
-        </NierMenu>
+        </SignalMenu>
         <button className="signal-btn" onClick={handleNewEntry} style={btnStyle}>
           + {t.newEntry || "New Entry"}
         </button>
@@ -626,7 +626,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
         <span style={{ fontSize: 12, color: "var(--signal-text-dim)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
           {entries.length} {entries.length === 1 ? "entry" : "entries"}
         </span>
-        <NierMenu label={t.toolsMenu || "TOOLS"} align="right" width={260}>
+        <SignalMenu label={t.toolsMenu || "TOOLS"} align="right" width={260}>
           <MenuItem disabled={!activeProject || !entries.length} why={!activeProject ? "pick a lorebook first" : "no entries yet"} onClick={handleCleanKeywords}
             title="Remove generic trigger words and other entries' names from keywords, so each entry fires only for itself">
             {t.cleanKeywords || "Clean Keywords"}
@@ -651,8 +651,8 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
           }}>
             <span style={{ color: "var(--signal-accent)" }}>{t.trashAllEntries || "Trash all entries"}</span>
           </MenuItem>
-        </NierMenu>
-        <NierMenu label={t.exportMenu || "EXPORT"} align="right" width={280} keepMounted disabled={!entries.length}>
+        </SignalMenu>
+        <SignalMenu label={t.exportMenu || "EXPORT"} align="right" width={280} keepMounted disabled={!entries.length}>
           <MenuItem onClick={handleExport} title="World Info lorebook for SillyTavern (import in the World Info panel)">
             {t.exportSillyTavern || "SillyTavern (.json)"}
           </MenuItem>
@@ -665,7 +665,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
           <MenuItem onClick={handleExportDeepLore} title="Zip of markdown notes for the DeepLore extension (Obsidian vault)">
             {t.exportDeepLore || "DeepLore (.zip)"}
           </MenuItem>
-        </NierMenu>
+        </SignalMenu>
         <button className={toolPanel === "trash" ? "signal-btn signal-btn-active" : "signal-btn"} onClick={() => setToolPanel(p => p === "trash" ? null : "trash")} style={btnStyle}
           title="Deleted entries: restore them or delete them for good">
           ♻ {t.trash || "Trash"}

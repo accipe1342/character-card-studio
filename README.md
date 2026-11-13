@@ -16,57 +16,77 @@ A Signal UI–themed app for making SillyTavern character cards and lorebooks wi
 
 ## Quick Start
 
-### Step 0 — Get the code
+**You need:** [Python 3.10+](https://www.python.org/downloads/) and [Node.js 18+](https://nodejs.org/) (the LTS
+version), plus one way to run a model: a [NanoGPT](https://nano-gpt.com) or [OpenRouter](https://openrouter.ai) API
+key, or a local server such as LM Studio, Ollama or KoboldCPP (no key needed). SillyTavern is optional.
+
+> **Windows:** when you install Python, tick **"Add Python to PATH"** on the first screen.
+
+### 1. Get the code
 
 ```bash
 git clone https://github.com/accipe1342/character-card-studio.git
 cd character-card-studio
 ```
 
-Or download the ZIP from the green **Code** button on GitHub and unzip it.
+No git? Click the green **Code** button on GitHub, choose **Download ZIP**, and unzip it anywhere.
 
-### Step 1 — Install requirements (first time only)
+### 2. Run the setup (first time only)
 
-**Windows:**
-```bat
-setup.bat
-```
+| Windows | Mac / Linux |
+|---|---|
+| Double-click `setup.bat` | `chmod +x setup.sh start.sh` then `./setup.sh` |
 
-**Mac / Linux:**
-```bash
-chmod +x setup.sh
-./setup.sh
-```
+The setup checks Python and Node.js, creates a virtual environment in `.venv`, installs everything, and creates your
+`.env` file. If Python or Node.js is missing it prints the download link and stops: install it and run the setup again.
 
-The setup script will:
-- Check that Python 3.10+ and Node.js 18+ are installed (and tell you where to get them if not)
-- Create a Python virtual environment
-- Install all Python and frontend dependencies
-- Create your `.env` file from the example
+### 3. Connect a model
 
-> If Python or Node.js are missing, the script will give you the download link and stop — install them and run setup again.
+Pick one:
 
-### Step 2 — Add your API keys
+- **In the app (easiest):** skip this step, start the app, and enter your key in **CONFIG → API Keys**.
+- **In `.env`:** open it in any text editor and fill in one provider:
 
-Open `.env` in any text editor and add at least one API key:
 ```env
-NANOGPT_API_KEY=your_key_here
+NANOGPT_API_KEY=your_key_here                      # NanoGPT
+OPENROUTER_API_KEY=your_key_here                   # or OpenRouter
+LOCAL_OPENAI_BASE_URL=http://localhost:1234/v1     # or a local server (LM Studio's default address)
 ```
 
-### Step 3 — Launch
+To send cards straight to SillyTavern, set its address in **CONFIG → SillyTavern** (or `ST_URL` in `.env`).
 
-**Windows:**
-```bat
-start.bat
-```
+### 4. Start the app
 
-**Mac / Linux:**
-```bash
-./start.sh
-```
+| Windows | Mac / Linux |
+|---|---|
+| Double-click `start.bat` | `./start.sh` |
 
-Your browser will open automatically at `http://localhost:5173`.
-After the first run, launching is instant.
+The browser opens at `http://localhost:5173` as soon as the backend is ready. Keep the window open while you work;
+close it to stop the app. If the browser doesn't open by itself, go to that address.
+
+### 5. Make your first card
+
+1. In **CHARACTER**, paste a Fandom wiki page URL and press **Scrape**, then **Generate Card**. To start from nothing, use **NEW ▾ → New Card**; to bring in a card you already have, use
+   **NEW ▾ → Import card** (PNG, JSON or CHARX).
+2. Edit the fields in the Natural or Structured view and press **Save**.
+3. Press **EXPORT AS .CARD.PNG** for a file SillyTavern can import, or **SEND TO SILLYTAVERN** to add it directly.
+
+Stuck? Press **Ctrl+/** to open SCRIBE-01 and ask in plain words.
+
+### Updating
+
+Run `git pull` in the project folder, or download the new ZIP and copy your `data` folder and `.env` file into it.
+Then start the app as usual: `start.bat` / `start.sh` installs any new requirements by itself. Your cards, lorebooks
+and stories live in `data/` and are kept.
+
+### Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| "Python not found" on Windows | Reinstall Python with **Add Python to PATH** ticked, then run `setup.bat` again |
+| "Permission denied" on Mac / Linux | Run `chmod +x setup.sh start.sh` |
+| The browser didn't open | Go to `http://localhost:5173` yourself |
+| Generation fails straight away | Check the key or local server address in **CONFIG → API Keys** |
 
 ---
 
@@ -146,7 +166,7 @@ After the first run, launching is instant.
 
 ### UI
 - Design system written up in [docs/DESIGN.md](docs/DESIGN.md) (tokens, type, components, a drop-in stylesheet) for reuse in other projects
-- NieR-style design: staff-line borders, large thin studio titles, panels with dark header strips, menus for less-used actions (NEW / TOOLS / EXPORT, GENERATE in LORE), a key-hint footer; light and dark mode
+- Signal UI design: staff-line borders, large thin studio titles, panels with dark header strips, menus for less-used actions (NEW / TOOLS / EXPORT, GENERATE in LORE), a key-hint footer; light and dark mode
 - Import cards: NEW ▾ > Import card in CHARACTER takes a card PNG, JSON (V1/V2/V3) or CHARX, with its lorebook
 - EN / 日本語 / 中文 interface
 - Ctrl+K search across everything

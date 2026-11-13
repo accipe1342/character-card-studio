@@ -2,7 +2,7 @@
  * signal-ui.css — Signal UI design system
  * =========================================
  * All component styles, CSS custom properties, animations, and
- * theme definitions for the app. Formerly nier-animations.css.
+ * theme definitions for the app.
  *
  * CSS CUSTOM PROPERTIES (variables)
  * ----------------------------------
@@ -358,7 +358,7 @@ h2.signal-heading {
    ---------------------------------------------------------- */
 
 :root {
-  /* NieR-style: warm beige ground, warm dark grey instead of black, one drab red-orange accent */
+  /* Light theme: warm beige ground, warm dark grey instead of black, one drab red-orange accent */
   --signal-bg:        #d1cdb7;
   --signal-bg-panel:  #dad6c3;
   --signal-bg-field:  #e4e0cf;
@@ -480,7 +480,7 @@ html[data-theme="dark"] button.signal-btn:hover {
   color: #c8c0a8 !important;
 }
 
-/* Light mode buttons: borderless blocks with an offset shadow; hover and selected turn dark (NieR menu items) */
+/* Light mode buttons: borderless blocks with an offset shadow; hover and selected turn dark */
 html[data-theme="light"] button.signal-btn,
 html button.signal-btn {
   background: var(--signal-bg-btn) !important;
@@ -523,7 +523,7 @@ html[data-theme="dark"] button.signal-fetch-btn.signal-fetch-btn-loading {
 
 
 /* ----------------------------------------------------------
-   NIER UI MOTIFS
+   SIGNAL UI MOTIFS
    ---------------------------------------------------------- */
 
 /* 1. Musical score section divider */
@@ -864,7 +864,7 @@ html[data-theme="dark"] button.signal-fetch-btn.signal-fetch-btn-loading {
 
 
 /* ----------------------------------------------------------
-   NieR PASS (2.6) — font, panels with dark header strips and offset shadows,
+   LAYOUT PASS (2.6) — font, panels with dark header strips and offset shadows,
    staff-line ornaments, studio header, key-hint footer
    ---------------------------------------------------------- */
 
@@ -872,7 +872,7 @@ body, button, input, select, textarea { font-family: var(--signal-font); }
 
 .signal-panel { box-shadow: 4px 4px 0 var(--signal-shadow); }
 
-/* a panel's own heading becomes the dark strip NieR menus put on top of a panel */
+/* a panel's own heading becomes a dark strip on top of the panel */
 .signal-panel h2.signal-heading,
 h2.signal-heading.signal-strip {
   display: block;
@@ -891,38 +891,38 @@ h2.signal-heading.signal-strip {
 .signal-panel h2.signal-heading::after { content: ''; }
 
 /* staff lines: two hairlines with a row of small squares between them */
-.nier-staff { height: 14px; display: flex; flex-direction: column; justify-content: space-between; }
-.nier-staff > i { display: block; height: 1px; background: var(--signal-text); opacity: 0.55; }
-.nier-staff > b { display: block; height: 4px; opacity: 0.55;
+.sui-staff { height: 14px; display: flex; flex-direction: column; justify-content: space-between; }
+.sui-staff > i { display: block; height: 1px; background: var(--signal-text); opacity: 0.55; }
+.sui-staff > b { display: block; height: 4px; opacity: 0.55;
   background-image: repeating-linear-gradient(90deg, var(--signal-text) 0 4px, transparent 4px 12px); }
-.nier-staff-thin { height: 7px; }
+.sui-staff-thin { height: 7px; }
 
-.nier-title { font: 300 46px/1 var(--signal-font); letter-spacing: 0.32em; color: var(--signal-text); margin: 0; text-align: left; }
-.nier-sub { font: 400 13px var(--signal-font); letter-spacing: 0.24em; color: var(--signal-text-dim); margin-top: 8px; text-transform: uppercase; }
-.nier-ctx { font: 400 12px/1.6 var(--signal-font); letter-spacing: 0.14em; color: var(--signal-text-dim); text-align: right; text-transform: uppercase; }
-.nier-diamond { width: 8px; height: 8px; border: 1px solid currentColor; transform: rotate(45deg); flex: none; }
-.nier-keys { display: flex; gap: 22px; justify-content: flex-end; flex-wrap: wrap; font: 400 11px var(--signal-font);
+.sui-title { font: 300 46px/1 var(--signal-font); letter-spacing: 0.32em; color: var(--signal-text); margin: 0; text-align: left; }
+.sui-sub { font: 400 13px var(--signal-font); letter-spacing: 0.24em; color: var(--signal-text-dim); margin-top: 8px; text-transform: uppercase; }
+.sui-ctx { font: 400 12px/1.6 var(--signal-font); letter-spacing: 0.14em; color: var(--signal-text-dim); text-align: right; text-transform: uppercase; }
+.sui-diamond { width: 8px; height: 8px; border: 1px solid currentColor; transform: rotate(45deg); flex: none; }
+.sui-keys { display: flex; gap: 22px; justify-content: flex-end; flex-wrap: wrap; font: 400 11px var(--signal-font);
   letter-spacing: 0.16em; color: var(--signal-text-dim); margin-top: 5px; }
 
 /* drop-down menus (Generate / Tools / Export) */
-.nier-menu { position: absolute; z-index: 120; min-width: 240px; background: var(--signal-bg-panel);
+.sui-menu { position: absolute; z-index: 120; min-width: 240px; background: var(--signal-bg-panel);
   box-shadow: 4px 4px 0 var(--signal-shadow), 0 8px 24px rgba(0,0,0,0.18); padding: 4px 0; text-align: left; }
-.nier-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent;
+.sui-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent;
   color: var(--signal-text); font: 400 13px var(--signal-font); letter-spacing: 0.04em; padding: 9px 14px; cursor: pointer; text-align: left; }
-.nier-menu-item::before { content: ''; width: 6px; height: 6px; background: currentColor; opacity: 0.5; flex: none; }
-.nier-menu-item:hover:not(:disabled), .nier-menu-item:focus-visible { background: var(--signal-btn-active-bg); color: var(--signal-btn-active-text); }
-.nier-menu-item:disabled { opacity: 0.5; cursor: default; }
-.nier-menu-label { font: 500 11px var(--signal-font); letter-spacing: 0.2em; color: var(--signal-text-dim); padding: 8px 14px 4px; }
-.nier-menu-sep { height: 1px; background: var(--signal-border); opacity: 0.4; margin: 4px 0; }
+.sui-menu-item::before { content: ''; width: 6px; height: 6px; background: currentColor; opacity: 0.5; flex: none; }
+.sui-menu-item:hover:not(:disabled), .sui-menu-item:focus-visible { background: var(--signal-btn-active-bg); color: var(--signal-btn-active-text); }
+.sui-menu-item:disabled { opacity: 0.5; cursor: default; }
+.sui-menu-label { font: 500 11px var(--signal-font); letter-spacing: 0.2em; color: var(--signal-text-dim); padding: 8px 14px 4px; }
+.sui-menu-sep { height: 1px; background: var(--signal-border); opacity: 0.4; margin: 4px 0; }
 
 /* buttons that live inside a menu (Quick Replies, Bible / Data Bank) look like the menu's own items */
-html .nier-menu button.signal-btn, html[data-theme="dark"] .nier-menu button.signal-btn {
+html .sui-menu button.signal-btn, html[data-theme="dark"] .sui-menu button.signal-btn {
   display: flex; width: 100%; text-align: left; background: transparent !important; color: var(--signal-text) !important;
   box-shadow: none !important; border: none !important; font: 400 13px var(--signal-font) !important; letter-spacing: 0.04em !important;
   padding: 9px 14px !important; justify-content: flex-start; }
-html .nier-menu button.signal-btn:hover:not(:disabled), html[data-theme="dark"] .nier-menu button.signal-btn:hover:not(:disabled) {
+html .sui-menu button.signal-btn:hover:not(:disabled), html[data-theme="dark"] .sui-menu button.signal-btn:hover:not(:disabled) {
   background: var(--signal-btn-active-bg) !important; color: var(--signal-btn-active-text) !important; }
-.nier-menu label.nier-menu-check { display: flex; align-items: center; gap: 8px; padding: 9px 14px; font: 400 13px var(--signal-font); cursor: pointer; }
+.sui-menu label.sui-menu-check { display: flex; align-items: center; gap: 8px; padding: 9px 14px; font: 400 13px var(--signal-font); cursor: pointer; }
 
 #root { border-inline: none; }
 
@@ -940,4 +940,4 @@ html .nier-menu button.signal-btn:hover:not(:disabled), html[data-theme="dark"] 
 .scribe-scroll::-webkit-scrollbar-thumb { background: rgba(218,214,195,0.35); }
 .scribe-scroll::-webkit-scrollbar-track { background: transparent; }
 /* why a menu item is unavailable */
-.nier-menu-item .why { margin-left: auto; font-size: 11px; letter-spacing: 0.04em; opacity: 0.9; padding-left: 12px; white-space: nowrap; }
+.sui-menu-item .why { margin-left: auto; font-size: 11px; letter-spacing: 0.04em; opacity: 0.9; padding-left: 12px; white-space: nowrap; }

@@ -1,4 +1,4 @@
-"""2.6 layout: NieR-style header with what is open, the SCRIBE-01 console (hide to a bar, Ctrl+/, float, drag,
+"""2.6 layout: page header with what is open, the SCRIBE-01 console (hide to a bar, Ctrl+/, float, drag,
 resize, dock), toolbar menus (Escape closes), LORE entry tabs, importing a card PNG and a card JSON with a lorebook,
 and no sideways scrolling on a phone."""
 import json
@@ -41,7 +41,7 @@ with sync_playwright() as pw:
     pg.evaluate("() => { try { ['ccs.helper.open','ccs.helper.mode','ccs.helper.pos','ccs.helper.h'].forEach(k => localStorage.removeItem(k)); } catch (e) {} }")
     pg.reload(); pg.wait_for_timeout(1000)
     pg.get_by_role("button", name=re.compile(r"^\s*CHARACTER\s*$")).first.click(); pg.wait_for_timeout(500)
-    ok(pg.locator("h1.nier-title").inner_text().strip() == "CHARACTER", "NieR header shows the studio name")
+    ok(pg.locator("h1.sui-title").inner_text().strip() == "CHARACTER", "the header shows the studio name")
     pg.get_by_role("button", name="NEW ▾").click(); pg.get_by_role("menuitem", name=re.compile("New Card")).click(); pg.wait_for_timeout(600)
     pg.reload(); pg.wait_for_timeout(900)                                   # nothing open again
     m = open_menu(pg, "TOOLS")
@@ -65,7 +65,7 @@ with sync_playwright() as pw:
     fc.value.set_files(png_path); pg.wait_for_timeout(1500)
     vals = pg.eval_on_selector_all("input, textarea", "els => els.map(e => e.value)")
     ok("Ines Varga" in vals and "A harbor clerk who stamps every crate." in vals, "imported PNG card opens in the editor")
-    ok("ines varga" in pg.locator(".nier-ctx").first.inner_text().lower(), "the header names the open card")
+    ok("ines varga" in pg.locator(".sui-ctx").first.inner_text().lower(), "the header names the open card")
     ok(pg.locator("img[src^='/api/images/']").count() >= 1, "the PNG became the portrait")
     # import a JSON card with a lorebook
     with pg.expect_file_chooser() as fc:
@@ -120,7 +120,7 @@ with sync_playwright() as pw:
     ok(pg.get_by_role("tab", name=re.compile(r"KEYS · 1")).count() == 1, "the KEYS tab shows how many keys there are")
     pg.get_by_role("tab", name=re.compile("KEYS")).click(); pg.wait_for_timeout(200)
     ok(pg.locator("text=north ferry").first.is_visible(), "KEYS shows the keywords")
-    pg.screenshot(path=OUT + "/lore_nier.png")
+    pg.screenshot(path=OUT + "/lore_layout.png")
 
     # phone width: nothing scrolls sideways
     pg.set_viewport_size({"width": 390, "height": 800}); pg.wait_for_timeout(600)
