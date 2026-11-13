@@ -55,10 +55,10 @@ if not exist .env (
 :: ── Ensure data/ exists ───────────────────────────────────────────────────────
 if not exist data mkdir data
 
-:: ── Start Vite in background, opens browser automatically ────────────────────
+:: ── Start Vite in background; open the browser once the backend answers ──────
 echo [.] Starting Vite dev server in background...
-start /B "" cmd /c "cd frontend && npm run dev -- --open"
-timeout /t 3 /nobreak >nul
+start /B "" cmd /c "cd frontend && npm run dev"
+start /B "" powershell -NoProfile -WindowStyle Hidden -Command "for ($i = 0; $i -lt 240; $i++) { try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:5000/api/backups | Out-Null; break } catch { Start-Sleep -Milliseconds 500 } }; Start-Process http://localhost:5173"
 
 :: ── Start Flask in foreground (logs visible here) ────────────────────────────
 echo [OK] Flask starting - logs will appear below.

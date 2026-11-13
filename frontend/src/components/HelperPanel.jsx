@@ -101,12 +101,16 @@ export default function HelperPanel({ studio, onOpen }) {
     setCtx(getHelperContext(studio));
     return onHelperContext((s, c) => { if (s === studio) setCtx(c); });
   }, [studio]);
-  useEffect(() => {                                   // reopen the last chat
-    if (!open || !chatId || messages.length) return;
+  // reopen the last chat; while the server is still starting, try again instead of forgetting the chat
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (!open || !chatId || messages.length) return undefined;
+    let t;
     helperChatLoad(chatId).then((d) => { setMessages(d.messages); setChanges(d.changes); })
-      .catch(() => setChatId(null));
-  }, [open, chatId]);   // only when the panel opens or the chat changes
-  useEffect(() => { if (open) helperChats().then(setChats).catch(() => {}); }, [open, chatId]);
+      .catch((e) => { if (e.notFound) setChatId(null); else if (retry < 20) t = setTimeout(() => setRetry((n) => n + 1), 1500); });
+    return () => clearTimeout(t);
+  }, [open, chatId, retry]);   // only when the panel opens, the chat changes, or a retry is due
+  useEffect(() => { if (open) helperChats().then(setChats).catch(() => {}); }, [open, chatId, retry]);
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, changes, busy]);

@@ -752,7 +752,9 @@ export async function helperChats() {
   return _json(await fetch("/api/helper/chats"), "Could not load helper chats");
 }
 export async function helperChatLoad(chatId) {
-  return _json(await fetch(`/api/helper/chat/${chatId}`), "Could not load the chat");
+  const res = await fetch(`/api/helper/chat/${chatId}`);
+  if (res.status === 404) { const e = new Error("That chat no longer exists"); e.notFound = true; throw e; }
+  return _json(res, "Could not load the chat");      // anything else (server still starting): the caller retries
 }
 export async function helperKeep(changeId) {
   return _json(await _postJson(`/api/helper/change/${changeId}/keep`, {}), "Could not keep the change");

@@ -46,12 +46,14 @@ fi
 # ── Ensure data/ exists ───────────────────────────────────────────────────────
 mkdir -p data
 
-# ── Start Vite in background, opens browser automatically ────────────────────
+# ── Start Vite in background; open the browser once the backend answers ──────
 echo "[.] Starting Vite dev server in background..."
-(cd frontend && npm run dev -- --open) &
+(cd frontend && npm run dev) &
 VITE_PID=$!
-trap "kill $VITE_PID 2>/dev/null; exit 0" INT TERM EXIT
-sleep 3
+(for i in $(seq 240); do curl -s -o /dev/null http://127.0.0.1:5000/api/backups && break; sleep 0.5; done
+ if command -v xdg-open >/dev/null; then xdg-open http://localhost:5173 >/dev/null 2>&1; else open http://localhost:5173 2>/dev/null; fi) &
+OPEN_PID=$!
+trap "kill $VITE_PID $OPEN_PID 2>/dev/null; exit 0" INT TERM EXIT
 
 # ── Start Flask in foreground (logs visible here) ────────────────────────────
 echo "[OK] Flask starting - logs will appear below."

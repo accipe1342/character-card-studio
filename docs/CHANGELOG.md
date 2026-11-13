@@ -18,6 +18,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   (from URL, several URLs, from a prompt, deep extraction), New Entry, TOOLS ▾ (Clean Keywords, Test Activation,
   Links, Trash all entries), EXPORT ▾ (SillyTavern .json, Send to SillyTavern, Quick Replies, Bible / Data Bank,
   DeepLore) and Trash. The LORE entry editor has CONTENT / KEYS / SILLYTAVERN tabs.
+- `docs/DESIGN.md`: the design system in depth (principles, color and contrast, type, spacing, ornaments, every
+  component, motion, copy, dark mode, a drop-in stylesheet and React components) for use in other projects.
 - Import character cards: CHARACTER NEW ▾ > Import card takes a card PNG (V2 or V3 data inside), a card .json
   (V1, V2 or V3, from this app or others) or a .charx. It becomes a new card with its portrait; an embedded lorebook
   becomes a LORE project and is attached to the card. Route: POST /api/card/import.
@@ -52,6 +54,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   changed.
 
 ### Fixed
+- Starting the app no longer floods the log with proxy errors: the browser opens once the backend answers, and
+  SCRIBE-01 retries loading its last chat instead of forgetting it when the backend is still starting.
+- Accent and dark-mode dim text darkened / lightened to meet 4.5:1 contrast.
 - Cards the helper writes now fill the Structured view: it used field names the view does not show
   (speech_patterns, goals, fears, skills). It now uses the view's fields, maps common other names onto them, and
   fills the profile whenever it creates a card.

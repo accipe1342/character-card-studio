@@ -138,6 +138,7 @@ After the first run, launching is instant.
 - Wiki hedging cleanup (`"Unknown or Chinese"` → `"Chinese"`)
 
 ### UI
+- Design system written up in [docs/DESIGN.md](docs/DESIGN.md) (tokens, type, components, a drop-in stylesheet) for reuse in other projects
 - NieR-style design: staff-line borders, large thin studio titles, panels with dark header strips, menus for less-used actions (NEW / TOOLS / EXPORT, GENERATE in LORE), a key-hint footer; light and dark mode
 - Import cards: NEW ▾ > Import card in CHARACTER takes a card PNG, JSON (V1/V2/V3) or CHARX, with its lorebook
 - EN / 日本語 / 中文 interface

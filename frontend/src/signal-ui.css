@@ -376,7 +376,7 @@ h2.signal-heading {
   --signal-btn-active-bg: #4e4b42;
   --signal-btn-active-text: #dad6c3;
 
-  --signal-accent:    #9a4430;
+  --signal-accent:    #863a29;
   --signal-warn:      #66501e;
   --signal-shadow:    rgba(78, 75, 66, 0.25);
   --signal-grid:      rgba(78, 75, 66, 0.06);
@@ -394,7 +394,7 @@ h2.signal-heading {
 
   --signal-text:      #c8c0a8;
   --signal-text-inv:  #c8c0a8;
-  --signal-text-dim:  #7a7060;
+  --signal-text-dim:  #a0967f;
   --signal-border:    #4a4540;
 
   --signal-btn-hover: #3a3630;
