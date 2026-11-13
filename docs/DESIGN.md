@@ -1,12 +1,11 @@
 # Signal UI — design system
 
-A calm, "systematic and sterile, but beautiful" interface language inspired by the menus of NieR:Automata: warm
-beige paper, warm dark grey ink, hairlines borrowed from musical scores, and almost no color. This document is
-self-contained: copy it into any project and build to it. The drop-in stylesheet in section 14 implements
-everything described here; section 15 has React versions of the components that need behavior.
+A calm, orderly interface language: warm beige paper, warm dark grey ink, hairlines borrowed from musical scores,
+and almost no color. This document is self-contained: copy it into any project and build to it. The drop-in
+stylesheet in section 14 implements everything described here; section 15 has React versions of the components that need behavior.
 
 Reference implementation: Character Card Studio (`frontend/src/signal-ui.css`, `StudioHeader.jsx`,
-`HelperPanel.jsx`, `shared/NierMenu.jsx`).
+`HelperPanel.jsx`, `shared/SignalMenu.jsx`).
 
 ---
 

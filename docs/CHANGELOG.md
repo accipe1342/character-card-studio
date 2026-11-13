@@ -9,7 +9,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ## [2.6.0] - 2026-11-12
 
 ### Added
-- NieR-style look across the app: warm beige with warm dark grey text, staff-line borders top and bottom, a large
+- A new look across the app: warm beige with warm dark grey text, staff-line borders top and bottom, a large
   thin studio title with ":: subtitle" and what is open on the right, dark header strips on panels, borderless
   buttons with offset shadows, a single drab red-orange accent, darker screen edges and a key-hint footer.
   Noto Sans JP is bundled (no internet needed). Dark mode follows the same rules.
@@ -560,7 +560,7 @@ First public release. Established the full three-tab layout and core feature set
 - Support for NanoGPT, OpenRouter, and any local OpenAI-compatible server
 
 #### UI
-- NieR:Automata–inspired design system (light and dark mode)
+- Signal UI design system (light and dark mode)
 - EN / 日本語 / 中文 interface
 
 ---

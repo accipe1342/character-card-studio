@@ -66,7 +66,7 @@ export default function TopNav({ mode, setMode, onLibrary, onSearch, lang, setLa
 
   return (
     <>
-    <div className="nier-staff" aria-hidden="true"><i /><b /><i /></div>
+    <div className="sui-staff" aria-hidden="true"><i /><b /><i /></div>
     <div style={{ display: "flex", gap: 8, margin: "12px 0 0", alignItems: "center", flexWrap: "wrap" }}>
       <button
         className={`signal-btn${mode === "character" ? " signal-btn-active" : ""}`}

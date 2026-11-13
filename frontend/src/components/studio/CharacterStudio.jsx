@@ -76,7 +76,7 @@ import { markBusy } from "../../lib/leaveGuard";
 import { InterviewPanel, TrimButton } from "./AssistPanels";
 import { onHelperChange, registerHelperFlush, setHelperContext } from "../../lib/helperBus";
 import { getGreetingStyle, setGreetingStyle } from "../../lib/greetingStyle";
-import NierMenu, { MenuItem, MenuLabel, MenuSep } from "../shared/NierMenu";
+import SignalMenu, { MenuItem, MenuLabel, MenuSep } from "../shared/SignalMenu";
 import {
   getJob,
   regenerateField,
@@ -1022,7 +1022,7 @@ export default function CharacterStudio({
 
       </div>
 
-      {/* Row 2: actions. Making a card on the left, then New / Tools / Export menus (NieR-style, as in LORE) */}
+      {/* Row 2: actions. Making a card on the left, then New / Tools / Export menus (as in LORE) */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         <button onClick={handleScrape} disabled={loading} className="signal-btn" style={{ ...buttonStyle, whiteSpace: "nowrap" }}>
           {loading ? (t.working || "Working...") : (t.scrape || "Scrape")}
@@ -1042,19 +1042,19 @@ export default function CharacterStudio({
 
         <div aria-hidden="true" style={{ width: 1, alignSelf: "stretch", background: "var(--signal-border)", opacity: 0.5, margin: "0 4px" }} />
 
-        <NierMenu label={t.newMenu || "NEW"}>
+        <SignalMenu label={t.newMenu || "NEW"}>
           <MenuItem onClick={handleNewCard}>{t.newCard || "New Card"} (blank)</MenuItem>
           <MenuItem onClick={() => importRef.current?.click()} title="A card PNG, a card .json (V1, V2 or V3) or a .charx">
             {t.importCard || "Import card (PNG, JSON, CHARX)"}…
           </MenuItem>
-        </NierMenu>
+        </SignalMenu>
         <input ref={importRef} type="file" accept=".png,.json,.charx,image/png,application/json" aria-label="Import a card file"
           style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleImportCard(f); }} />
-        <NierMenu label={t.toolsMenu || "TOOLS"}>
+        <SignalMenu label={t.toolsMenu || "TOOLS"}>
           <MenuItem disabled={!card} why="open a card first" onClick={runAudit} title="Check the card for problems (no model call)">⚖ {t.auditCard || "Audit"}</MenuItem>
           <MenuItem disabled={!card} why="open a card first" onClick={() => setInterviewOpen(true)} title="Ask the character questions to test its voice (one model call per answer, not saved)">◇ {t.interview || "Interview"}</MenuItem>
           <MenuItem disabled={!source} why="scrape a page first" onClick={() => setSourceOpen(true)}>{t.viewSource || "View Source"}</MenuItem>
-        </NierMenu>
+        </SignalMenu>
 
         <div style={{ flex: 1 }} />
         {card && cardId && (
@@ -1063,7 +1063,7 @@ export default function CharacterStudio({
             {cardDirty ? "● EDITING (AUTOSAVES)" : "✓ SAVED"}
           </span>
         )}
-        <NierMenu label={t.exportMenu || "EXPORT"} align="right" disabled={!card} width={300} title={card ? "" : "Open or make a card first"}>
+        <SignalMenu label={t.exportMenu || "EXPORT"} align="right" disabled={!card} width={300} title={card ? "" : "Open or make a card first"}>
           <MenuItem onClick={() => handleExportCard("v2")} title="Character Card V2 JSON: what SillyTavern and most sites import">
             {characterViewMode === "structured" ? (t.exportStructuredJson || "Export Structured JSON") : (t.exportCardJson || "Export Card JSON")}
           </MenuItem>
@@ -1086,7 +1086,7 @@ export default function CharacterStudio({
               ))}
             </select>
           </div>
-        </NierMenu>
+        </SignalMenu>
       </div>
 
       {genOpen && (

@@ -6,7 +6,7 @@
  * The open studio publishes what is on screen through helperBus, saves pending edits before the helper reads, and
  * reloads what the helper changed.
  *
- * Layout (NieR system-message style): docked along the bottom (drag the top edge to resize), HIDE shrinks it to a
+ * Layout (system-message style): docked along the bottom (drag the top edge to resize), HIDE shrinks it to a
  * bar, FLOAT turns it into a window you can drag and resize. Ctrl+/ (or the footer hint) shows / hides it. Where it
  * sits and how big it is are remembered in this browser.
  */
@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { helperChat, helperChatLoad, helperChats, helperKeep, helperUndo } from "../lib/api";
 import { emitHelperChange, flushHelperStudio, getHelperContext, onHelperContext, onHelperToggle } from "../lib/helperBus";
 
-const INK = "#dad6c3";                     // the console is dark in both themes, like NieR's system messages
+const INK = "#dad6c3";                     // the console is dark in both themes, like a system message
 const DIM = "rgba(218,214,195,0.72)";
 const LINE = "rgba(218,214,195,0.25)";
 const CONSOLE_BG = "#3e3b33";
@@ -194,7 +194,7 @@ export default function HelperPanel({ studio, onOpen }) {
         style={{ position: "fixed", left: 24, right: 24, bottom: 6, height: BAR_H - 6, zIndex: 240, display: "flex", alignItems: "center", gap: 12,
           padding: "0 16px", background: CONSOLE_BG, color: INK, border: "1px solid transparent", fontFamily: "inherit",
           fontSize: 12, letterSpacing: "0.22em", cursor: "pointer", textAlign: "left" }}>
-        <span className="nier-diamond" aria-hidden="true" />
+        <span className="sui-diamond" aria-hidden="true" />
         <span style={{ fontWeight: 500 }}>SCRIBE-01</span>
         <span style={{ opacity: 0.72 }}>:: ASK FOR A CARD, ENTRIES OR ADVICE</span>
         <span style={{ marginLeft: "auto", opacity: 0.72 }}>{openCount ? `${openCount} OPEN CHANGE${openCount > 1 ? "S" : ""} · ` : ""}CTRL+/ ▴</span>
@@ -222,7 +222,7 @@ export default function HelperPanel({ studio, onOpen }) {
       <div onPointerDown={floating ? (e) => { if (!e.target.closest("button, select, input, textarea")) drag(e, "move"); } : undefined}
         style={{ display: "flex", alignItems: "center", gap: 10, padding: floating ? "8px 14px" : "2px 14px 7px", borderBottom: `1px solid ${LINE}`,
           cursor: floating ? "move" : "default", flexWrap: "wrap", flex: "none" }}>
-        <span className="nier-diamond" aria-hidden="true" />
+        <span className="sui-diamond" aria-hidden="true" />
         <b style={{ fontWeight: 500, letterSpacing: "0.3em", fontSize: 13 }}>SCRIBE-01</b>
         <span style={{ fontSize: 11, letterSpacing: "0.16em", color: DIM, textTransform: "uppercase", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 420 }}>
           :: {where} · {ctx?.provider || "nanogpt"}/{ctx?.model || "default model"}

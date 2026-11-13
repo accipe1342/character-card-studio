@@ -14,8 +14,8 @@ lorebooks and stories are kept as they are.
 
 - **SCRIBE-01**, a helper in CHARACTER, LORE and TEXT: ask in plain words and it writes or edits cards, builds
   lorebooks and their entries, reads your TEXT stories and explains SillyTavern. Every change can be kept or undone.
-- **A new look** inspired by NieR:Automata's menus: staff-line borders, big thin titles, dark header strips, one quiet
-  accent color, darker screen edges, and a key-hint footer. Light and dark mode.
+- **A new look**: staff-line borders, big thin titles, dark header strips, one quiet accent color, darker screen
+  edges, and a key-hint footer. Light and dark mode.
 - **Tidier toolbars:** the less-used actions moved into menus (NEW / TOOLS / EXPORT, GENERATE in LORE), and the LORE
   entry editor has CONTENT / KEYS / SILLYTAVERN tabs.
 - **Import cards** from a PNG, JSON or CHARX, made here or anywhere else, with their portrait and lorebook.

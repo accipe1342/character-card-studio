@@ -1,10 +1,10 @@
 /**
- * NierMenu.jsx — a toolbar button that opens a small drop-down (Generate ▾, Tools ▾, Export ▾).
+ * SignalMenu.jsx — a toolbar button that opens a small drop-down (Generate ▾, Tools ▾, Export ▾).
  *
- *   <NierMenu label="EXPORT" align="right">
+ *   <SignalMenu label="EXPORT" align="right">
  *     <MenuItem onClick={...}>SillyTavern World Info (.json)</MenuItem>
  *     <MenuLabel>EMBED</MenuLabel> ... <MenuSep />
- *   </NierMenu>
+ *   </SignalMenu>
  *
  * Closes on a pick, a click outside or Escape. Items are real buttons (role="menuitem"), so tests and keyboards
  * reach them the same way.
@@ -14,7 +14,7 @@ import { Children, cloneElement, isValidElement, useEffect, useLayoutEffect, use
 /** why: shown (dim, on the right) when the item is disabled, so an unavailable item says what it needs. */
 export function MenuItem({ children, onClick, disabled, title, keepOpen, why, _close }) {
   return (
-    <button type="button" role="menuitem" className="nier-menu-item" disabled={disabled} title={disabled && why ? why : title}
+    <button type="button" role="menuitem" className="sui-menu-item" disabled={disabled} title={disabled && why ? why : title}
       data-keep-open={keepOpen ? "" : undefined} onClick={(e) => { if (!keepOpen) _close?.(); onClick?.(e); }}>
       {children}
       {disabled && why && <span className="why">{why}</span>}
@@ -23,15 +23,15 @@ export function MenuItem({ children, onClick, disabled, title, keepOpen, why, _c
 }
 
 export function MenuLabel({ children }) {
-  return <div className="nier-menu-label">{children}</div>;
+  return <div className="sui-menu-label">{children}</div>;
 }
 
 export function MenuSep() {
-  return <div className="nier-menu-sep" role="separator" />;
+  return <div className="sui-menu-sep" role="separator" />;
 }
 
 /** keepMounted: the items stay mounted while the menu is closed (for items that own a dialog, like Quick Replies). */
-export default function NierMenu({ label, children, align = "left", primary = false, style, title, disabled, width, keepMounted = false }) {
+export default function SignalMenu({ label, children, align = "left", primary = false, style, title, disabled, width, keepMounted = false }) {
   const [open, setOpen] = useState(false);
   const [side, setSide] = useState(align);
   const ref = useRef(null);
@@ -61,7 +61,7 @@ export default function NierMenu({ label, children, align = "left", primary = fa
         {label} ▾
       </button>
       {(open || keepMounted) && (
-        <div ref={pop} role="menu" aria-label={String(label)} className="nier-menu" hidden={!open}
+        <div ref={pop} role="menu" aria-label={String(label)} className="sui-menu" hidden={!open}
           onClick={(e) => { if (e.target.closest && e.target.closest("button") && !e.target.closest("[data-keep-open]")) close(); }}
           style={{ top: "calc(100% + 6px)", [side === "right" ? "right" : "left"]: 0, minWidth: Math.min(width || 240, window.innerWidth - 16),
             maxWidth: "calc(100vw - 16px)", display: open ? "block" : "none" }}>

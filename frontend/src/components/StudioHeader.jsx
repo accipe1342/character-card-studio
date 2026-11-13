@@ -1,5 +1,5 @@
 /**
- * StudioHeader.jsx — the NieR-style page header under the tabs (large thin title on the left, a ":: subtitle" under
+ * StudioHeader.jsx — the Signal UI page header under the tabs (large thin title on the left, a ":: subtitle" under
  * it, a hairline with a diamond and "||", and on the right what is open: the card, lorebook / entry or story the
  * studio tells the helper about) plus KeyFooter, the staff-line footer with key hints.
  */
@@ -32,15 +32,15 @@ export default function StudioHeader({ mode, t = {} }) {
   return (
     <header style={{ display: "flex", alignItems: "flex-end", gap: 24, margin: "18px 0 18px", flexWrap: "wrap", textAlign: "left" }}>
       <div>
-        <h1 className="nier-title">{String(t[tk] || tf).toUpperCase()}</h1>
-        <div className="nier-sub">:: {sub}</div>
+        <h1 className="sui-title">{String(t[tk] || tf).toUpperCase()}</h1>
+        <div className="sui-sub">:: {sub}</div>
       </div>
       <div aria-hidden="true" style={{ flex: "1 1 120px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6, color: "var(--signal-text)" }}>
-        <span className="nier-diamond" />
+        <span className="sui-diamond" />
         <span style={{ flex: 1, height: 1, background: "var(--signal-text)", opacity: 0.5 }} />
         <span style={{ fontSize: 11, letterSpacing: "0.2em" }}>||</span>
       </div>
-      <div className="nier-ctx" style={{ marginBottom: 4, minWidth: 120 }}>
+      <div className="sui-ctx" style={{ marginBottom: 4, minWidth: 120 }}>
         {label ? label.split(" / ").map((x, i) => <div key={i}>{x}</div>) : <div>{mode === "config" ? "SETTINGS" : "NOTHING OPEN"}</div>}
       </div>
     </header>
@@ -57,8 +57,8 @@ const KEYS = {
 export function KeyFooter({ mode }) {
   return (
     <footer style={{ marginTop: 28, paddingBottom: 6 }}>
-      <div className="nier-staff nier-staff-thin" aria-hidden="true"><i /><i /></div>
-      <div className="nier-keys">
+      <div className="sui-staff sui-staff-thin" aria-hidden="true"><i /><i /></div>
+      <div className="sui-keys">
         <span style={{ marginRight: "auto" }}>CHARACTER CARD STUDIO</span>
         {(KEYS[mode] || KEYS.config).map(([k, v]) => (
           k === "CTRL+/"

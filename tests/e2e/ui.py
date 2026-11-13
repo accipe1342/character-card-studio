@@ -1,4 +1,4 @@
-"""Small helpers for the browser tests: the toolbars keep most actions in NieR-style menus (NEW / TOOLS / EXPORT /
+"""Small helpers for the browser tests: the toolbars keep most actions in menus (NEW / TOOLS / EXPORT /
 GENERATE), so a test opens the menu and then picks the item."""
 import re
 
