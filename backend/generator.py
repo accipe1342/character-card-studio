@@ -279,7 +279,7 @@ Never write {{user}} lines. Each block starts with <START>.
 
 **`tags`**
 A flat list of at least 10 short descriptive tags. Draw from ALL available source data:
-- Franchise/series name (e.g. "resident evil", "house of the dragon")
+- Franchise/series name (e.g. the game, book or show title)
 - Character type (e.g. "spy", "dark elf", "queen", "mercenary")
 - Personality descriptors (e.g. "cunning", "stoic", "seductive")
 - Setting/world (e.g. "fantasy", "post-apocalyptic", "medieval")
@@ -699,7 +699,7 @@ def generate_full_card(
     """
     # Trim source to key fields - avoid sending huge normalized blobs
     normalized = source.get("normalized", {})
-    # Pull ability-related uncategorized sections (e.g. "Soulcalibur VI", "Fighting Style")
+    # Pull ability-related uncategorized sections (e.g. "Season Two", "Fighting Style")
     uncategorized = normalized.get("uncategorized_sections") or source.get("uncategorized_sections", {})
     ability_keywords = {"attack", "moveset", "move", "skill", "power", "ability", "technique",
                         "magic", "spell", "art", "fighting", "combat", "gameplay", "weapon"}
@@ -724,7 +724,7 @@ def generate_full_card(
         compact_source["extra_ability_sections"] = extra_abilities_card
 
     # If personality/appearance/abilities are sparse, pull from uncategorized sections
-    # This handles wikis where all content is in event/game-named sections (e.g. Resident Evil)
+    # This handles wikis where all content is in event/game-named sections (some game wikis do this)
     personality_sparse = not normalized.get("personality_traits") and not normalized.get("personality")
     appearance_sparse = len(normalized.get("appearance_list", [])) <= 2
     if personality_sparse or appearance_sparse:

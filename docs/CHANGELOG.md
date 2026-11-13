@@ -25,6 +25,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   with the glossary embedded as her lorebook.
 - New README screenshots (`preview.png`, `docs/screenshots/`) with original sample content, and
   `docs/UPDATE-v2.6.md`, an overview of this release.
+- Original sample names throughout the tests and code comments (no names from existing games or shows), a new
+  browser-tab icon in the app's style, and the unused Vite template images removed.
 - `docs/DESIGN.md`: the design system in depth (principles, color and contrast, type, spacing, ornaments, every
   component, motion, copy, dark mode, a drop-in stylesheet and React components) for use in other projects.
 - Import character cards: CHARACTER NEW ▾ > Import card takes a card PNG (V2 or V3 data inside), a card .json
@@ -267,7 +269,7 @@ answers like real models do.
 ### Changed
 - Default NanoGPT model is now deepseek/deepseek-v4.1-flash everywhere (was a slow thinking model).
 - Sending to LORE: events no longer become one entry each. They roll up into an always-on "Story So Far" recap (constant) and one "Story Timeline" entry.
-- Trigger keywords are cleaned on send: generic words and other entries' names are removed, so "Yuna" no longer fires 240 entries.
+- Trigger keywords are cleaned on send: generic words and other entries' names are removed, so a main character's name no longer fires 240 entries.
 - Extraction prompt and filter skip body parts, acts, feelings and generic scenery; events must be plot-significant.
 - A failed events step keeps the inventory event titles instead of saving 0 events.
 - Chub-compatible V2 card export.
@@ -351,7 +353,7 @@ answers like real models do.
 - **`race`** retained for biological subtype
 - **Fandom tab panel extraction** — Personality and Appearance tabs now extracted separately
   before the main section walk
-- **Date-pattern history routing** — sections named `Raccoon City (1998)` now route to history
+- **Date-pattern history routing** — sections named `Harbor City (1998)` now route to history
 - **JSON-LD image fallback** — catches pages where portable infobox image is missing
 - **Faction/affiliation aliases expanded** — `faction`, `clan`, `guild`, `side`, `crew` etc.
 - **Language aliases added to ethnicity** — `language`, `native language`, `homeland` etc.
@@ -478,7 +480,7 @@ answers like real models do.
 - Both values saved to `settings.json` and applied per-generation without restart
 
 #### Scraper improvements
-- **URL fragment stripping** — `#section-anchor` removed before fetching (fixes `Chun-Li#SF6` style URLs)
+- **URL fragment stripping** — `#section-anchor` removed before fetching (fixes `Name#Section` style URLs)
 - **Expanded section aliases** — 40+ new section names added to abilities bucket including:
   `powers and abilities`, `powers & abilities`, `supernatural abilities`, `demonic abilities`,
   `devil trigger`, `special moves`, `super arts`, `critical arts`, `moveset`, `attacks` and more
@@ -517,11 +519,11 @@ answers like real models do.
 - **Birth date aliases** — `date of birth`, `born`, `dob`, `birthdate` all map to the `age` field
 - **Wiki hedging cleaned** — `"Unknown or Chinese"` → `"Chinese"`, `"Unknown (possibly British)"` → `"possibly British"`
 - **Nationality/ethnicity aliases** — `Race/Nationality`, `ethnicity`, `citizenship`, `country of origin` all map to `ethnicity`
-- **Date-pattern history sections** — sections named with year patterns (`Raccoon City (1998)`, `2012-2013`) now route to `history` instead of `uncategorized_sections`
+- **Date-pattern history sections** — sections named with year patterns (`Harbor City (1998)`, `2012-2013`) now route to `history` instead of `uncategorized_sections`
 
 #### Scraper fixes
 - **`.wds-tab__content` handling** — Fandom tab panels (Personality, Appearance, etc.) now extracted separately before the main section walk, preventing tab content from being stripped or corrupting section order
-- **JSON-LD image extraction** — `<script type="application/ld+json">` is now checked as a fallback image source; catches Fandom pages where the portable infobox image is missing (e.g. Resident Evil wiki)
+- **JSON-LD image extraction** — `<script type="application/ld+json">` is now checked as a fallback image source; catches Fandom pages where the portable infobox image is missing (some game wikis)
 - **Story sections fallback** — when `personality` and `appearance` are sparse, uncategorized narrative sections are included as `story_sections` for the generator to infer from
 
 ## [2.1.0] — 2026-06-12

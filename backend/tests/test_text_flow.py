@@ -14,16 +14,16 @@ def fake_extract(chunk, provider, model, mode):
     calls.append(chunk["idx"])
     i = chunk["idx"]
     ents = [
-        {"name": "Yuna", "aliases": [], "type": "character", "age": "19", "facts": f"Yuna fact {i}.", "voice": [],
-         "keywords": ["Yuna"], "origin": "canon" if i == 0 else "altered",
-         "relations": [{"with": "Rikku", "relation": "cousin"}]},
-        {"name": "Rikku", "aliases": [], "type": "character", "age": "", "facts": f"Rikku fact {i}.", "voice": [],
-         "keywords": ["Rikku"], "origin": "canon", "relations": []},
+        {"name": "Ilsa", "aliases": [], "type": "character", "age": "19", "facts": f"Ilsa fact {i}.", "voice": [],
+         "keywords": ["Ilsa"], "origin": "canon" if i == 0 else "altered",
+         "relations": [{"with": "Corin", "relation": "cousin"}]},
+        {"name": "Corin", "aliases": [], "type": "character", "age": "", "facts": f"Corin fact {i}.", "voice": [],
+         "keywords": ["Corin"], "origin": "canon", "relations": []},
         {"name": f"Trinket{i}", "aliases": [], "type": "item", "age": "", "facts": "A trinket.", "voice": [],
          "keywords": [f"Trinket{i}"], "origin": "original", "relations": []},
     ]
     beats = [{"title": f"Event in chunk {i}", "what_happened": f"Something happens in chunk {i}.",
-              "participants": ["Yuna"], "place": "", "marker": "", "flashback": False, "order": "",
+              "participants": ["Ilsa"], "place": "", "marker": "", "flashback": False, "order": "",
               "state_changes": [], "evidence": "", "confidence": "high"}]
     return {"chapter_summary": f"Summary of chunk {i}.", "entities": ents, "beats": beats, "stats": {}}
 
@@ -56,23 +56,23 @@ def ents(client, H, pid):
 
 def test_extraction_merges_origin_relations_tiers(client, H, project):
     E, p = ents(client, H, project)
-    assert E["Yuna"]["origin"] == "altered"
-    assert E["Yuna"]["relations"][0]["with"] == "Rikku"
-    assert E["Yuna"]["tier"] == "main" and E["Trinket0"]["tier"] == "one-off"
+    assert E["Ilsa"]["origin"] == "altered"
+    assert E["Ilsa"]["relations"][0]["with"] == "Corin"
+    assert E["Ilsa"]["tier"] == "main" and E["Trinket0"]["tier"] == "one-off"
     assert E["Trinket0"]["keep"] is False            # one-off items start skipped
     assert E["Event in chunk 0"]["first_chunk"] == 0
 
 
 def test_review_work_survives_remerge(client, H, project):
     E, _ = ents(client, H, project)
-    client.patch(f"/api/text/entity/{E['Yuna']['id']}", json={"content": "Hand-written Yuna."}, headers=H)
-    client.delete(f"/api/text/entity/{E['Rikku']['id']}", headers=H)
+    client.patch(f"/api/text/entity/{E['Ilsa']['id']}", json={"content": "Hand-written Ilsa."}, headers=H)
+    client.delete(f"/api/text/entity/{E['Corin']['id']}", headers=H)
     client.patch(f"/api/text/entity/{E['Trinket1']['id']}", json={"keep": True}, headers=H)
     wait(client, H, client.post(f"/api/text/project/{project}/extract", json={"merge_only": True, "condense": False},
                                 headers=H).get_json()["job_id"])
     E, p = ents(client, H, project)
-    assert E["Yuna"]["content"] == "Hand-written Yuna." and E["Yuna"]["edited"]
-    assert "Rikku" not in E and [t["name"] for t in p["trash"]] == ["Rikku"]
+    assert E["Ilsa"]["content"] == "Hand-written Ilsa." and E["Ilsa"]["edited"]
+    assert "Corin" not in E and [t["name"] for t in p["trash"]] == ["Corin"]
     assert E["Trinket1"]["keep"] is True
 
 
@@ -81,11 +81,11 @@ def test_trash_restore_and_empty(client, H, project):
     rid = p["trash"][0]["id"]
     client.post(f"/api/text/entity/{rid}/restore", headers=H)
     E, p = ents(client, H, project)
-    assert "Rikku" in E and not p["trash"]
+    assert "Corin" in E and not p["trash"]
     client.delete(f"/api/text/entity/{rid}", headers=H)
     client.delete(f"/api/text/project/{project}/trash", headers=H)
     E, p = ents(client, H, project)
-    assert "Rikku" not in E and not p["trash"]
+    assert "Corin" not in E and not p["trash"]
 
 
 def test_redo_single_chunk(client, H, project):
@@ -115,17 +115,17 @@ def test_recap_starting_point_and_commit(client, H, project):
     by = {e["comment"].rsplit(" - ", 1)[0]: e for e in ex["entries"].values()}
     assert by["Story So Far"]["content"] == "My own recap." and by["Story So Far"]["constant"] is True
     assert "chunk 0" in by["Story Timeline"]["content"] and "chunk 1" not in by["Story Timeline"]["content"]
-    assert by["Yuna"]["content"].startswith("In this story (differs from canon): Hand-written Yuna.")  # hand edit wins
-    assert by["Rikku"]["content"].startswith("Rikku fact 0.") and "Rikku fact 1" not in by["Rikku"]["content"]
+    assert by["Ilsa"]["content"].startswith("In this story (differs from canon): Hand-written Ilsa.")  # hand edit wins
+    assert by["Corin"]["content"].startswith("Corin fact 0.") and "Corin fact 1" not in by["Corin"]["content"]
     assert "Trinket1" not in by          # first appears after the starting point (only facts up to it are used)
-    assert "Relationships: Rikku (cousin)" in by["Yuna"]["content"]
+    assert "Relationships: Corin (cousin)" in by["Ilsa"]["content"]
     pytest.lore_id = res["lore_project_id"]
 
 
 def test_make_card_source(client, H, project):
     E, _ = ents(client, H, project)
-    src = client.post(f"/api/text/entity/{E['Yuna']['id']}/to-source", headers=H).get_json()
-    assert src["source"]["normalized"]["title"] == "Yuna"
+    src = client.post(f"/api/text/entity/{E['Ilsa']['id']}/to-source", headers=H).get_json()
+    assert src["source"]["normalized"]["title"] == "Ilsa"
     assert "Story so far" in src["source"]["raw_sections"]
 
 
@@ -146,9 +146,9 @@ def test_narrator_card(client, H, project):
 
 def test_card_export_embeds_lorebook_and_deeplore(client, H):
     lid = pytest.lore_id
-    v2 = client.post("/api/export/v2", json={"card": {"name": "Yuna"}, "lore_project_id": lid}, headers=H).get_json()
+    v2 = client.post("/api/export/v2", json={"card": {"name": "Ilsa"}, "lore_project_id": lid}, headers=H).get_json()
     assert v2["data"]["character_book"]["entries"]
-    plain = client.post("/api/export/v2", json={"card": {"name": "Yuna"}}, headers=H).get_json()
+    plain = client.post("/api/export/v2", json={"card": {"name": "Ilsa"}}, headers=H).get_json()
     assert "character_book" not in plain["data"]
     z = zipfile.ZipFile(io.BytesIO(client.get(f"/api/lore/export/deeplore?project_id={lid}", headers=H).data))
     recap = next(n for n in z.namelist() if n.endswith("Story So Far.md"))
@@ -157,16 +157,16 @@ def test_card_export_embeds_lorebook_and_deeplore(client, H):
 
 def test_ai_recap_is_one_archive_entry(client, H, project):
     T._request = lambda provider, model, user, system=None, **k: {
-        "current_timeline": "Night, day 2", "current_location": "Via Infinito, floor 100",
-        "dynamic": "Yuna and Rikku are wary allies.",
-        "characters": [{"name": "Yuna", "location": "cage", "physical": "bruised", "goal": "escape"}],
-        "plot_hooks": ["Trema's orb"],
+        "current_timeline": "Night, day 2", "current_location": "Endless Stair, floor 100",
+        "dynamic": "Ilsa and Corin are wary allies.",
+        "characters": [{"name": "Ilsa", "location": "cage", "physical": "bruised", "goal": "escape"}],
+        "plot_hooks": ["Calder's orb"],
         "chapters": [{"title": "The Trap", "summary": "The girls are caged."}, {"title": "Escape", "summary": "They break out."}]}
     r = client.post(f"/api/text/project/{project}/recap/ai", json={"upto": 1}, headers=H).get_json()
     t = r["text"]
-    assert t.startswith("[HEADER]\nCurrent Timeline: Night, day 2\nCurrent Location: Via Infinito, floor 100")
+    assert t.startswith("[HEADER]\nCurrent Timeline: Night, day 2\nCurrent Location: Endless Stair, floor 100")
     assert "[BODY - CHAPTER LOG]\n## CHAPTER 1 - The Trap\nThe girls are caged.\n\n## CHAPTER 2 - Escape" in t
-    assert t.endswith("[FOOTER - CURRENT STATUS]\n[ANCHOR: Current Situation]\n* Yuna: cage; bruised; escape\n* Plot Hooks: Trema's orb")
+    assert t.endswith("[FOOTER - CURRENT STATUS]\n[ANCHOR: Current Situation]\n* Ilsa: cage; bruised; escape\n* Plot Hooks: Calder's orb")
     saved = client.get(f"/api/text/project/{project}/recap", headers=H).get_json()
     assert saved["edited"] and saved["upto"] == 1 and saved["limit"] == T.SUMMARY_CHARS
     res = client.post(f"/api/text/project/{project}/commit", headers=H).get_json()
@@ -177,10 +177,10 @@ def test_ai_recap_is_one_archive_entry(client, H, project):
 
 
 def test_archive_too_long_drops_oldest_chapters_not_status():
-    res = {"current_timeline": "now", "characters": [{"name": "Yuna", "location": "here", "physical": "ok", "goal": "win"}],
+    res = {"current_timeline": "now", "characters": [{"name": "Ilsa", "location": "here", "physical": "ok", "goal": "win"}],
            "chapters": [{"title": f"C{i}", "summary": "x" * 900} for i in range(20)]}
     t = T.format_archive(res)
-    assert len(t) <= T.SUMMARY_CHARS + 100 and "(earlier chapters omitted)" in t and t.endswith("* Yuna: here; ok; win")
+    assert len(t) <= T.SUMMARY_CHARS + 100 and "(earlier chapters omitted)" in t and t.endswith("* Ilsa: here; ok; win")
 
 
 def test_ai_recap_model_failure_is_reported(client, H, project):

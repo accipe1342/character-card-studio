@@ -17,7 +17,7 @@ with sync_playwright() as p:
     pg.goto("http://localhost:5173/"); pg.wait_for_timeout(800)
     pg.get_by_role("button", name=re.compile(r"^\s*TEXT\s*$", re.I)).first.click(); pg.wait_for_timeout(500)
     text = "\n\n".join(f"Chapter {n}: Part {n}\n\n" + " ".join(f"w{n}x{k}" for k in range(700)) for n in range(1, 7))
-    pg.get_by_placeholder("Fic title").fill("Gamerz Fantasy X-2")
+    pg.get_by_placeholder("Fic title").fill("Lanternfall Saga II")
     pg.locator("textarea").first.fill(text)
     pg.get_by_role("button", name=re.compile("LOAD TEXT")).click(); pg.wait_for_timeout(1200)
     pg.get_by_role("button", name=re.compile("EXTRACT")).first.click()
@@ -33,12 +33,12 @@ with sync_playwright() as p:
     ok(pg.locator("span", has_text=re.compile(r"^(FIC|ALT)$")).count() >= 2, "FIC/ALT badges")
     hidden = pg.locator("text=/\\(\\d+ hidden\\)/").count()
     ok(hidden == 1, "one-offs collapsed by default")
-    # edit Yuna + relationships + origin, autosave
-    pg.locator("div", has_text=re.compile(r"^Yuna$")).first.click(); pg.wait_for_timeout(400)
+    # edit Ilsa + relationships + origin, autosave
+    pg.locator("div", has_text=re.compile(r"^Ilsa$")).first.click(); pg.wait_for_timeout(400)
     rel = pg.get_by_placeholder(re.compile("Mara — sister"))
-    ok(rel.input_value().startswith("Rikku"), "relationships shown in editor")
+    ok(rel.input_value().startswith("Corin"), "relationships shown in editor")
     content = pg.locator("textarea").nth(2)
-    pg.locator("xpath=//div[normalize-space(text())='CONTENT']/following-sibling::textarea[1]").fill("Hand-written Yuna notes.")
+    pg.locator("xpath=//div[normalize-space(text())='CONTENT']/following-sibling::textarea[1]").fill("Hand-written Ilsa notes.")
     pg.wait_for_timeout(1800)
     ok(pg.locator("text=✓ saved").count() == 1 and "Hand-written" in __import__("requests").get("http://127.0.0.1:5173/api/text/project/1").json()["entities"].__str__(), "autosave reached the backend")
     # keyboard: move down, X skip, Delete -> trash, U undo
@@ -64,15 +64,15 @@ with sync_playwright() as p:
         pg.wait_for_timeout(400)
         if pg.locator("text=/SEND \\d+ ENTRIES TO LORE/").count() and not pg.locator("text=WORKING…").count(): break
     pg.wait_for_timeout(800)
-    pg.locator("div", has_text=re.compile(r"^Yuna$")).first.click(); pg.wait_for_timeout(400)
-    ok(pg.locator("textarea", has_text="Hand-written Yuna notes.").count() == 1, "Rebuild list kept the hand edit")
+    pg.locator("div", has_text=re.compile(r"^Ilsa$")).first.click(); pg.wait_for_timeout(400)
+    ok(pg.locator("textarea", has_text="Hand-written Ilsa notes.").count() == 1, "Rebuild list kept the hand edit")
     # per-chunk redo
     pg.locator("button[title^='Redo just this chunk']").first.click(); pg.wait_for_timeout(3500)
     ok(True, "single-chunk redo ran")
     # recap: starting point after chunk 2, then edit text
     sel = pg.locator("select").filter(has=pg.locator("option", has_text="the end of the text"))
     sel.select_option(index=2); pg.wait_for_timeout(700)
-    recap_ta = pg.locator("textarea").filter(has_text="Gullwings press on").first
+    recap_ta = pg.locator("textarea").filter(has_text="Kestrels press on").first
     ok(recap_ta.input_value().count("press on") == 2, f"recap stops at starting point: {recap_ta.input_value()[:80]!r}")
     pg.get_by_role("button", name="SAVE RECAP").click(); pg.wait_for_timeout(500)
     pg.screenshot(path=OUT + "/text_studio.png", full_page=True)
@@ -86,7 +86,7 @@ with sync_playwright() as p:
     tl = [e for e in d["data"]["character_book"]["entries"] if e["name"] == "Story Timeline"]
     ok(tl and "chunk 3" not in tl[0]["content"], "narrator lorebook respects starting point")
     # make card -> character studio -> generate -> attach lorebook -> export
-    pg.locator("div", has_text=re.compile(r"^Rikku$")).first.click(); pg.wait_for_timeout(400)
+    pg.locator("div", has_text=re.compile(r"^Corin$")).first.click(); pg.wait_for_timeout(400)
     pg.get_by_role("button", name=re.compile("MAKE CARD")).click(); pg.wait_for_timeout(1500)
     ok(pg.locator("text=Character Card Studio").count() >= 1, "switched to CHARACTER studio")
     pg.get_by_role("button", name=re.compile("Generate Card", re.I)).first.click()
@@ -105,7 +105,7 @@ with sync_playwright() as p:
     pg.screenshot(path=OUT + "/character.png")
     # LORE studio DeepLore export
     pg.get_by_role("button", name=re.compile(r"^\s*LORE\s*$", re.I)).first.click(); pg.wait_for_timeout(1000)
-    pj = pg.locator("text=/Gamerz Fantasy X-2/").first
+    pj = pg.locator("text=/Lanternfall Saga II/").first
     if pj.count(): pj.click(); pg.wait_for_timeout(800)
     with pg.expect_download() as dl3:
         menu(pg, "EXPORT", "DeepLore")

@@ -1676,7 +1676,7 @@ _GENERIC_KW = {"spell", "spells", "location", "magic", "skill", "skills", "abili
 
 def clean_keywords(e, other_names):
     """Trigger keywords for one entry: its own name/aliases first; drop generic words and names that
-    belong to other entries (so 'Mascot dress sphere' does not fire every time 'Paine' is mentioned)."""
+    belong to other entries (so 'Mascot spirit mask' does not fire every time 'Vessa' is mentioned)."""
     own = {norm_name(n) for n in [e["name"]] + list(e["aliases"])}
     out, seen = [], set()
     for k in (e["keywords"] or []):

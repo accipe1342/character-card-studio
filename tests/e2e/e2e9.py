@@ -60,15 +60,15 @@ with sync_playwright() as pw:
     proj = next(p for p in texts if p.get("lore_project_id"))
     pg.get_by_role("button", name=re.compile(r"^\s*TEXT\s*$", re.I)).first.click(); pg.wait_for_timeout(600)
     pg.locator("div", has_text=re.compile("^" + re.escape(proj["name"]) + r"\s*[\d.]+k? chars")).last.click(); pg.wait_for_timeout(1200)
-    pg.locator("section").filter(has_text="REVIEW").locator("div", has_text=re.compile(r"^Rikku$")).first.click(); pg.wait_for_timeout(500)
+    pg.locator("section").filter(has_text="REVIEW").locator("div", has_text=re.compile(r"^Corin$")).first.click(); pg.wait_for_timeout(500)
     pg.get_by_label("Character picture").set_input_files(pic); pg.wait_for_timeout(1500)
     ok(pg.locator("img[alt=Portrait]").count() == 1, "TEXT character shows its picture")
     E = {e["name"]: e for e in requests.get(B + f"/api/text/project/{proj['id']}").json()["entities"]}
-    ok(bool(E["Rikku"].get("image")), "TEXT picture saved")
+    ok(bool(E["Corin"].get("image")), "TEXT picture saved")
     mk = pg.get_by_role("button", name=re.compile(r"MAKE CARD")).first
     mk.scroll_into_view_if_needed(); mk.evaluate("b => b.click()"); pg.wait_for_timeout(2000)
     shown = pg.locator("section").filter(has_text="Preview").locator("img").first.get_attribute("src") or ""
-    ok(shown == f"/api/images/{E['Rikku']['image']}", "MAKE CARD brings the picture to the CHARACTER studio")
+    ok(shown == f"/api/images/{E['Corin']['image']}", "MAKE CARD brings the picture to the CHARACTER studio")
     ok(not errs, f"no page errors {errs[:2]}")
     b.close()
 print("FAILS:", R.count(False))

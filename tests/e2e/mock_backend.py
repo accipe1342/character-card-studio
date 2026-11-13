@@ -9,19 +9,19 @@ A.ENV_PATH = Path(tempfile.mkdtemp()) / ".env"     # Config saves go to a scratc
 def fake(chunk, provider, model, mode):
     time.sleep(0.6)
     i = chunk["idx"]
-    ents = [{"name": "Yuna", "aliases": ["Yunie"], "type": "character", "age": "19", "facts": f"Yuna leads the Gullwings (chunk {i}).",
-             "voice": ["Let's go!"], "keywords": ["Yuna"], "origin": "altered" if i else "canon",
-             "relations": [{"with": "Rikku", "relation": "cousin"}]},
-            {"name": "Rikku", "aliases": [], "type": "character", "age": "18", "facts": f"Rikku is an Al Bhed thief (chunk {i}).",
-             "voice": [], "keywords": ["Rikku"], "origin": "canon", "relations": [{"with": "Yuna", "relation": "cousin"}]},
-            {"name": "Trema", "aliases": [], "type": "character", "age": "", "facts": "A mysterious magician.", "voice": [],
-             "keywords": ["Trema"], "origin": "original", "relations": []},
+    ents = [{"name": "Ilsa", "aliases": ["Ilsie"], "type": "character", "age": "19", "facts": f"Ilsa leads the Kestrels (chunk {i}).",
+             "voice": ["Let's go!"], "keywords": ["Ilsa"], "origin": "altered" if i else "canon",
+             "relations": [{"with": "Corin", "relation": "cousin"}]},
+            {"name": "Corin", "aliases": [], "type": "character", "age": "18", "facts": f"Corin is an Saltfolk thief (chunk {i}).",
+             "voice": [], "keywords": ["Corin"], "origin": "canon", "relations": [{"with": "Ilsa", "relation": "cousin"}]},
+            {"name": "Calder", "aliases": [], "type": "character", "age": "", "facts": "A mysterious magician.", "voice": [],
+             "keywords": ["Calder"], "origin": "original", "relations": []},
             {"name": f"Odd trinket {i}", "aliases": [], "type": "item", "age": "", "facts": "A trinket seen once.", "voice": [],
              "keywords": [], "origin": "", "relations": []},
-            {"name": "Yuna's mouth", "aliases": [], "type": "item", "age": "", "facts": "x", "voice": [], "keywords": ["mouth"], "origin": "", "relations": []}]
-    beats = [{"title": f"Battle {i}", "what_happened": f"The girls fight in chunk {i}.", "participants": ["Yuna", "Rikku"],
+            {"name": "Ilsa's mouth", "aliases": [], "type": "item", "age": "", "facts": "x", "voice": [], "keywords": ["mouth"], "origin": "", "relations": []}]
+    beats = [{"title": f"Battle {i}", "what_happened": f"The girls fight in chunk {i}.", "participants": ["Ilsa", "Corin"],
               "place": f"Floor {i}", "marker": "", "flashback": False, "order": "", "state_changes": [], "evidence": "", "confidence": "high"}]
-    return {"chapter_summary": f"In part {i + 1} the Gullwings press on.", "entities": ents, "beats": beats, "stats": {}}
+    return {"chapter_summary": f"In part {i + 1} the Kestrels press on.", "entities": ents, "beats": beats, "stats": {}}
 T.extract_chunk = fake
 def _req(provider, model, user, system=None, **k):
     if system == T.CRITIC_NOTES_SYSTEM:
@@ -40,15 +40,15 @@ def _req(provider, model, user, system=None, **k):
         time.sleep(0.2)
         n = 3 + (len(user) % 6)
         return {"score": n, "scores": {"prose": n, "dialogue": 5}, "summary": "The girls fight.", "worst": "Telling not showing",
-                "quote": "Yuna leads the Gullwings", "fix": "Show it through action", "best": "Energy"}
+                "quote": "Ilsa leads the Kestrels", "fix": "Show it through action", "best": "Energy"}
     if system == CT.REWRITE_SYSTEM:
-        return {"rewrite": "Yuna squared her shoulders and led the Gullwings on.", "notes": "Shows leadership through action."}
+        return {"rewrite": "Ilsa squared her shoulders and led the Kestrels on.", "notes": "Shows leadership through action."}
     if system == T.ARC_SYSTEM:
         return {"title": "Early arc", "summary": "They set out."}
     if system and "Narrative Archivist" in system:
-        return {"current_timeline": "Night, day 2", "current_location": "Via Infinito", "dynamic": "Wary allies.",
-                "characters": [{"name": "Yuna", "location": "cage", "physical": "bruised", "goal": "escape"}],
-                "plot_hooks": ["Trema's orb"], "chapters": [{"title": "The Trap", "summary": "The girls are caged."}]}
+        return {"current_timeline": "Night, day 2", "current_location": "Endless Stair", "dynamic": "Wary allies.",
+                "characters": [{"name": "Ilsa", "location": "cage", "physical": "bruised", "goal": "escape"}],
+                "plot_hooks": ["Calder's orb"], "chapters": [{"title": "The Trap", "summary": "The girls are caged."}]}
     return NARR
 T._request = _req
 import assist_tools as AT
@@ -95,10 +95,10 @@ def _helper(provider, model, user, system=None, **k):
         return {"say": "Report: entry tightened.", "actions": []}
     return {"say": "Report: a keyword is the word that makes a lorebook entry appear.", "actions": []}
 HLP._request = _helper
-NARR = {"name": "Gamerz Narrator", "description": "The Spira of this story.",
-    "personality": "Vivid.", "scenario": "After the trap.", "first_mes": "Pyreflies drift past you.", "system_prompt": "Narrate.", "tags": ["ffx2"]}
+NARR = {"name": "Lanternfall Narrator", "description": "The Aldmere of this story.",
+    "personality": "Vivid.", "scenario": "After the trap.", "first_mes": "Glimmerflies drift past you.", "system_prompt": "Narrate.", "tags": ["saga"]}
 A.generate_full_card = lambda source, provider, model, options=None: {"name": source["title"], "description": "Generated from the fic: " + (source["normalized"].get("summary") or "")[:200],
     "personality": "Cheerful.", "scenario": "", "first_mes": "Hi!", "mes_example": "", "tags": ["fic"], "structured_profile": {}, "alternate_greetings": []}
-A._gen_request = lambda provider, model, prompt: {"name": "Gullwings Cast", "description": "Yuna and Rikku together.",
-    "personality": "Bubbly.", "scenario": "On the airship.", "first_mes": "Yuna: Ready? Rikku: Always!", "mes_example": "", "tags": ["cast"]}
+A._gen_request = lambda provider, model, prompt: {"name": "Kestrels Cast", "description": "Ilsa and Corin together.",
+    "personality": "Bubbly.", "scenario": "On the airship.", "first_mes": "Ilsa: Ready? Corin: Always!", "mes_example": "", "tags": ["cast"]}
 A.app.run(host="127.0.0.1", port=5000, threaded=True, use_reloader=False)

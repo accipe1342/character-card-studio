@@ -175,7 +175,7 @@ export function SimulatorPanel({ project, onOpen, onClose, t = {} }) {
       </div>
       <div style={{ ...dim, marginBottom: 8 }}>Paste the last few chat messages. Shows which entries SillyTavern would insert, why, and which the token budget would cut. Probability, sticky and cooldown depend on the live chat and are listed as notes.</div>
       <textarea style={{ ...field, height: 110, resize: "vertical", fontSize: 13 }} value={text} onChange={(e) => setText(e.target.value)}
-        placeholder="{{user}}: Have you seen Rikku since the temple?" aria-label="Chat text to test" />
+        placeholder="{{user}}: Have you seen Tomas since the harbor fire?" aria-label="Chat text to test" />
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
         <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>Budget
           <input type="number" min={100} max={200000} step={256} value={budget} onChange={(e) => setBudget(parseInt(e.target.value, 10) || 2048)} style={{ ...field, width: 90 }} />

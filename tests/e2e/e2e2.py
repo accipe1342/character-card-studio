@@ -11,7 +11,7 @@ with sync_playwright() as p:
     pg.goto("http://localhost:5173/"); pg.wait_for_timeout(800)
     pg.get_by_role("button", name=re.compile(r"^\s*TEXT\s*$", re.I)).first.click(); pg.wait_for_timeout(400)
     text = "\n\n".join(f"Chapter {n}: Part {n}\n\n" + " ".join(f"Sentence {k} of part {n}." for k in range(250)) for n in range(1, 6))
-    pg.get_by_placeholder("Fic title").fill("Gamerz"); pg.locator("textarea").first.fill(text)
+    pg.get_by_placeholder("Fic title").fill("Lanternfall"); pg.locator("textarea").first.fill(text)
     pg.get_by_role("button", name=re.compile("LOAD TEXT")).click(); pg.wait_for_timeout(1000)
     pg.get_by_role("button", name=re.compile("EXTRACT")).first.click()
     for _ in range(60):
