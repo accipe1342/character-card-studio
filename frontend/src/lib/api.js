@@ -57,6 +57,8 @@
  * - Add auth: add an Authorization header to all requests.
  */
 
+import { greetingStyleToSend } from "./greetingStyle";
+
 export async function readJsonSafe(res) {
   const text = await res.text();
   try {
@@ -108,6 +110,7 @@ export async function startCharacterGenerate(sourceId, provider, model, asNew = 
       provider,
       model,
       as_new: asNew,
+      ...(greetingStyleToSend() ? { greeting_style: greetingStyleToSend() } : {}),
       ...opts,
     }),
   });
@@ -145,6 +148,7 @@ export async function regenerateField(cardId, fieldName, options = {}) {
   formData.append("custom_prompt", customPrompt);
   formData.append("include_current_card", String(includeCurrentCard));
   formData.append("include_source", String(includeSource));
+  if (greetingStyleToSend()) formData.append("greeting_style", JSON.stringify(greetingStyleToSend()));
 
   const res = await fetch(`/api/generate/field/${cardId}`, {
     method: "POST",
@@ -211,7 +215,7 @@ export async function regenerateGreeting(cardId, idx, customPrompt = "") {
   const res = await fetch(`/api/generate/greeting/${cardId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idx, custom_prompt: customPrompt }),
+    body: JSON.stringify({ idx, custom_prompt: customPrompt, greeting_style: greetingStyleToSend() || undefined }),
   });
   const data = await readJsonSafe(res);
   if (!res.ok) throw new Error(data.error || "Greeting regeneration failed");
@@ -399,7 +403,7 @@ export async function startBatchGenerate(urls, provider, model) {
   const res = await fetch("/api/generate/batch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ urls, provider, model }),
+    body: JSON.stringify({ urls, provider, model, greeting_style: greetingStyleToSend() || undefined }),
   });
   const data = await readJsonSafe(res);
   if (!res.ok) throw new Error(data.error || "Batch generate failed");

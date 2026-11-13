@@ -75,6 +75,7 @@ import MainJobStatus from "../shared/MainJobStatus";
 import { markBusy } from "../../lib/leaveGuard";
 import { InterviewPanel, TrimButton } from "./AssistPanels";
 import { onHelperChange, registerHelperFlush, setHelperContext } from "../../lib/helperBus";
+import { getGreetingStyle, setGreetingStyle } from "../../lib/greetingStyle";
 import {
   getJob,
   regenerateField,
@@ -232,6 +233,8 @@ export default function CharacterStudio({
   const [tokenTarget, setTokenTarget] = useState("standard");
   const [cardStyle, setCardStyle] = useState("prose");
   const [deepGen, setDeepGen] = useState(false);
+  const [greetStyle, setGreetStyleState] = useState(getGreetingStyle);
+  const setGreetStyle = (k, v) => setGreetStyleState((s) => { const n = { ...s, [k]: v }; setGreetingStyle(n); return n; });
   const [genWarnings, setGenWarnings] = useState([]);
   const [audit, setAudit] = useState(null);
   const [interviewOpen, setInterviewOpen] = useState(false);
@@ -1098,6 +1101,16 @@ export default function CharacterStudio({
               <option value="plist">PList + Ali:Chat</option>
             </select>
           </label>
+          {[["pov", "FIRST MESSAGE POV", [["", "Model's choice"], ["third", "Third person (she / he / they)"], ["second", "Second person (you)"], ["first", "First person (I)"]]],
+            ["tense", "TENSE", [["", "Model's choice"], ["present", "Present"], ["past", "Past"]]],
+            ["length", "GREETING LENGTH", [["", "Model's choice"], ["short", "Short (50-100 words)"], ["medium", "Medium (150-250)"], ["long", "Long (300-450)"]]]].map(([k, label, opts]) => (
+            <label key={k} style={{ fontSize: 11, letterSpacing: "0.08em" }} title="Used for the first message, alternate greetings and example messages, here and when you regenerate them">{label}
+              <select value={greetStyle[k]} onChange={(e) => setGreetStyle(k, e.target.value)}
+                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit", marginTop: 4 }}>
+                {opts.map(([v, t2]) => <option key={v} value={v}>{t2}</option>)}
+              </select>
+            </label>
+          ))}
           <label style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
             <input type="checkbox" checked={deepGen} onChange={(e) => setDeepGen(e.target.checked)} />
             <span><b>In-depth</b>: bible → card → check (3 model calls, fewer invented facts)</span>

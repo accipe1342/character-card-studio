@@ -24,10 +24,27 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   personality with a few speech samples, likes/dislikes/relationships, appearance), no PList/W++.
 - Chats are stored and can be reopened from the panel. New routes under `/api/helper/`.
 - On wide screens the studio moves over while the panel is open instead of hiding under it.
+- PROSE SCAN: a HABITS section for patterns models fall into: "not X, but Y" emphasis, narrating what doesn't
+  happen ("she doesn't move"), a reply that repeats the other speaker's words as a question, em-dash overuse and
+  most paragraphs opening the same way. Per-chapter columns too. Generated cards get the same checks in their
+  warnings, plus a warning when a field reads like a model refusal.
+- 40 more stock phrases in `backend/config/ai_cliches.txt` ("smell of ozone", "after a beat", "breath hitched", ...).
+- First message point of view (first / second / third person), tense and greeting length in CHARACTER ⚙ Options.
+  Remembered in the browser and used by Generate Card, Batch Generate, regenerating the first message, example
+  messages or greetings, and the alternate greetings panel. Left on "Model's choice", nothing changes.
+- Generated text is cleaned up before it is saved: straight quotes, "..." for the ellipsis, no stray <p>/<div>/
+  <span>/<br>, no doubled spaces or extra blank lines, no code fence around a field, no "Name:" in front of a
+  greeting. XML-style section tags are kept; Chinese and Japanese text keeps its own quotes. Text you type is never
+  changed.
+
+### Fixed
+- Cards the helper writes now fill the Structured view: it used field names the view does not show
+  (speech_patterns, goals, fears, skills). It now uses the view's fields, maps common other names onto them, and
+  fills the profile whenever it creates a card.
 
 ### Tests
 - `backend/tests/test_helper.py` (through the real request code, with a scripted model) and browser suite
-  `tests/e2e/e2e11.py`.
+  `tests/e2e/e2e11.py`; `backend/tests/test_v26_writing.py` for the writing checks, clean-up and greeting style.
 
 ---
 

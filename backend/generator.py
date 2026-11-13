@@ -880,6 +880,33 @@ def _story_point_note(options):
     return f"\n\nSTORY POINT: describe the character as of: {sp}. Ignore facts from later in their story." if sp else ""
 
 
+GREETING_POV = {
+    "third": "third person: {{char}} as he/she/they, {{user}} by name ({{user}})",
+    "second": "second person for {{user}} (\"you\"), with {{char}} in third person",
+    "first": "first person as {{char}} (\"I\"), with {{user}} as \"you\"",
+}
+GREETING_TENSE = {"past": "past tense", "present": "present tense"}
+GREETING_LENGTH = {
+    "short": "one short paragraph, about 50-100 words",
+    "medium": "2-3 paragraphs, about 150-250 words",
+    "long": "4-6 paragraphs, about 300-450 words",
+}
+
+
+def greeting_style(style):
+    """{'pov','tense','length'} (any may be empty = let the model choose) -> one rule line, or ''."""
+    if isinstance(style, str):
+        try:
+            style = json.loads(style)
+        except (json.JSONDecodeError, ValueError):
+            style = {}
+    style = style if isinstance(style, dict) else {}
+    bits = [GREETING_POV.get(style.get("pov") or ""), GREETING_TENSE.get(style.get("tense") or ""),
+            GREETING_LENGTH.get(style.get("length") or "")]
+    bits = [b for b in bits if b]
+    return ("Write it in " + "; ".join(bits) + ". Never write {{user}}'s actions or words.") if bits else ""
+
+
 def card_system_prompt(source, options):
     """The system prompt for a full card, assembled from the options."""
     options = options or {}
@@ -903,6 +930,10 @@ def card_system_prompt(source, options):
                      "Keep world facts OUT of description and scenario; describe only this character and their "
                      "relationship to the world in a sentence or two. Keep the card lean.")
     extra.append("- SIZE: " + TOKEN_TARGETS[target_key][1])
+    gs = greeting_style(options.get("greeting_style"))
+    if gs:
+        extra.append("- FIRST MESSAGE AND GREETINGS (this overrides any length given for them): " + gs.replace("Write it", "Write each")
+                     + " Example messages use the same point of view and tense.")
     if style == "plist":
         extra.append("- STYLE: write description as a PList: [Name's persona: trait, trait; Name's appearance: ...; "
                      "Name's likes: ...] (square brackets, semicolons between categories). Write mes_example in "
@@ -1022,6 +1053,9 @@ def validate_card(card, options=None):
     for k in CARD_TEXT_FIELDS:
         if k in card and not isinstance(card[k], str):
             card[k] = text_of(card[k], "\n")
+    if isinstance(card.get("alternate_greetings"), list):
+        card["alternate_greetings"] = list_of(card["alternate_greetings"], split=False)
+    tidy_card(card)
     sp = card.get("structured_profile") or {}
     if isinstance(sp, str):
         try:
@@ -1113,6 +1147,7 @@ def regenerate_single_field(
     custom_prompt: str = "",
     include_current_card: bool = True,
     include_source: bool = True,
+    greeting_style_opt=None,
 ) -> Dict[str, Any]:
     templates = get_prompt_templates()
     config = load_runtime_config()
@@ -1260,7 +1295,16 @@ If the character is under 18 or reads as a minor, write no sexual content and le
             parts += [
                 'Return this shape: {"mes_example": "<START>\\n{{char}}: ...\\n\\n<START>\\n{{char}}: ..."}',
                 "Rules: 3-6 examples. Format: <START>\\n{{char}}: line\\n\\n<START>\\n{{char}}: line — TWO newlines (\\n\\n) between blocks. Never run <START> onto same line as previous dialogue. Show different moods. No {{user}} lines.",
-            ]
+            ] + ([greeting_style(greeting_style_opt).replace("Write it in", "Narration uses").split(" Never")[0]]
+                 if greeting_style(greeting_style_opt) else [])
+        elif field_name == "first_mes":
+            parts += ['Return this shape: {"first_mes": ""}',
+                      "Rules: the opening message of the roleplay, in character, setting the scene from the scenario. "
+                      + (greeting_style(greeting_style_opt) or "Keep it natural and roleplay-ready. Never write {{user}}'s actions or words.")]
+        elif field_name == "alternate_greetings":
+            parts += ['Return this shape: {"alternate_greetings": ["", ""]}',
+                      "Rules: 2-3 extra openings in different situations, same voice as first_mes. "
+                      + (greeting_style(greeting_style_opt) or "Never write {{user}}'s actions or words.")]
         elif field_name == "depth_prompt":
             parts += ['Return this shape: {"depth_prompt": ""}',
                       "Rules: the Character's Note SillyTavern injects deep in the chat: 1-3 short sentences (max ~60 tokens) "
@@ -1314,12 +1358,12 @@ If the character is under 18 or reads as a minor, write no sexual content and le
         return {"tags": tags}
 
     if field_name == "alternate_greetings":
-        greets = list_of(result.get(field_name), split=False)
+        greets = [tidy_text(g, card.get("name") or "") for g in list_of(result.get(field_name), split=False)]
         if not greets:
             raise ValueError("The model returned no greetings. Try again or pick another model.")
         return {field_name: greets}
 
-    value = text_of(result.get(field_name), "\n")
+    value = tidy_text(text_of(result.get(field_name), "\n"), (card.get("name") or "") if field_name == "first_mes" else "")
     if not value:
         raise ValueError(f"The model returned nothing for {field_name}. Try again or pick another model.")
     return {field_name: value}
@@ -1493,6 +1537,8 @@ Return this exact JSON shape:
         for k in ("entry_type", "summary", "content"):
             if k in entry and not isinstance(entry[k], str):
                 entry[k] = text_of(entry[k], "\n")
+        for k in ("summary", "content"):
+            entry[k] = tidy_text(entry.get(k) or "")
         entries.append(entry)
     valid = _truthy(result.get("valid", True))
     return {
@@ -1500,6 +1546,48 @@ Return this exact JSON shape:
         "reason":  text_of(result.get("reason")) or None,
         "entries": entries,
     }
+
+
+_CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]")
+_LOOSE_HTML = re.compile(r"</?(?:p|div|span)(?:\s[^<>]*)?>", re.I)
+
+
+def tidy_text(value, name=""):
+    """Clean up model text before it is stored: straight quotes, ... for the ellipsis, no stray <p>/<div>/<span>
+    or <br>, no doubled spaces, at most one blank line, no code fence around the whole thing, and (with name) no
+    'Name:' in front of a greeting. Leaves XML-style tags like <personality> alone (some cards use them on purpose).
+    CJK text keeps its own quotes. Not used on text the user typed."""
+    if not isinstance(value, str) or not value:
+        return value
+    s = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+    fence = re.fullmatch(r"```[\w-]*\n([\s\S]*?)\n?```", s)
+    if fence:
+        s = fence.group(1).strip()
+    s = re.sub(r"<br\s*/?>", "\n", s, flags=re.I)
+    s = _LOOSE_HTML.sub("", s)
+    if not _CJK.search(s):
+        s = (s.replace("\u201c", '"').replace("\u201d", '"').replace("\u201e", '"')
+              .replace("\u2018", "'").replace("\u2019", "'").replace("\u2026", "..."))
+    s = re.sub(r"(?<=\S)[ \t]{2,}(?=\S)", " ", s)
+    s = re.sub(r"[ \t]+\n", "\n", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    if name:
+        s = re.sub(r"^(?:\{\{char\}\}|" + re.escape(name.strip()) + r")\s*:\s*", "", s, flags=re.I) if name.strip() else s
+    return s.strip()
+
+
+GREETING_FIELDS = ("first_mes", "alternate_greetings")
+
+
+def tidy_card(card):
+    """tidy_text on every generated text field of a card (and each alternate greeting), in place."""
+    name = str(card.get("name") or "")
+    for k in CARD_TEXT_FIELDS:
+        if isinstance(card.get(k), str) and k != "name":
+            card[k] = tidy_text(card[k], name if k == "first_mes" else "")
+    if isinstance(card.get("alternate_greetings"), list):
+        card["alternate_greetings"] = [tidy_text(g, name) if isinstance(g, str) else g for g in card["alternate_greetings"]]
+    return card
 
 
 def _truthy(v):

@@ -128,7 +128,7 @@ from generator import (
     generate_lore_entry,
     _request as _gen_request,
     request_text, text_of, list_of,
-    _ensure_list,
+    _ensure_list, greeting_style, tidy_text, tidy_card,
     load_runtime_config,
 )
 from preview import (build_export_card_json, build_export_card_v3, format_structured_profile_text, normalise_lore_items,
@@ -707,7 +707,7 @@ def api_generate_start():
         if not source_id:
             return jsonify({"error": "Missing source_id"}), 400
 
-        options = {k: data.get(k) for k in ("story_point", "user_role", "token_target", "style", "deep")
+        options = {k: data.get(k) for k in ("story_point", "user_role", "token_target", "style", "deep", "greeting_style")
                    if data.get(k) not in (None, "")}
         if data.get("lore_project_id"):
             options["lore_aware"] = True
@@ -737,6 +737,7 @@ def api_generate_batch():
         if len(urls) > 10:
             return jsonify({"error": "Maximum 10 URLs per batch"}), 400
 
+        batch_opts = {"greeting_style": data["greeting_style"]} if data.get("greeting_style") else None
         job_id = create_job()
 
         def run():
@@ -755,7 +756,7 @@ def api_generate_batch():
                                progress=pct + 5,
                                message=f"[{i+1}/{len(urls)}] Generating {source.get('title', url.split('/')[-1])}...")
 
-                    generated = generate_full_card(source, provider, model); generated.pop("_warnings", None)
+                    generated = generate_full_card(source, provider, model, options=batch_opts); generated.pop("_warnings", None)
                     generated["provider"] = provider
                     generated["model"] = model
                     # Merge sex -> gender if needed
@@ -1073,13 +1074,14 @@ def api_generate_greeting(card_id: int):
         existing = greetings[idx] if idx is not None and idx < len(greetings) else ""
         existing_first = card.get("first_mes", "")
         name = card.get("name", "Character")
+        style_rule = greeting_style(data.get("greeting_style"))
 
         prompt = f"""You are writing a SillyTavern character card field.
 
 Task: Write ONE alternate first message (opening greeting) for the character "{name}".
-- Write in character, first person, in-character voice
+- Write in character, in the character's own voice
 - Make it distinct from the existing first message
-- Keep it concise and roleplay-ready (1-4 sentences)
+- {style_rule or "Match the point of view, tense and length of the existing first message"}
 - Do not write actions or dialogue for {{{{user}}}}
 - Output valid JSON only: {{"greeting": "..."}}
 
@@ -1094,7 +1096,7 @@ Character card context:
 {json.dumps({"name": name, "personality": card.get("personality",""), "scenario": card.get("scenario","")}, ensure_ascii=False)}"""
 
         result = request_text(card["provider"], card["model"], prompt, None, "greeting")
-        greeting = text_of(result.get("greeting"), "\n")      # plain-prose answers count too
+        greeting = tidy_text(text_of(result.get("greeting"), "\n"), name)      # plain-prose answers count too
         if not greeting:
             return jsonify({"error": "The model returned no greeting. Try again or pick another model."}), 502
 
@@ -1201,6 +1203,7 @@ def regenerate_field(card_id: int):
             custom_prompt=custom_prompt,
             include_current_card=include_current_card,
             include_source=include_source,
+            greeting_style_opt=data.get("greeting_style") or None,
         )
     except Exception as e:                     # a readable message for the studio instead of an HTML error page
         log_error(f"Field regenerate failed ({field_name}): {e}")
@@ -1462,7 +1465,7 @@ def build_cast_card(card_ids, cast_name, provider, model):
     )
     raw = _gen_request(provider, model, prompt)
     # keep the card fields as text even when the model sends lists or objects
-    result = {k: text_of(raw.get(k), "\n") for k in ("name", "description", "personality", "scenario", "first_mes", "mes_example")}
+    result = tidy_card({k: text_of(raw.get(k), "\n") for k in ("name", "description", "personality", "scenario", "first_mes", "mes_example")})
     result["name"] = result["name"] or cast_name
     result["tags"] = list_of(raw.get("tags"))
 
@@ -1542,7 +1545,7 @@ def api_text_cast_cards(pid):
         return jsonify({"error": "No kept main characters. Keep some characters (main tier) or pick them."}), 400
     provider = data.get("provider") or "nanogpt"
     model = data.get("model") or ""
-    options = {k: data.get(k) for k in ("user_role", "token_target", "style", "deep", "story_point") if data.get(k)}
+    options = {k: data.get(k) for k in ("user_role", "token_target", "style", "deep", "story_point", "greeting_style") if data.get(k)}
     job_id = create_job()
     threading.Thread(target=run_cast_cards_job,
                      args=(job_id, pid, eids, provider, model, options, bool(data.get("group"))), daemon=True).start()

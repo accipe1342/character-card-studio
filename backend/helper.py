@@ -33,7 +33,7 @@ from flask import Blueprint, jsonify, request
 
 import database as D
 import text_module as T
-from generator import _request, list_of, request_text, text_of
+from generator import _request, list_of, request_text, text_of, tidy_text
 
 bp = Blueprint("helper", __name__)
 
@@ -44,8 +44,14 @@ RESULT_CHARS = 6000      # per action result
 ENTRY_TYPES = ("character", "place", "faction", "event", "item", "ability", "concept", "other")
 CARD_TEXT = ("name", "description", "personality", "scenario", "first_mes", "mes_example", "system_prompt",
              "depth_prompt", "creator_notes", "post_history")
-PROFILE_LIST = ("appearance", "personality_traits", "likes", "dislikes", "speech_patterns", "goals", "fears",
-                "skills", "relationships")
+# the card's structured_profile: the same fields the CHARACTER studio's Structured view shows
+from generator import PROFILE_LIST_FIELDS as PROFILE_LIST, PROFILE_TEXT_FIELDS as PROFILE_TEXT  # noqa: E402
+PROFILE_ALIAS = {"speech_patterns": "speech", "speech_style": "speech", "voice": "speech", "goals": "motivations",
+                 "goal": "motivations", "wants": "motivations", "fears": "flaws", "weaknesses": "flaws",
+                 "traits": "personality_traits", "personality": "personality_traits", "habits": "mannerisms",
+                 "looks": "appearance", "look": "appearance", "outfit": "clothing", "clothes": "clothing",
+                 "occupation": "job_occupation", "job": "job_occupation", "role": "job_occupation",
+                 "history": "backstory", "background": "backstory", "relation_to_user": "relationship_to_user"}
 
 
 # ── storage ───────────────────────────────────────────────────────────────────
@@ -164,20 +170,27 @@ def _clean_card_fields(fields, current=None):
         raise ToolError("'fields' must be an object, e.g. {\"description\": \"...\"}")
     out = {}
     alias = {"character_note": "depth_prompt", "post_history_instructions": "post_history"}
+    name = text_of(fields.get("name") or (current or {}).get("name") or "")
     for k, v in fields.items():
         k = alias.get(k, k)
         if k in CARD_TEXT:
-            out[k] = text_of(v, "\n")
+            out[k] = tidy_text(text_of(v, "\n"), name if k == "first_mes" else "") if k != "name" else text_of(v).strip()
         elif k == "tags":
             out[k] = list_of(v)[:20]
         elif k == "alternate_greetings":
-            out[k] = list_of(v, split=False)[:8]
+            out[k] = [tidy_text(g, name) for g in list_of(v, split=False)[:8]]
         elif k == "structured_profile":
             if not isinstance(v, dict):
                 raise ToolError("structured_profile must be an object of profile fields")
             sp = dict((current or {}).get("structured_profile") or {})
             for pk, pv in v.items():
-                sp[pk] = list_of(pv) if pk in PROFILE_LIST else text_of(pv, ", ")
+                pk = PROFILE_ALIAS.get(pk, pk)
+                if pk in PROFILE_LIST:
+                    sp[pk] = list_of(pv) if not isinstance(pv, list) else [text_of(x) for x in pv if text_of(x)]
+                elif pk in PROFILE_TEXT:
+                    sp[pk] = tidy_text(text_of(pv, ", "))
+                else:
+                    raise ToolError(f"Unknown structured_profile field '{pk}'. Use: {', '.join(PROFILE_LIST + PROFILE_TEXT)}")
             out[k] = sp
         else:
             raise ToolError(f"Unknown card field '{k}'. Allowed: {', '.join(CARD_TEXT)}, tags, alternate_greetings, "
@@ -258,7 +271,7 @@ def _entry_fields(args):
     if "keywords" in args or "keys" in args:
         out["keywords"] = list_of(args.get("keywords") if "keywords" in args else args.get("keys"))[:20]
     if "content" in args:
-        out["content"] = text_of(args["content"], "\n")
+        out["content"] = tidy_text(text_of(args["content"], "\n"))
     if "constant" in args:
         out["constant"] = 1 if str(args["constant"]).lower() in ("1", "true", "yes") else 0
     if "secondary_keys" in args:
@@ -375,7 +388,7 @@ TOOLS = {
     "get_text_entity": (t_get_text_entity, "{text_entity_id}", "one character/place from a story, in full"),
     # write (applied at once; the user can undo)
     "create_card": (t_create_card, "{fields: {name, description, personality, scenario, first_mes, mes_example, tags, "
-                                   "alternate_greetings, structured_profile, ...}}", "new character card"),
+                                   "alternate_greetings, structured_profile: {appearance: [], personality_traits: [], speech: [], likes: [], ...}}}", "new character card (always fill structured_profile too)"),
     "update_card": (t_update_card, "{card_id, fields: {...only the fields to change}}", "edit a card"),
     "create_lore_project": (t_create_lore_project, "{name}", "new empty lorebook"),
     "add_lore_entry": (t_add_lore_entry, "{project_id, title, entry_type, keywords, content, constant?, "
@@ -417,8 +430,13 @@ KNOWLEDGE = """WHAT YOU KNOW (use it when explaining or writing):
   chat's format), mes_example (sample dialogue, blocks start with <START>; {{char}} and {{user}} are placeholders),
   alternate_greetings (other openings), tags, system_prompt / post_history (rarely needed), depth_prompt (the
   Character's Note, a short reminder inserted near the end of the context).
-- structured_profile fields: appearance, personality_traits, likes, dislikes, speech_patterns, goals, fears, skills,
-  relationships (lists), with_strangers and with_close (how they act with people they don't know vs. close ones).
+- structured_profile is what the studio's Structured view shows. Whenever you create a card, fill it too, from the
+  same facts as the prose (never contradict it). Lists (arrays of short phrases): appearance, clothing, accessories,
+  personality_traits, speech (how they talk, sample phrases), mannerisms, likes, dislikes, loves, hates,
+  motivations, flaws, relationships ("Name - relation"). Text: age, species, gender, pronouns, job_occupation,
+  backstory (2-4 sentences), relationship_to_user, with_strangers, with_close (how they act with people they don't
+  know vs. close ones), height. Leave a field out rather than guess. When you change the description or
+  personality, update the matching profile fields in the same update_card call.
 - Default card layout (use it unless the user asks for another, or their existing cards clearly use another style):
   the description is plain prose in short paragraphs, in this order: an optional one-line quote from the character;
   overall description (who they are now); backstory; personality, including how they speak with one or two sample
@@ -428,6 +446,9 @@ KNOWLEDGE = """WHAT YOU KNOW (use it when explaining or writing):
 - Write in plain prose: actions as plain narration, dialogue in quotation marks; avoid *asterisk actions* unless the
   user's chat style uses them. Show personality through specifics instead of adjective lists. Avoid stock phrases
   ("a shiver ran down her spine", "barely above a whisper", "eyes sparkling with mischief") and em-dash chains.
+  Also avoid: "not X, but Y" emphasis ("It wasn't anger. It was something colder."); narrating what doesn't happen
+  ("she doesn't move": say what she does); a reply that repeats the other person's words as a question; starting
+  most sentences or paragraphs the same way. A first message never writes {{user}}'s actions or words.
   Keep the description around 300-700 tokens unless asked for more.
 - Prompt advice you can give: keep prompts short and plain (if a person can't keep it all in mind, neither can the
   model); start small and build on it; models follow instructions without bribes or threats; every model has its

@@ -264,3 +264,22 @@ def test_glossary_notes_follow_the_conversation(client, H):
     import json as J
     data = J.load(open(HLP.GLOSSARY_FILE, encoding="utf-8"))
     assert len(data["entries"]) >= 30 and all(e["keys"] and e["content"] for e in data["entries"])
+
+
+def test_profile_uses_the_structured_view_fields(client, H, mara):
+    SCRIPT[:] = [
+        {"say": "", "actions": [{"tool": "update_card", "args": {"card_id": mara, "fields": {"structured_profile": {
+            "speech_patterns": ["clipped", "dry"], "goals": "pay off the ship", "occupation": "courier", "age": 24,
+            "mannerisms": ["taps the ledger"]}}}}]},
+        {"say": "", "actions": [{"tool": "update_card", "args": {"card_id": mara, "fields": {"structured_profile": {"skills": ["knives"]}}}}]},
+        {"say": "Report: profile filled.", "actions": []},
+    ]
+    d = chat(client, H, "Fill in her profile").get_json()
+    sp = D.get_card(mara)["structured_profile"]
+    assert sp["speech"] == ["clipped", "dry"] and sp["motivations"] == ["pay off the ship"]       # renamed to the real fields
+    assert sp["job_occupation"] == "courier" and sp["age"] == "24" and sp["mannerisms"] == ["taps the ledger"]
+    assert "speech_patterns" not in sp and "skills" not in sp
+    assert "Unknown structured_profile field 'skills'" in user_of(-1)                             # the model is told, and can retry
+    assert len(d["changes"]) == 1
+    from generator import PROFILE_LIST_FIELDS, PROFILE_TEXT_FIELDS
+    assert set(sp) <= set(PROFILE_LIST_FIELDS) | set(PROFILE_TEXT_FIELDS) | {"likes"}

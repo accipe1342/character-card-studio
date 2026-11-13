@@ -9,6 +9,12 @@ scan(text) / scan_chunks(chunks) report:
   adverbs          -ly adverbs per 1,000 words, most used
   tags             dialogue tags: plain said/asked vs. fancier ones (whispered, hissed, ...)
   repeated_starts  three or more sentences in a row starting with the same word
+  patterns         habits models fall into:
+                   not_but     "not X, but Y" / "It wasn't X. It was Y." (emphasis by negating something)
+                   negations   narration of what doesn't happen ("she doesn't move", "he didn't answer")
+                   echoes      a reply that repeats the other speaker's words as a question ("Gooner?")
+                   dashes      em-dashes per 1,000 words
+                   para_starts most paragraphs opening with the same word
 Everything is a hint to look at, never an automatic edit.
 """
 
@@ -101,6 +107,47 @@ you're playing with fire
 mine, all mine
 whispered in * ear
 eyes wide with
+# more stock lines (2.6)
+smell* of ozone
+scent of ozone
+tang of ozone
+a beat passed
+after a beat
+beat of silence
+for a long moment
+the silence stretched
+silence stretched between
+a comfortable silence
+the tension in the room
+slow and deliberate
+the words hung
+the words landed
+landed like a
+a flicker of
+flicker* of something
+jaw tightened
+knuckles whiten*
+gaze lingered
+a moment too long
+the ghost of a smile
+ghost of a smile
+not unkind
+breath hitched
+chest tightened
+something in * chest
+mouth quirked
+lips quirked
+a slow smile spread
+smile spread across
+the corner of * mouth
+as if on cue
+somewhere in the distance
+it wasn't a question
+it was not a question
+half-lidded
+for the first time in a long time
+despite herself
+despite himself
 """.strip()
 
 FILLER = ["just", "really", "very", "suddenly", "quite", "somehow", "actually", "literally", "basically",
@@ -135,6 +182,19 @@ said say says asked one two said'd t s d ll re ve m don didn doesn isn wasn were
 it's i'm i'd i'll you're he's she's they're we're that's there's let's""".split())
 
 WORD = re.compile(r"[A-Za-z][A-Za-z'’]*")
+QUOTE = re.compile(r"[\"“]([^\"“”\n]{1,600})[\"”]")
+NEG = r"(?:isn't|wasn't|aren't|weren't|is not|was not|are not|were not|isn’t|wasn’t|aren’t|weren’t)"
+NOT_BUT = [
+    re.compile(r"\bnot (?:just |only |simply |merely |because )?[^.,;:!?\"“”\n]{1,40}?,? but (?:rather |because )?\w", re.I),
+    re.compile(r"\b(?:it|this|that|he|she|they) " + NEG + r" [^.!?\"“”\n]{1,45}[.;]\s+(?:it|this|that|he|she|they) (?:is|was|are|were)\b", re.I),
+    re.compile(r"\b(?:it|this|that) " + NEG + r" [^.!?\"“”\n—–]{1,45}\s*[—–]\s*(?:it|this|that)(?:'s| is| was)\b", re.I),
+]
+NEG_VERBS = ("move|moved|moving|speak|spoke|say anything|said anything|said nothing|answer|answered|respond|responded|reply|replied|"
+             "look away|looked away|flinch|flinched|react|reacted|blink|blinked|breathe|breathed|turn around|turned around|"
+             "pull away|pulled away|let go|look up|looked up|smile|smiled|laugh|laughed|step back|stepped back")
+NEGATION = re.compile(r"\b(?:doesn't|didn't|don't|does not|did not|do not|doesn’t|didn’t|don’t|never)\s+(?:even\s+|quite\s+|immediately\s+)?(?:"
+                      + NEG_VERBS + r")\b", re.I)
+DASH = re.compile(r"—|\s--\s")
 SENT = re.compile(r"(?<=[.!?])[\"'”’)]*\s+")
 
 
@@ -242,7 +302,64 @@ def scan(text, label="", cliches=None):
                  "fancy_share": round(sum(tags_fancy.values()) / total_tags, 2) if total_tags else 0,
                  "top_fancy": [{"word": w, "count": c} for w, c in tags_fancy.most_common(8)]},
         "repeated_starts": runs[:20],
+        "patterns": patterns(text, label, len(words)),
     }
+
+
+def _blank_quotes(text):
+    """Dialogue replaced by spaces (same length, so positions still match): narration-only checks."""
+    return QUOTE.sub(lambda m: " " * len(m.group(0)), text)
+
+
+def _content(words):
+    return [w for w in words if w not in STOP]
+
+
+def patterns(text, label="", words=None):
+    text = text or ""
+    n = max(1, words if words is not None else len(WORD.findall(text)))
+    ex = lambda m: {"label": label, "excerpt": _excerpt(text, m.start(), m.end())}
+    nb, seen = [], set()
+    for rx in NOT_BUT:
+        for m in rx.finditer(text):
+            if m.start() // 40 not in seen:
+                seen.add(m.start() // 40)
+                nb.append(ex(m))
+    narr = _blank_quotes(text)
+    neg = [ex(m) for m in NEGATION.finditer(narr)]
+    # echo: a short question that repeats words of the quote right before it
+    echoes, quotes = [], list(QUOTE.finditer(text))
+    for prev, cur in zip(quotes, quotes[1:]):
+        q = cur.group(1).strip()
+        if not q.endswith("?") or len(q.split()) > 4:
+            continue
+        mine = _content([w.lower() for w in WORD.findall(q)])
+        theirs = {w.lower() for w in WORD.findall(prev.group(1))}
+        if mine and all(w in theirs for w in mine) and len(prev.group(1).split()) > len(q.split()):
+            echoes.append({"label": label, "excerpt": _excerpt(text, prev.start(), cur.end(), width=20)})
+    dashes = len(DASH.findall(text))
+    paras = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
+    firsts = Counter()
+    for p in paras:
+        m = WORD.search(_blank_quotes(p)) if not p.lstrip().startswith(("\"", "“")) else None
+        firsts[m.group(0).lower() if m else "“dialogue”"] += 1
+    para_starts = [{"word": w, "count": c, "of": len(paras), "label": label}
+                   for w, c in firsts.most_common(3) if len(paras) >= 5 and c / len(paras) >= 0.4]
+    return {
+        "not_but": {"count": len(nb), "examples": nb[:6]},
+        "negations": {"count": len(neg), "per1k": round(len(neg) * 1000 / n, 1), "examples": neg[:6]},
+        "echoes": {"count": len(echoes), "examples": echoes[:6]},
+        "dashes": {"count": dashes, "per1k": round(dashes * 1000 / n, 1)},
+        "para_starts": para_starts,
+    }
+
+
+def _merge_patterns(total, part):
+    for k in ("not_but", "negations", "echoes"):
+        total[k]["count"] += part[k]["count"]
+        total[k]["examples"] = (total[k]["examples"] + part[k]["examples"])[:6]
+    total["dashes"]["count"] += part["dashes"]["count"]
+    total["para_starts"] = (total["para_starts"] + part["para_starts"])[:10]
 
 
 def scan_chunks(chunks):
@@ -255,6 +372,8 @@ def scan_chunks(chunks):
         c_entry["examples"] = []
     per = []
     report["repeated_starts"] = []
+    pat = {"not_but": {"count": 0, "examples": []}, "negations": {"count": 0, "examples": []},
+           "echoes": {"count": 0, "examples": []}, "dashes": {"count": 0}, "para_starts": []}
     for c in chunks:
         r = scan(c["text"], c["label"], cl)
         for x in r["cliches"]:
@@ -264,11 +383,22 @@ def scan_chunks(chunks):
         per.append({"idx": c["idx"], "label": c["label"], "words": r["words"], "cliches": r["cliche_count"],
                     "cliches_per1k": round(r["cliche_count"] * 1000 / max(1, r["words"]), 2),
                     "adverbs_per1k": r["adverbs"]["per1k"], "filler_per1k": r["filler_per1k"],
-                    "fancy_tag_share": r["tags"]["fancy_share"], "repeated_starts": len(r["repeated_starts"])})
+                    "fancy_tag_share": r["tags"]["fancy_share"], "repeated_starts": len(r["repeated_starts"]),
+                    "not_but": r["patterns"]["not_but"]["count"], "negations": r["patterns"]["negations"]["count"],
+                    "echoes": r["patterns"]["echoes"]["count"], "dashes_per1k": r["patterns"]["dashes"]["per1k"]})
         report["repeated_starts"].extend(r["repeated_starts"])
+        _merge_patterns(pat, r["patterns"])
     report["repeated_starts"] = report["repeated_starts"][:20]
+    w = max(1, report["words"])
+    pat["negations"]["per1k"] = round(pat["negations"]["count"] * 1000 / w, 1)
+    pat["dashes"]["per1k"] = round(pat["dashes"]["count"] * 1000 / w, 1)
+    report["patterns"] = pat
     report["per_chunk"] = per
     return report
+
+
+REFUSAL = re.compile(r"\b(?:as an ai\b|as a language model|i can(?:no|')t (?:help|assist|create|write|fulfil|comply|provide|continue)|"
+                     r"i(?:'m| am) (?:sorry|unable),? but|i(?:'m| am) not able to (?:help|create|write)|against (?:my|the) (?:guidelines|policy))", re.I)
 
 
 def card_text_warnings(card, limit=6):
@@ -277,7 +407,20 @@ def card_text_warnings(card, limit=6):
     out = []
     for key, name in (("description", "Description"), ("personality", "Personality"), ("scenario", "Scenario"),
                       ("first_mes", "First message"), ("mes_example", "Example messages")):
-        r = scan(str(card.get(key) or ""), cliches=cl)
+        text = str(card.get(key) or "")
+        if REFUSAL.search(text):
+            out.insert(0, f"{name}: looks like the model refused or broke character (“{REFUSAL.search(text).group(0)}”)")
+        r = scan(text, cliches=cl)
         for x in r["cliches"]:
             out.append(f"{name}: “{x['phrase'].replace('*', '…')}”" + (f" ×{x['count']}" if x["count"] > 1 else ""))
+        p = r["patterns"]
+        if key in ("first_mes", "mes_example", "description"):
+            if p["not_but"]["count"]:
+                out.append(f"{name}: “not X, but Y” emphasis ×{p['not_but']['count']}")
+            if p["negations"]["count"] >= 2:
+                out.append(f"{name}: describes what doesn't happen ×{p['negations']['count']} (say what does)")
+            if p["echoes"]["count"]:
+                out.append(f"{name}: a reply repeats the other speaker's words as a question")
+            if r["words"] >= 80 and p["dashes"]["per1k"] > 12:
+                out.append(f"{name}: many em-dashes ({p['dashes']['count']})")
     return out[:limit]
