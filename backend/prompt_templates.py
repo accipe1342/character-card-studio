@@ -59,12 +59,13 @@ def get_prompt_templates():
 
 
 def save_prompt_templates(character_template, regen_template):
-    os.makedirs("config", exist_ok=True)
-
-    data = {
+    """Update the two card templates, keeping every other key in prompts.json (the lore template)."""
+    os.makedirs(os.path.dirname(PROMPTS_PATH), exist_ok=True)
+    data = get_prompt_templates()
+    data.update({
         "character_generation_template": character_template,
         "field_regeneration_template": regen_template,
-    }
+    })
 
     with open(PROMPTS_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)

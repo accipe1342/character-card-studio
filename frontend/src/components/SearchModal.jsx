@@ -49,7 +49,7 @@ export default function SearchModal({ open, onClose, onPick, t = {} }) {
           style={{ width: "100%", boxSizing: "border-box", padding: "14px 16px", border: "none", borderBottom: "1px solid var(--signal-border)",
             background: "var(--signal-bg-input)", color: "var(--signal-text)", fontFamily: "inherit", fontSize: 16, outline: "none" }} />
         <div style={{ maxHeight: "60vh", overflowY: "auto" }} role="listbox">
-          {error && <div style={{ color: "#c84a3a", padding: 12, fontSize: 13 }}>⊗ {error}</div>}
+          {error && <div style={{ color: "var(--signal-accent)", padding: 12, fontSize: 13 }}>⊗ {error}</div>}
           {q.trim().length >= 2 && res && !flat.length && <div style={{ padding: 14, fontSize: 13, color: "var(--signal-text-dim)" }}>Nothing found for “{q}”.</div>}
           {q.trim().length < 2 && <div style={{ padding: 14, fontSize: 12, color: "var(--signal-text-dim)" }}>Type at least 2 letters. ↑↓ to move, Enter to open, Esc to close.</div>}
           {flat.map((it, i) => {

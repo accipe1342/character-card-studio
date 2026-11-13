@@ -1,12 +1,16 @@
 # Character Card Studio
 
 [![CI](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-2.5.1-informational)
+![version](https://img.shields.io/badge/version-2.6.0-informational)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 A Signal UI–themed app for making SillyTavern character cards and lorebooks with AI: from Fandom wiki pages, from fan fiction and other long text, or from your own roleplay chats.
 
-![Character Card Studio preview](preview.png)
+![Character Card Studio: the CHARACTER studio with SCRIBE-01 docked at the bottom](preview.png)
+
+| LORE studio | Menus | Dark mode, SCRIBE-01 floating |
+|---|---|---|
+| ![LORE studio](docs/screenshots/lore.png) | ![Export menu](docs/screenshots/menus.png) | ![Dark mode with the SCRIBE-01 window](docs/screenshots/dark-scribe.png) |
 
 ---
 
@@ -70,13 +74,14 @@ After the first run, launching is instant.
 
 ### Character Studio
 - Scrape any Fandom wiki page and generate a full SillyTavern V2 character card
-- **New Card** — create a blank card manually without scraping, fill everything in yourself
+- **NEW ▾** — a blank card to fill in yourself, or **Import card**: a card PNG, JSON (V1 / V2 / V3) or CHARX from any app, with its portrait and lorebook
 - **Batch Generate** — paste up to 10 URLs and generate all cards in one job
 - Natural & Structured views — edit description, personality, scenario, first message, and 22 structured profile fields
 - Structured profile includes: age, sex, gender, ethnicity, race, pronouns, sexual attraction, appearance, clothing, accessories, backstory, speech patterns, personality traits, likes, dislikes, loves, hates, kinks, relationship status, height, weight
 - Field regeneration with custom prompt support and live timer
 - Alternate greetings with per-entry AI regeneration
-- Generation options: story point, who {{user}} is, size, prose or PList style, in-depth mode; static AUDIT; per-field undo
+- Generation options: story point, who {{user}} is, size, prose or PList style, first message point of view / tense / length, in-depth mode; static AUDIT; per-field undo
+- Generated text is cleaned up before saving (quotes, ellipses, stray HTML, spacing, a "Name:" in front of a greeting)
 - PNG export with embedded V2 (`chara`) and V3 (`ccv3`) metadata; V2 and V3 JSON; CHARX (V3 zip with the portrait); attach a LORE project as the card's lorebook
 - Portraits are saved with the card and come back when you reopen it; the Library shows thumbnails
 - Send to SillyTavern: the card (with its portrait and lorebook) goes straight into a running SillyTavern; sending again replaces it
@@ -107,8 +112,19 @@ After the first run, launching is instant.
 - Secrets: facts only some characters know, sent as entries SillyTavern only shows to those characters
 - Send to LORE (re-sending updates the same project and keeps your LORE edits; a preview shows every change first), with an always-on Cast Roster and Relationships entry, and "Often here" lines on places
 - Make a card for one character, for the whole main cast (plus a group card), or a World Narrator card
-- Critic: brutally honest critique, chapter sweep, score history and passage rewrites, plus an instant prose scan (stock phrases, overused words, filler, adverbs, dialogue tags)
+- Critic: brutally honest critique, chapter sweep, score history and passage rewrites, plus an instant prose scan (stock phrases, overused words, filler, adverbs, dialogue tags, and habits such as "not X, but Y", narrating what doesn't happen, echoed lines and em-dash overuse)
 - Story bible, Data Bank pack and Quick Reply set, as in LORE
+
+### Helper (SCRIBE-01)
+- A console along the bottom of CHARACTER, LORE and TEXT: press Ctrl+/ or click the SCRIBE-01 bar. Resize it from its top edge, HIDE it, or FLOAT it as a window you can drag
+- Ask in plain words: it writes or edits cards, builds lorebooks and their entries, reads your TEXT stories, and explains SillyTavern settings
+- Knows what is open: "tighten this description" or "make a lorebook for this card's world" works on the open card or entry
+- Every change is saved at once and listed on the right with OPEN, KEEP and UNDO (plus KEEP ALL / UNDO ALL); UNDO refuses if you edited the item since, so your work is never overwritten
+- Unsaved edits in the studio are saved before the helper reads, and the studio reloads what it changed
+- Keyword glossary like a lorebook: `backend/config/helper_glossary.json` (edit freely)
+- Chats are kept; pick earlier ones from the panel
+- A personality of her own (a patient instructor over a composed, self-aware support unit) that you can simply chat with; edit it in `backend/config/helper_persona.txt`
+- **⇩ CARD** downloads SCRIBE-01 as a SillyTavern card, with her glossary as its lorebook
 
 ### Config
 - Model presets per task, database backups and restore, model usage, project bundles (.zip export / import, with pictures)
@@ -121,15 +137,17 @@ After the first run, launching is instant.
 
 ### Scraper
 - Supports 50+ section heading aliases across action games, JRPGs, fighting games, and general wikis
-- URL fragment stripping (`Chun-Li#SF6` → `Chun-Li`)
-- Fandom tab panel extraction (Personality, Appearance tabs on RE wiki etc.)
+- URL fragment stripping (`Character_Name#Variant` → `Character_Name`)
+- Fandom tab panel extraction (Personality, Appearance tabs on character pages)
 - JSON-LD image fallback for wikis without standard infobox images
-- Date-pattern section routing (`Raccoon City (1998)` → history)
+- Date-pattern section routing (`Harbor City (1998)` → history)
 - Birth year → age calculation (`c. 1974` → `~52 (b. c. 1974)`)
 - Wiki hedging cleanup (`"Unknown or Chinese"` → `"Chinese"`)
 
 ### UI
-- Signal UI design system — light and dark mode
+- Design system written up in [docs/DESIGN.md](docs/DESIGN.md) (tokens, type, components, a drop-in stylesheet) for reuse in other projects
+- NieR-style design: staff-line borders, large thin studio titles, panels with dark header strips, menus for less-used actions (NEW / TOOLS / EXPORT, GENERATE in LORE), a key-hint footer; light and dark mode
+- Import cards: NEW ▾ > Import card in CHARACTER takes a card PNG, JSON (V1/V2/V3) or CHARX, with its lorebook
 - EN / 日本語 / 中文 interface
 - Ctrl+K search across everything
 - Live elapsed timer on all jobs and field regeneration
@@ -177,7 +195,7 @@ python tests/e2e/run_all.py                # browser tests (see tests/e2e/README
 | Layer | Tech |
 |---|---|
 | Backend | Python 3 · Flask · SQLite |
-| Frontend | React 18 · Vite |
+| Frontend | React 19 · Vite |
 | AI | NanoGPT · OpenRouter · Local OpenAI-compatible |
 | Scraping | BeautifulSoup4 · requests |
 
@@ -208,7 +226,8 @@ Delete the project folder. Nothing is written to your system, registry, or AppDa
 
 ## What's new
 
-See [docs/UPDATE-v2.5.md](docs/UPDATE-v2.5.md) for the v2.5 overview ([v2.4](docs/UPDATE-v2.4.md)) and [docs/CHANGELOG.md](docs/CHANGELOG.md) for every change.
+See [docs/UPDATE-v2.6.md](docs/UPDATE-v2.6.md) for the v2.6 overview (SCRIBE-01, the new layout, card import), earlier ones for
+[v2.5](docs/UPDATE-v2.5.md) and [v2.4](docs/UPDATE-v2.4.md), and [docs/CHANGELOG.md](docs/CHANGELOG.md) for every change.
 
 ---
 

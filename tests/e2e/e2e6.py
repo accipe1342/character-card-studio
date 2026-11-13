@@ -33,7 +33,7 @@ with sync_playwright() as pw:
     # add text
     n_chunks = len(requests.get(B + f"/api/text/project/{pid}").json()["chunks"])
     pg.get_by_role("button", name=re.compile(r"\+ ADD TEXT")).click()
-    pg.get_by_label("Text to add").fill("Chapter 9: Later\n\n" + "Yuna and Rikku chase Trema through the ruins. " * 12)
+    pg.get_by_label("Text to add").fill("Chapter 9: Later\n\n" + "Ilsa and Corin chase Calder through the ruins. " * 12)
     pg.get_by_role("button", name="ADD", exact=True).click(); pg.wait_for_timeout(1200)
     n2 = len(requests.get(B + f"/api/text/project/{pid}").json()["chunks"])
     ok(n2 == n_chunks + 1, f"add text appended a chunk ({n_chunks} -> {n2})")
@@ -46,7 +46,7 @@ with sync_playwright() as pw:
     pg.wait_for_timeout(2000)
     cards = requests.get(B + "/api/cards").json()
     names = [c["name"] for c in cards]
-    ok(len(cards) >= cards_before + 3 and "Gullwings Cast" in names, f"cast cards + group card made ({len(cards) - cards_before} new)")
+    ok(len(cards) >= cards_before + 3 and "Kestrels Cast" in names, f"cast cards + group card made ({len(cards) - cards_before} new)")
     # sweep + rewrite
     pg.get_by_role("button", name=re.compile("CHAPTER SWEEP")).click()
     pg.wait_for_selector("[role=dialog][aria-label=Critique]", timeout=30000)
@@ -64,16 +64,17 @@ with sync_playwright() as pw:
     pg.screenshot(path=OUT + "/text_v24.png", full_page=True)
     # search -> LORE entry
     pg.keyboard.press("Control+k"); pg.wait_for_timeout(300)
-    pg.keyboard.type("Wakka"); pg.wait_for_timeout(800)
-    ok(pg.locator("[role=option]").count() >= 1, "search finds Wakka")
+    pg.keyboard.type("Bram"); pg.wait_for_timeout(800)
+    ok(pg.locator("[role=option]").count() >= 1, "search finds Bram")
     pg.keyboard.press("Enter"); pg.wait_for_timeout(1500)
     title = pg.locator("section.signal-screen-panel input").first.input_value() if pg.locator("section.signal-screen-panel input").count() else ""
-    ok(title == "Wakka" and pg.locator("text=📁 Besaid Lore").count() == 1, f"search opened the LORE entry ({title})")
+    ctx = pg.locator(".nier-ctx").first.inner_text().lower()
+    ok(title == "Bram" and "fennmoor lore" in ctx and "bram" in ctx, f"search opened the LORE entry ({title}; header: {ctx!r})")
     # search -> TEXT entity
     pg.locator("button[aria-label='Search everything']").click(); pg.wait_for_timeout(300)
-    pg.keyboard.type("Trema"); pg.wait_for_timeout(800)
+    pg.keyboard.type("Calder"); pg.wait_for_timeout(800)
     pg.locator("[role=option]", has_text="character").first.click(); pg.wait_for_timeout(1800)
-    ok(pg.locator("input[value='Trema']").count() >= 1, "search opened the TEXT entity in review")
+    ok(pg.locator("input[value='Calder']").count() >= 1, "search opened the TEXT entity in review")
     # narrow LORE
     pg.set_viewport_size({"width": 900, "height": 1200})
     pg.get_by_role("button", name=re.compile(r"^\s*LORE\s*$", re.I)).first.click(); pg.wait_for_timeout(700)
@@ -94,8 +95,8 @@ with sync_playwright() as pw:
     ok(after == before + 1, f"bundle exported and imported ({before} -> {after})")
     # leave warning while an edit is unsaved
     pg.get_by_role("button", name=re.compile(r"^\s*LORE\s*$", re.I)).first.click(); pg.wait_for_timeout(700)
-    pg.locator("div", has_text=re.compile(r"^Besaid Lore$")).first.click(); pg.wait_for_timeout(500)
-    pg.locator("div", has_text=re.compile(r"^Wakka$")).first.click(); pg.wait_for_timeout(500)
+    pg.locator("div", has_text=re.compile(r"^Fennmoor Lore$")).first.click(); pg.wait_for_timeout(500)
+    pg.locator("div", has_text=re.compile(r"^Bram$")).first.click(); pg.wait_for_timeout(500)
     pg.locator("textarea").last.click(); pg.keyboard.type(" more")
     pg.wait_for_timeout(100)
     ok(pg.locator("text=editing (autosaves)").count() >= 1, "edit is pending")

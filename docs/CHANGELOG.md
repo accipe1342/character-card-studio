@@ -6,6 +6,93 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.6.0] - 2026-11-12
+
+### Added
+- NieR-style look across the app: warm beige with warm dark grey text, staff-line borders top and bottom, a large
+  thin studio title with ":: subtitle" and what is open on the right, dark header strips on panels, borderless
+  buttons with offset shadows, a single drab red-orange accent, darker screen edges and a key-hint footer.
+  Noto Sans JP is bundled (no internet needed). Dark mode follows the same rules.
+- Toolbars grouped into menus. CHARACTER: Scrape, Generate Card, Options, Batch, then NEW ▾ (blank card, import),
+  TOOLS ▾ (Audit, Interview, View Source) and EXPORT ▾ (JSON, V3 JSON, CHARX, embedded lorebook). LORE: GENERATE ▾
+  (from URL, several URLs, from a prompt, deep extraction), New Entry, TOOLS ▾ (Clean Keywords, Test Activation,
+  Links, Trash all entries), EXPORT ▾ (SillyTavern .json, Send to SillyTavern, Quick Replies, Bible / Data Bank,
+  DeepLore) and Trash. The LORE entry editor has CONTENT / KEYS / SILLYTAVERN tabs.
+- SCRIBE-01 has a personality: a patient, precise instructor over a composed, duty-first unit, self-aware about
+  being a tool built to make cards; you can simply chat with her or keep her in character. The persona is an editable
+  text file (`backend/config/helper_persona.txt`); the work rules always apply on top of it.
+- SCRIBE-01 as a SillyTavern card: ⇩ CARD in the console (or GET /api/helper/card, ?format=json) gives a card PNG
+  with the glossary embedded as her lorebook.
+- New README screenshots (`preview.png`, `docs/screenshots/`) with original sample content, and
+  `docs/UPDATE-v2.6.md`, an overview of this release.
+- Original sample names throughout the tests and code comments (no names from existing games or shows), a new
+  browser-tab icon in the app's style, and the unused Vite template images removed.
+- `docs/DESIGN.md`: the design system in depth (principles, color and contrast, type, spacing, ornaments, every
+  component, motion, copy, dark mode, a drop-in stylesheet and React components) for use in other projects.
+- Import character cards: CHARACTER NEW ▾ > Import card takes a card PNG (V2 or V3 data inside), a card .json
+  (V1, V2 or V3, from this app or others) or a .charx. It becomes a new card with its portrait; an embedded lorebook
+  becomes a LORE project and is attached to the card. Route: POST /api/card/import.
+- Helper (SCRIBE-01) in the CHARACTER, LORE and TEXT studios: a support unit you talk to in plain words.
+  It can create and edit character cards, create lorebooks and add, edit or trash their entries, read TEXT
+  projects and their entries, and explain SillyTavern and card-writing ideas.
+- It works on what is open: the studio tells it the open card, lorebook, entry or story, and unsaved edits are
+  saved before it reads anything. The studio reloads whatever it changed; if you edited the same item meanwhile,
+  your version is kept and you are told.
+- Every change is applied at once and shown under the reply with OPEN, KEEP and UNDO (KEEP ALL / UNDO ALL for a
+  reply with several). UNDO restores the earlier state, removes what it created (entries go to the trash), and
+  refuses when the item was changed since, so newer work is never overwritten.
+- Keyword glossary for the helper (`backend/config/helper_glossary.json`): like World Info, entries whose keys
+  appear in the recent messages are added to its prompt. Editable.
+- Default card layout the helper follows: plain prose paragraphs (optional opening quote, overview, backstory,
+  personality with a few speech samples, likes/dislikes/relationships, appearance), no PList/W++.
+- Chats are stored and can be reopened from the panel. New routes under `/api/helper/`.
+- It lives in a console along the bottom (chat on the left, changes on the right). Drag the top edge to resize,
+  HIDE shrinks it to a bar, FLOAT makes it a window you can drag and resize, Ctrl+/ or the footer hint shows and
+  hides it. Its place and size are remembered.
+- PROSE SCAN: a HABITS section for patterns models fall into: "not X, but Y" emphasis, narrating what doesn't
+  happen ("she doesn't move"), a reply that repeats the other speaker's words as a question, em-dash overuse and
+  most paragraphs opening the same way. Per-chapter columns too. Generated cards get the same checks in their
+  warnings, plus a warning when a field reads like a model refusal.
+- 40 more stock phrases in `backend/config/ai_cliches.txt` ("smell of ozone", "after a beat", "breath hitched", ...).
+- First message point of view (first / second / third person), tense and greeting length in CHARACTER ⚙ Options.
+  Remembered in the browser and used by Generate Card, Batch Generate, regenerating the first message, example
+  messages or greetings, and the alternate greetings panel. Left on "Model's choice", nothing changes.
+- Generated text is cleaned up before it is saved: straight quotes, "..." for the ellipsis, no stray <p>/<div>/
+  <span>/<br>, no doubled spaces or extra blank lines, no code fence around a field, no "Name:" in front of a
+  greeting. XML-style section tags are kept; Chinese and Japanese text keeps its own quotes. Text you type is never
+  changed.
+
+### Fixed
+- The SCRIBE-01 console looked and sized its buttons differently in light and dark mode; it now has its own buttons,
+  identical in both. Scrolling inside it no longer moves the page behind it.
+- Unavailable menu items now say what they need ("open a card first", "pick a lorebook first") instead of only
+  looking faded. Escape closes the Interview dialog.
+- A floating SCRIBE-01 window saved on a bigger screen opens fully on screen; menus near the edge of a phone open the
+  other way instead of off-screen.
+- The app no longer breaks in a private window or with site storage blocked (theme and language settings).
+- Saving prompt templates or model presets with a partial request no longer blanks the templates, turns templates
+  off or clears the other presets; numbers are checked.
+- Saving a lore entry changes only the fields that were sent (a partial save could blank the title and content);
+  keywords sent as text become a list; bad numbers are refused; a new entry for a missing lorebook is refused.
+- Saving or exporting a card keeps every field in its shape (tags and greetings stay lists, the profile stays an object).
+- Every API route answers a missing or broken request body with a readable JSON message instead of an HTML error page,
+  and a missing card or entry is a 404 instead of a 500.
+- SCRIBE-01 says when a message is over 6,000 characters instead of silently cutting it.
+- A .charx import that would unpack to more than 200 MB is refused.
+- Starting the app no longer floods the log with proxy errors: the browser opens once the backend answers, and
+  SCRIBE-01 retries loading its last chat instead of forgetting it when the backend is still starting.
+- Accent and dark-mode dim text darkened / lightened to meet 4.5:1 contrast.
+- Cards the helper writes now fill the Structured view: it used field names the view does not show
+  (speech_patterns, goals, fears, skills). It now uses the view's fields, maps common other names onto them, and
+  fills the profile whenever it creates a card.
+
+### Tests
+- `backend/tests/test_helper.py` (through the real request code, with a scripted model) and browser suite
+  `tests/e2e/e2e11.py`; `backend/tests/test_v26_writing.py` for the writing checks, clean-up and greeting style; `backend/tests/test_card_import.py`;
+  browser suite `tests/e2e/e2e12.py` for the layout, console and import (tests/e2e/ui.py opens menus).
+
+---
+
 ## [2.5.1] - 2026-11-11
 
 ### Fixed
@@ -182,7 +269,7 @@ answers like real models do.
 ### Changed
 - Default NanoGPT model is now deepseek/deepseek-v4.1-flash everywhere (was a slow thinking model).
 - Sending to LORE: events no longer become one entry each. They roll up into an always-on "Story So Far" recap (constant) and one "Story Timeline" entry.
-- Trigger keywords are cleaned on send: generic words and other entries' names are removed, so "Yuna" no longer fires 240 entries.
+- Trigger keywords are cleaned on send: generic words and other entries' names are removed, so a main character's name no longer fires 240 entries.
 - Extraction prompt and filter skip body parts, acts, feelings and generic scenery; events must be plot-significant.
 - A failed events step keeps the inventory event titles instead of saving 0 events.
 - Chub-compatible V2 card export.
@@ -266,7 +353,7 @@ answers like real models do.
 - **`race`** retained for biological subtype
 - **Fandom tab panel extraction** — Personality and Appearance tabs now extracted separately
   before the main section walk
-- **Date-pattern history routing** — sections named `Raccoon City (1998)` now route to history
+- **Date-pattern history routing** — sections named `Harbor City (1998)` now route to history
 - **JSON-LD image fallback** — catches pages where portable infobox image is missing
 - **Faction/affiliation aliases expanded** — `faction`, `clan`, `guild`, `side`, `crew` etc.
 - **Language aliases added to ethnicity** — `language`, `native language`, `homeland` etc.
@@ -393,7 +480,7 @@ answers like real models do.
 - Both values saved to `settings.json` and applied per-generation without restart
 
 #### Scraper improvements
-- **URL fragment stripping** — `#section-anchor` removed before fetching (fixes `Chun-Li#SF6` style URLs)
+- **URL fragment stripping** — `#section-anchor` removed before fetching (fixes `Name#Section` style URLs)
 - **Expanded section aliases** — 40+ new section names added to abilities bucket including:
   `powers and abilities`, `powers & abilities`, `supernatural abilities`, `demonic abilities`,
   `devil trigger`, `special moves`, `super arts`, `critical arts`, `moveset`, `attacks` and more
@@ -432,11 +519,11 @@ answers like real models do.
 - **Birth date aliases** — `date of birth`, `born`, `dob`, `birthdate` all map to the `age` field
 - **Wiki hedging cleaned** — `"Unknown or Chinese"` → `"Chinese"`, `"Unknown (possibly British)"` → `"possibly British"`
 - **Nationality/ethnicity aliases** — `Race/Nationality`, `ethnicity`, `citizenship`, `country of origin` all map to `ethnicity`
-- **Date-pattern history sections** — sections named with year patterns (`Raccoon City (1998)`, `2012-2013`) now route to `history` instead of `uncategorized_sections`
+- **Date-pattern history sections** — sections named with year patterns (`Harbor City (1998)`, `2012-2013`) now route to `history` instead of `uncategorized_sections`
 
 #### Scraper fixes
 - **`.wds-tab__content` handling** — Fandom tab panels (Personality, Appearance, etc.) now extracted separately before the main section walk, preventing tab content from being stripped or corrupting section order
-- **JSON-LD image extraction** — `<script type="application/ld+json">` is now checked as a fallback image source; catches Fandom pages where the portable infobox image is missing (e.g. Resident Evil wiki)
+- **JSON-LD image extraction** — `<script type="application/ld+json">` is now checked as a fallback image source; catches Fandom pages where the portable infobox image is missing (some game wikis)
 - **Story sections fallback** — when `personality` and `appearance` are sparse, uncategorized narrative sections are included as `story_sections` for the generator to infer from
 
 ## [2.1.0] — 2026-06-12

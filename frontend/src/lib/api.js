@@ -57,6 +57,8 @@
  * - Add auth: add an Authorization header to all requests.
  */
 
+import { greetingStyleToSend } from "./greetingStyle";
+
 export async function readJsonSafe(res) {
   const text = await res.text();
   try {
@@ -108,6 +110,7 @@ export async function startCharacterGenerate(sourceId, provider, model, asNew = 
       provider,
       model,
       as_new: asNew,
+      ...(greetingStyleToSend() ? { greeting_style: greetingStyleToSend() } : {}),
       ...opts,
     }),
   });
@@ -145,6 +148,7 @@ export async function regenerateField(cardId, fieldName, options = {}) {
   formData.append("custom_prompt", customPrompt);
   formData.append("include_current_card", String(includeCurrentCard));
   formData.append("include_source", String(includeSource));
+  if (greetingStyleToSend()) formData.append("greeting_style", JSON.stringify(greetingStyleToSend()));
 
   const res = await fetch(`/api/generate/field/${cardId}`, {
     method: "POST",
@@ -211,7 +215,7 @@ export async function regenerateGreeting(cardId, idx, customPrompt = "") {
   const res = await fetch(`/api/generate/greeting/${cardId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idx, custom_prompt: customPrompt }),
+    body: JSON.stringify({ idx, custom_prompt: customPrompt, greeting_style: greetingStyleToSend() || undefined }),
   });
   const data = await readJsonSafe(res);
   if (!res.ok) throw new Error(data.error || "Greeting regeneration failed");
@@ -399,7 +403,7 @@ export async function startBatchGenerate(urls, provider, model) {
   const res = await fetch("/api/generate/batch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ urls, provider, model }),
+    body: JSON.stringify({ urls, provider, model, greeting_style: greetingStyleToSend() || undefined }),
   });
   const data = await readJsonSafe(res);
   if (!res.ok) throw new Error(data.error || "Batch generate failed");
@@ -737,4 +741,36 @@ export async function getRelationGraph(projectId) {
 /** Facts only some characters know: [{text, known_by: [names]}]. Each becomes a LORE entry filtered to them. */
 export async function setEntitySecrets(entityId, secrets) {
   return _json(await fetch(`/api/text/entity/${entityId}/secrets`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ secrets }) }), "Could not save the secrets");
+}
+
+// ── the studio helper (helper.py) ─────────────────────────────────────────────
+/** {message, chat_id?, context, provider, model} -> {chat_id, reply, changes, touched, actions, steps} */
+export async function helperChat(body) {
+  return _json(await _postJson("/api/helper/chat", body), "The helper could not answer");
+}
+export async function helperChats() {
+  return _json(await fetch("/api/helper/chats"), "Could not load helper chats");
+}
+export async function helperChatLoad(chatId) {
+  const res = await fetch(`/api/helper/chat/${chatId}`);
+  if (res.status === 404) { const e = new Error("That chat no longer exists"); e.notFound = true; throw e; }
+  return _json(res, "Could not load the chat");      // anything else (server still starting): the caller retries
+}
+export async function helperKeep(changeId) {
+  return _json(await _postJson(`/api/helper/change/${changeId}/keep`, {}), "Could not keep the change");
+}
+/** Resolves {ok} or throws with the reason undo was refused (the item changed again since). */
+export async function helperUndo(changeId) {
+  return _json(await _postJson(`/api/helper/change/${changeId}/undo`, {}), "Could not undo");
+}
+
+
+/** A card PNG / .json / .charx -> {card_id, name, lore_project_id?, entries?, image?, warnings}. */
+export async function importCard(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/card/import", { method: "POST", body: fd });
+  const data = await readJsonSafe(res);
+  if (!res.ok) throw new Error(data.error || "Import failed");
+  return data;
 }

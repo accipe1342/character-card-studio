@@ -13,7 +13,7 @@ scrape_url(url, session=None) -> dict
     appropriate parser. Returns a normalised source dict.
 
     Returned dict keys:
-        wiki_base       Base URL of the wiki (e.g. "soulcalibur.fandom.com")
+        wiki_base       Base URL of the wiki (e.g. "example.fandom.com")
         page_name       Last segment of the URL path
         url             Full canonical URL
         title           Page title extracted from <h1>
@@ -141,7 +141,7 @@ SECTION_ALIASES = {
         # Game-specific
         "naytiba abilities",
         "naytiba attacks",
-        # Fighting game wikis (Street Fighter, Soul Calibur, Tekken, etc.)
+        # Fighting game wikis (movesets, special moves, etc.)
         "special moves",
         "special move",
         "super moves",
@@ -314,7 +314,7 @@ def classify_section(heading: str) -> Optional[str]:
         if any(alias in normalized or normalized in alias for alias in alias_norms):
             return category
 
-    # Date/event-named sections (e.g. "Raccoon City (1998)", "Los Iluminados (2004)")
+    # Date/event-named sections (e.g. "Harbor City (1998)", "The Long Winter (2004)")
     # Route to history rather than leaving uncategorized
     if _re.search(r"\(\d{4}\)", heading) or _re.search(r"\d{4}[-–]\d{4}", heading):
         return "history"
@@ -428,7 +428,7 @@ def extract_sections(content: Tag) -> Dict[str, List[str]]:
     current_heading: Optional[str] = None
 
     # First: extract content from Fandom tab panels (.wds-tab__content)
-    # These contain Personality, Appearance, etc. on wikis like Resident Evil
+    # These contain Personality, Appearance, etc. on some game wikis
     # They are excluded from the main walk (via NOISE_SELECTORS) so must be
     # handled here before remove_noise strips them from the soup
     for tab_panel in content.select(".wds-tab__content"):
@@ -734,7 +734,7 @@ def scrape_url(url: str, session: Optional[requests.Session] = None) -> Dict[str
     url = url.strip()
 
     # Strip URL fragment (#section-anchor) before any processing
-    # e.g. https://streetfighter.fandom.com/wiki/Chun-Li#SF6 -> Chun-Li
+    # e.g. https://example.fandom.com/wiki/Main_Character#Season_2 -> Main_Character
     if "#" in url:
         url = url.split("#")[0]
 
@@ -770,7 +770,7 @@ def scrape_url(url: str, session: Optional[requests.Session] = None) -> Dict[str
 
 
 if __name__ == "__main__":
-    example_url = "https://soulcalibur.fandom.com/wiki/Ivy"
+    example_url = "https://example.fandom.com/wiki/Ivy"
     result = scrape_url(example_url)
     print("Title:", result["title"])
     print("Summary:", result["normalized"]["summary"][:250], "...")

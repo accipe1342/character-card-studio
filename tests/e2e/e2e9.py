@@ -7,6 +7,7 @@ import re, sys, requests
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "backend"))
 import png_card
 from playwright.sync_api import sync_playwright
+from ui import menu, open_menu
 B = "http://127.0.0.1:5173"
 R = []
 def ok(c, n): R.append(bool(c)); print(("PASS " if c else "FAIL ") + n)
@@ -22,14 +23,14 @@ with sync_playwright() as pw:
     pg.on("dialog", lambda d: d.accept())
     pg.goto("http://localhost:5173/"); pg.wait_for_timeout(800)
     pg.get_by_role("button", name=re.compile(r"^\s*CHARACTER\s*$", re.I)).first.click(); pg.wait_for_timeout(500)
-    pg.get_by_role("button", name=re.compile("New Card")).click(); pg.wait_for_timeout(1000)
+    menu(pg, "NEW", "New Card"); pg.wait_for_timeout(1000)
     pg.locator("section").filter(has_text="Preview").locator("input[type=file]").first.set_input_files(pic)
     pg.wait_for_timeout(2000)
     cards = requests.get(B + "/api/cards").json()
     newest = next((c for c in cards if c.get("image") == PIC), {})
     ok(bool(newest), "uploaded portrait saved with the card")
     # another blank card: no picture
-    pg.get_by_role("button", name=re.compile("New Card")).click(); pg.wait_for_timeout(1000)
+    menu(pg, "NEW", "New Card"); pg.wait_for_timeout(1000)
     ok(pg.locator("text=No image uploaded yet").count() == 1, "a new card starts without the last picture")
     # reload, open the first card from the Library: its picture comes back
     pg.reload(); pg.wait_for_timeout(1000)
@@ -41,7 +42,7 @@ with sync_playwright() as pw:
     ok(shown == f"/api/images/{newest['image']}", f"reopened card shows its saved portrait ({shown})")
     import io, json, zipfile
     with pg.expect_download() as dl:
-        pg.get_by_role("button", name="CHARX", exact=True).click()
+        menu(pg, "EXPORT", r"^CHARX$")
     z = zipfile.ZipFile(dl.value.path())
     v3 = json.loads(z.read("card.json"))
     ok(dl.value.suggested_filename.endswith(".charx") and z.read("assets/icon/images/main.png") == raw
@@ -59,15 +60,15 @@ with sync_playwright() as pw:
     proj = next(p for p in texts if p.get("lore_project_id"))
     pg.get_by_role("button", name=re.compile(r"^\s*TEXT\s*$", re.I)).first.click(); pg.wait_for_timeout(600)
     pg.locator("div", has_text=re.compile("^" + re.escape(proj["name"]) + r"\s*[\d.]+k? chars")).last.click(); pg.wait_for_timeout(1200)
-    pg.locator("section").filter(has_text="REVIEW").locator("div", has_text=re.compile(r"^Rikku$")).first.click(); pg.wait_for_timeout(500)
+    pg.locator("section").filter(has_text="REVIEW").locator("div", has_text=re.compile(r"^Corin$")).first.click(); pg.wait_for_timeout(500)
     pg.get_by_label("Character picture").set_input_files(pic); pg.wait_for_timeout(1500)
     ok(pg.locator("img[alt=Portrait]").count() == 1, "TEXT character shows its picture")
     E = {e["name"]: e for e in requests.get(B + f"/api/text/project/{proj['id']}").json()["entities"]}
-    ok(bool(E["Rikku"].get("image")), "TEXT picture saved")
+    ok(bool(E["Corin"].get("image")), "TEXT picture saved")
     mk = pg.get_by_role("button", name=re.compile(r"MAKE CARD")).first
     mk.scroll_into_view_if_needed(); mk.evaluate("b => b.click()"); pg.wait_for_timeout(2000)
     shown = pg.locator("section").filter(has_text="Preview").locator("img").first.get_attribute("src") or ""
-    ok(shown == f"/api/images/{E['Rikku']['image']}", "MAKE CARD brings the picture to the CHARACTER studio")
+    ok(shown == f"/api/images/{E['Corin']['image']}", "MAKE CARD brings the picture to the CHARACTER studio")
     ok(not errs, f"no page errors {errs[:2]}")
     b.close()
 print("FAILS:", R.count(False))

@@ -7,8 +7,8 @@ import database as db
 
 def test_lore_entry_type_is_saved(client, H):
     pid = db.create_lore_project("Types")
-    eid = db.save_lore_entry(pid, None, "Spira", "concept", ["Spira"], "s", "The world.")
-    client.patch(f"/api/lore/entry/{eid}", json={"title": "Spira", "entry_type": "place", "keywords": ["Spira"],
+    eid = db.save_lore_entry(pid, None, "Aldmere", "concept", ["Aldmere"], "s", "The world.")
+    client.patch(f"/api/lore/entry/{eid}", json={"title": "Aldmere", "entry_type": "place", "keywords": ["Aldmere"],
                                                 "content": "The world.", "summary": "s"}, headers=H)
     assert client.get(f"/api/lore/entry/{eid}", headers=H).get_json()["entry_type"] == "place"
 
@@ -24,8 +24,8 @@ def test_clear_entries_keeps_project_id(client, H):
 
 def test_clean_keywords_preview_then_apply(client, H):
     pid = db.create_lore_project("Clean")
-    db.save_lore_entry(pid, None, "Paine", "character", ["Paine"], "s", "Warrior.")
-    mid = db.save_lore_entry(pid, None, "Mascot dress sphere", "item", ["Mascot dress sphere", "spell", "Paine", "mascot"], "s", "A sphere.")
+    db.save_lore_entry(pid, None, "Vessa", "character", ["Vessa"], "s", "Warrior.")
+    mid = db.save_lore_entry(pid, None, "Mascot spirit mask", "item", ["Mascot spirit mask", "spell", "Vessa", "mascot"], "s", "A sphere.")
     prev = client.post(f"/api/lore/project/{pid}/clean-keywords", json={}, headers=H).get_json()
     assert prev["changed"] == 1 and not prev["applied"]
     client.post(f"/api/lore/project/{pid}/clean-keywords", json={"apply": True}, headers=H)
@@ -33,7 +33,7 @@ def test_clean_keywords_preview_then_apply(client, H):
     if isinstance(kw, str):
         import json
         kw = json.loads(kw)
-    assert kw == ["Mascot dress sphere", "mascot"]
+    assert kw == ["Mascot spirit mask", "mascot"]
 
 
 def test_lore_list_has_content_size(client, H):
@@ -45,10 +45,10 @@ def test_lore_list_has_content_size(client, H):
 
 def test_generate_as_new_keeps_the_existing_card(client, H):
     app_module.generate_full_card = lambda source, provider, model, options=None: {
-        "name": "Rikku", "description": "d", "personality": "", "scenario": "", "first_mes": "hi", "mes_example": "",
+        "name": "Corin", "description": "d", "personality": "", "scenario": "", "first_mes": "hi", "mes_example": "",
         "tags": [], "structured_profile": {}, "alternate_greetings": []}
-    sid = db.save_source({"wiki_base": "manual", "page_name": "rikku", "url": "manual://rikku-test", "title": "Rikku",
-                          "raw_html": "", "raw_infobox": {}, "raw_sections": {}, "normalized": {"title": "Rikku"}})
+    sid = db.save_source({"wiki_base": "manual", "page_name": "corin", "url": "manual://corin-test", "title": "Corin",
+                          "raw_html": "", "raw_infobox": {}, "raw_sections": {}, "normalized": {"title": "Corin"}})
 
     def gen(as_new):
         job = client.post("/api/generate/start", json={"source_id": sid, "as_new": as_new}, headers=H).get_json()["job_id"]

@@ -47,6 +47,14 @@ def build_charx(card, mode="natural", lore_project_id=None, image_bytes=None):
 def api_export_charx():
     d = request.get_json(force=True) or {}
     card = d.get("card") or {}
+    if not isinstance(card, dict):
+        return jsonify({"error": "'card' must be the card object"}), 400
+    from generator import clean_card_payload
+    card = clean_card_payload(card)
+    try:
+        d["lore_project_id"] = int(d["lore_project_id"]) if d.get("lore_project_id") not in (None, "", 0, "0") else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "lore_project_id must be a number"}), 400
     if not str(card.get("name") or "").strip():
         return jsonify({"error": "The card needs a name first"}), 400
     raw = None

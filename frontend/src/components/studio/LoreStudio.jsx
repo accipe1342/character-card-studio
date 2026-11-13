@@ -61,10 +61,12 @@
  *   pass them to startLoreCrawl() / startMultiLore() in api.js.
  */
 
+import NierMenu, { MenuItem, MenuSep } from "../shared/NierMenu";
 import React, { useState, useEffect } from "react";
 import MainJobStatus from "../shared/MainJobStatus";
 import { markBusy } from "../../lib/leaveGuard";
 import { QuickRepliesButton, StoryExportsButton, TrimButton } from "./AssistPanels";
+import { onHelperChange, registerHelperFlush, setHelperContext } from "../../lib/helperBus";
 import { AdvancedWI, BudgetMeter, EntryHints, LinksPanel, SimulatorPanel, TrashPanel, isAlwaysOn, ENTRY_TOKEN_SOFT_LIMIT } from "./LoreTools";
 import {
   startLoreCrawl, startLoreSingle, startLoreMulti, listLoreEntries, getLoreEntry,
@@ -81,9 +83,9 @@ function loreIssues(e, dupTitles) {
   if (on) out.push(["ALWAYS ON", "var(--signal-btn-active-bg)", "Exported as a constant entry: always in context"]);
   if (!(e.keywords || []).length && !on) out.push(["NO KEYS", "#6b6b6b", "No trigger keywords: it will never load"]);
   if (e.user_edited && e.provider === "text-module") out.push(["EDITED", "#6b6458", "Edited by hand: re-sending from TEXT keeps your version"]);
-  if ((e.content_chars ?? 1) < 15) out.push(["EMPTY", "#c84a3a", "Almost no content"]);
-  if (!on && (e.content_chars ?? 0) / 4 > ENTRY_TOKEN_SOFT_LIMIT * 2) out.push(["LONG", "#b8860b", `Over ${ENTRY_TOKEN_SOFT_LIMIT * 2} tokens: long entries crowd out others`]);
-  if (dupTitles.has((e.title || "").trim().toLowerCase())) out.push(["DUP", "#b8860b", "Another entry has the same title"]);
+  if ((e.content_chars ?? 1) < 15) out.push(["EMPTY", "var(--signal-accent)", "Almost no content"]);
+  if (!on && (e.content_chars ?? 0) / 4 > ENTRY_TOKEN_SOFT_LIMIT * 2) out.push(["LONG", "var(--signal-warn)", `Over ${ENTRY_TOKEN_SOFT_LIMIT * 2} tokens: long entries crowd out others`]);
+  if (dupTitles.has((e.title || "").trim().toLowerCase())) out.push(["DUP", "var(--signal-warn)", "Another entry has the same title"]);
   return out;
 }
 
@@ -109,6 +111,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
 
   const [entries, setEntries] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [edTab, setEdTab] = useState("content");     // entry editor tab: content | keys | st
   const [entry, setEntry] = useState(null);
   const [saving, setSaving] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
@@ -296,6 +299,35 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
       setSaving(false);
     }
   }
+
+  // the helper side panel: what is open, save before it reads, reload what it changed
+  const selectedIdRef = React.useRef(null);
+  selectedIdRef.current = selectedId;
+  useEffect(() => {
+    const label = [activeProject?.project_name, entry?.title].filter(Boolean).join(" / ");
+    setHelperContext("lore", { lore_project_id: activeProject?.id || null, lore_entry_id: entry?.id || null, label, provider, model });
+  }, [activeProject, entry?.id, entry?.title, provider, model]);
+  useEffect(() => registerHelperFlush("lore", async () => {
+    if (entryRef.current && JSON.stringify(entryRef.current) !== baselineRef.current) await handleSaveEntry(true);
+  }), []);
+  useEffect(() => onHelperChange(async (touched) => {
+    if (!touched.some((x) => x.kind === "entry" || x.kind === "project")) return;
+    await loadProjects();
+    await loadEntries(activeProjectRef.current);
+    const sel = selectedIdRef.current;
+    if (!sel || !touched.some((x) => x.kind === "entry" && x.id === sel)) return;
+    if (entryRef.current && JSON.stringify(entryRef.current) !== baselineRef.current) {
+      showToast && showToast("You edited this entry while the helper worked: your version was kept");
+      return;
+    }
+    try {
+      const data = await getLoreEntry(sel);
+      if (data.deleted) { setSelectedId(null); setEntry(null); return; }     // the helper moved it to the trash
+      if (!Array.isArray(data.keywords)) data.keywords = [];
+      baselineRef.current = JSON.stringify(data);
+      setEntry(data); setDirty(false);
+    } catch { setSelectedId(null); setEntry(null); }
+  }), []);
 
   // autosave 1.2 s after the last edit
   useEffect(() => {
@@ -506,12 +538,6 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
 
   return (
     <div>
-      <h1 className="signal-title signal-heading" style={{ marginTop: 0, marginBottom: 4, display: "block", textAlign: "center" }}>
-        {t.loreStudio || "Lore Studio"}
-      </h1>
-      <p style={{ color: "var(--signal-text-dim)", textAlign: "center", marginBottom: 20, letterSpacing: "0.04em" }}>
-        {t.loreSubtitle || "World entries • factions • places • events"}
-      </p>
 
       {/* Toolbar */}
       <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
@@ -579,77 +605,42 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <button className="signal-btn" onClick={handleStartCrawl} disabled={loading || crawlMode === "multi"} style={btnStyle}>
-          {loading && crawlMode === "single" ? (t.working || "Working...") : "⟳ " + (t.generateFromUrl || "Generate from URL")}
-        </button>
-
-        <label title="Several passes per page: lists every named entity and event, re-checks for misses, then writes details. Slower and uses more model calls, but doesn't stop at a handful of entries."
-          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, letterSpacing: "0.05em", cursor: "pointer" }}>
-          <input type="checkbox" checked={deep} onChange={e => setDeep(e.target.checked)} />
-          DEEP EXTRACTION
-        </label>
-
-        <button
-          className="signal-btn"
-          onClick={() => { setCrawlMode(m => m === "multi" ? "single" : "multi"); }}
-          style={btnStyle}
-        >
-          {crawlMode === "multi" ? (t.cancelBatch || "Cancel") : (t.severalUrls || "Several URLs")}
-        </button>
-
-
-
-        {entries.length > 0 && (
-          <button className="signal-btn" onClick={handleExport} style={btnStyle}
-            title="World Info lorebook for SillyTavern (import in the World Info panel)">
-            ↓ {t.exportSillyTavern || "SillyTavern (.json)"}
-          </button>
-        )}
-        {activeProject && entries.length > 0 && (
-          <button className="signal-btn" onClick={handleSendToST} style={btnStyle}
-            title="Save this project as a World Info lorebook in a running SillyTavern (Config → SillyTavern). Same name = replaced.">
-            ⇢ {t.sendToSTShort || "Send to SillyTavern"}
-          </button>
-        )}
-        {activeProject && entries.length > 0 && <QuickRepliesButton kind="lore" projectId={activeProject.id} style={btnStyle} label={t.quickReplies || "Quick Replies"} />}
-        {activeProject && entries.length > 0 && <StoryExportsButton kind="lore" projectId={activeProject.id} style={btnStyle} label={t.storyExports || "Bible / Data Bank"} />}
-        {activeProject && entries.length > 0 && (
-          <button className="signal-btn" onClick={handleCleanKeywords} style={btnStyle}
-            title="Remove generic trigger words and other entries' names from keywords, so each entry fires only for itself">
-            ⌫ {t.cleanKeywords || "Clean Keywords"}
-          </button>
-        )}
-        {entries.length > 0 && (
-          <button className="signal-btn" onClick={handleExportDeepLore} style={btnStyle}
-            title="Zip of markdown notes for the DeepLore extension (Obsidian vault)">
-            ↓ {t.exportDeepLore || "DeepLore (.zip)"}
-          </button>
-        )}
-        {entries.length > 0 && (
-          <button className={toolPanel === "sim" ? "signal-btn signal-btn-active" : "signal-btn"} onClick={() => setToolPanel(p => p === "sim" ? null : "sim")} style={btnStyle}
-            title="Paste chat text and see which entries SillyTavern would insert, and why">
-            ▶ {t.testActivation || "Test Activation"}
-          </button>
-        )}
-        {activeProject && entries.length > 0 && (
-          <button className={toolPanel === "links" ? "signal-btn signal-btn-active" : "signal-btn"} onClick={() => setToolPanel(p => p === "links" ? null : "links")} style={btnStyle}
-            title="Which entries mention which (recursion), unlinked entries and entries that never fire">
-            ⌘ {t.links || "Links"}
-          </button>
-        )}
-        <button className={toolPanel === "trash" ? "signal-btn signal-btn-active" : "signal-btn"} onClick={() => setToolPanel(p => p === "trash" ? null : "trash")} style={btnStyle}
-          title="Deleted entries: restore them or delete them for good">
-          ♻ {t.trash || "Trash"}
-        </button>
+      {/* Actions: Generate / New entry on the left, Tools / Export / Trash on the right (NieR-style menus) */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <NierMenu primary label={loading ? (t.working || "Working...").toUpperCase() : "⟳ " + (t.generateMenu || "GENERATE")}>
+          <MenuItem onClick={handleStartCrawl} disabled={loading || crawlMode === "multi"}>{t.generateFromUrl || "Generate from URL"}</MenuItem>
+          <MenuItem onClick={() => { setCrawlMode(m => m === "multi" ? "single" : "multi"); }}>
+            {crawlMode === "multi" ? (t.cancelBatch || "Cancel") + " " + (t.severalUrls || "Several URLs").toLowerCase() : (t.severalUrls || "Several URLs")}
+          </MenuItem>
+          <MenuItem onClick={() => setShowGenPanel(v => !v)}>{t.generateFromPrompt || "Generate from Prompt"}</MenuItem>
+          <MenuSep />
+          <label className="nier-menu-check" title="Several passes per page: lists every named entity and event, re-checks for misses, then writes details. Slower and uses more model calls, but doesn't stop at a handful of entries.">
+            <input type="checkbox" checked={deep} onChange={e => setDeep(e.target.checked)} /> Deep extraction (slower, more entries)
+          </label>
+        </NierMenu>
         <button className="signal-btn" onClick={handleNewEntry} style={btnStyle}>
           + {t.newEntry || "New Entry"}
         </button>
-        <button className="signal-btn" onClick={() => setShowGenPanel(v => !v)} style={btnStyle}>
-          ✦ {t.generateFromPrompt || "Generate from Prompt"}
-        </button>
-        {activeProject && entries.length > 0 && (
-          <button className="signal-btn" onClick={async () => {
+
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 12, color: "var(--signal-text-dim)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+          {entries.length} {entries.length === 1 ? "entry" : "entries"}
+        </span>
+        <NierMenu label={t.toolsMenu || "TOOLS"} align="right" width={260}>
+          <MenuItem disabled={!activeProject || !entries.length} why={!activeProject ? "pick a lorebook first" : "no entries yet"} onClick={handleCleanKeywords}
+            title="Remove generic trigger words and other entries' names from keywords, so each entry fires only for itself">
+            {t.cleanKeywords || "Clean Keywords"}
+          </MenuItem>
+          <MenuItem disabled={!entries.length} why="no entries yet" onClick={() => setToolPanel(p => p === "sim" ? null : "sim")}
+            title="Paste chat text and see which entries SillyTavern would insert, and why">
+            {t.testActivation || "Test Activation"}{toolPanel === "sim" ? " ✓" : ""}
+          </MenuItem>
+          <MenuItem disabled={!activeProject || !entries.length} why={!activeProject ? "pick a lorebook first" : "no entries yet"} onClick={() => setToolPanel(p => p === "links" ? null : "links")}
+            title="Which entries mention which (recursion), unlinked entries and entries that never fire">
+            {t.links || "Links"}{toolPanel === "links" ? " ✓" : ""}
+          </MenuItem>
+          <MenuSep />
+          <MenuItem disabled={!activeProject || !entries.length} why={!activeProject ? "pick a lorebook first" : "no entries yet"} onClick={async () => {
             if (!window.confirm(`Move all ${entries.length} entries in "${activeProject.project_name}" to the trash?`)) return;
             try {
               await clearLoreProject(activeProject.id);   // keeps the project id (TEXT links and card lorebooks point at it)
@@ -657,14 +648,28 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
               setEntries([]); setEntry(null); setSelectedId(null); setTrashKey(k => k + 1);
               if (showToast) showToast("Entries moved to the trash");
             } catch (er) { setError(er.message); }
-          }} className="signal-btn" style={{ ...btnStyle, borderColor: "#c84a3a", color: "#c84a3a" }}>
-            ♻ {t.trashAllEntries || "Trash all entries"}
-          </button>
-        )}
-        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--signal-text-dim)", alignSelf: "center" }}>
-          {activeProject && <span style={{ fontWeight: 700, marginRight: 6 }}>📁 {activeProject.project_name}</span>}
-          {entries.length} {entries.length === 1 ? "entry" : "entries"}
-        </span>
+          }}>
+            <span style={{ color: "var(--signal-accent)" }}>{t.trashAllEntries || "Trash all entries"}</span>
+          </MenuItem>
+        </NierMenu>
+        <NierMenu label={t.exportMenu || "EXPORT"} align="right" width={280} keepMounted disabled={!entries.length}>
+          <MenuItem onClick={handleExport} title="World Info lorebook for SillyTavern (import in the World Info panel)">
+            {t.exportSillyTavern || "SillyTavern (.json)"}
+          </MenuItem>
+          <MenuItem disabled={!activeProject} why="pick a lorebook first" onClick={handleSendToST}
+            title="Save this project as a World Info lorebook in a running SillyTavern (Config → SillyTavern). Same name = replaced.">
+            {t.sendToSTShort || "Send to SillyTavern"}
+          </MenuItem>
+          {activeProject && <QuickRepliesButton kind="lore" projectId={activeProject.id} style={btnStyle} label={t.quickReplies || "Quick Replies"} />}
+          {activeProject && <StoryExportsButton kind="lore" projectId={activeProject.id} style={btnStyle} label={t.storyExports || "Bible / Data Bank"} />}
+          <MenuItem onClick={handleExportDeepLore} title="Zip of markdown notes for the DeepLore extension (Obsidian vault)">
+            {t.exportDeepLore || "DeepLore (.zip)"}
+          </MenuItem>
+        </NierMenu>
+        <button className={toolPanel === "trash" ? "signal-btn signal-btn-active" : "signal-btn"} onClick={() => setToolPanel(p => p === "trash" ? null : "trash")} style={btnStyle}
+          title="Deleted entries: restore them or delete them for good">
+          ♻ {t.trash || "Trash"}
+        </button>
       </div>
 
       {/* Multi-URL dropdown panel — mirrors batch generate style */}
@@ -686,7 +691,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
               />
               {multiUrls.length > 2 && (
                 <button className="signal-btn" onClick={() => removeMultiUrl(i)}
-                  style={{ padding: "0 12px", border: "1px solid #c84a3a", color: "#c84a3a", background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
+                  style={{ padding: "0 12px", border: "1px solid var(--signal-accent)", color: "var(--signal-accent)", background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
                   ✕
                 </button>
               )}
@@ -717,7 +722,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
       {job && <MainJobStatus job={job} mode="lore" />}
 
       {error && (
-        <div style={{ color: "#c84a3a", fontSize: 13, marginBottom: 10, padding: "8px 12px", border: "1px solid #c84a3a",
+        <div style={{ color: "var(--signal-accent)", fontSize: 13, marginBottom: 10, padding: "8px 12px", border: "1px solid var(--signal-accent)",
           display: "flex", justifyContent: "space-between", gap: 8 }}>
           <span>⊗ {error}</span>
           <span style={{ cursor: "pointer" }} onClick={() => setError("")}>✕</span>
@@ -853,9 +858,9 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                         setDeletingProjectId(p.id);
                       }
                     }} style={{
-                      background: deletingProjectId === p.id ? "#c84a3a" : "none",
+                      background: deletingProjectId === p.id ? "var(--signal-accent)" : "none",
                       border: "none", cursor: "pointer",
-                      color: deletingProjectId === p.id ? "#fff" : "#c84a3a",
+                      color: deletingProjectId === p.id ? "#fff" : "var(--signal-accent)",
                       fontSize: 11, padding: "0 2px",
                     }}>
                       {deletingProjectId === p.id ? "?" : "✕"}
@@ -918,7 +923,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                   className={flashEntry === e.id ? "signal-field-flash" : deletingEntry === e.id ? "signal-entry-delete-flash" : ""}
                   style={{
                     padding: "8px 10px",
-                    border: `1px solid ${deletingEntry === e.id ? "#c84a3a" : "var(--signal-border)"}`,
+                    border: `1px solid ${deletingEntry === e.id ? "var(--signal-accent)" : "var(--signal-border)"}`,
                     background: deletingEntry === e.id ? "rgba(200,74,58,0.15)" : selectedId === e.id ? "var(--signal-btn-active-bg)" : "var(--signal-bg-btn)",
                     color: selectedId === e.id ? "var(--signal-btn-active-text)" : "var(--signal-text)",
                     cursor: "pointer",
@@ -953,7 +958,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                         onClick={(ev) => handleDeleteEntry(e.id, ev)}
                         aria-label={deleteConfirm === e.id ? `Confirm: move ${e.title || "entry"} to the trash` : `Delete ${e.title || "entry"}`}
                         title={deleteConfirm === e.id ? "Click again (or X) to move it to the trash" : "Delete (to the trash)"}
-                        style={{ padding: "2px 6px", fontSize: 10, fontWeight: 700, border: `1px solid ${deleteConfirm === e.id ? "#c84a3a" : "var(--signal-border)"}`, background: deleteConfirm === e.id ? "#c84a3a" : "transparent", color: deleteConfirm === e.id ? "#fff" : "#c84a3a", cursor: "pointer", fontFamily: "inherit" }}
+                        style={{ padding: "2px 6px", fontSize: 10, fontWeight: 700, border: `1px solid ${deleteConfirm === e.id ? "var(--signal-accent)" : "var(--signal-border)"}`, background: deleteConfirm === e.id ? "var(--signal-accent)" : "transparent", color: deleteConfirm === e.id ? "#fff" : "var(--signal-accent)", cursor: "pointer", fontFamily: "inherit" }}
                       >
                         {deleteConfirm === e.id ? "?" : "✕"}
                       </button>
@@ -1016,6 +1021,17 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                 ))}
               </div>
 
+              {/* CONTENT / KEYS / SILLYTAVERN tabs (the hidden ones stay mounted) */}
+              <div role="tablist" aria-label="Entry sections" style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+                {[["content", t.contentTab || "CONTENT"], ["keys", `${t.keysTab || "KEYS"} · ${(entry.keywords || []).length}`], ["st", t.stTab || "SILLYTAVERN"]].map(([k, label]) => (
+                  <button key={k} role="tab" aria-selected={edTab === k} className={edTab === k ? "signal-btn signal-btn-active" : "signal-btn"}
+                    onClick={() => setEdTab(k)} style={{ padding: "6px 12px", fontSize: 12, letterSpacing: "0.16em", border: "1px solid transparent", cursor: "pointer" }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div role="tabpanel" hidden={edTab !== "keys"}>
               {/* Keywords */}
               <div className="signal-divider" style={{ marginBottom: 8 }}>
                 <div className="signal-divider-mark signal-divider-mark-left" />
@@ -1034,7 +1050,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                   }}>
                     {kw}
                     <button onClick={() => removeKeyword(kw)} aria-label={`Remove keyword ${kw}`} style={{
-                      background: "none", border: "none", cursor: "pointer", color: "#c84a3a",
+                      background: "none", border: "none", cursor: "pointer", color: "var(--signal-accent)",
                       padding: 0, fontSize: 12, lineHeight: 1,
                     }}>✕</button>
                   </span>
@@ -1052,7 +1068,9 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                 <button className="signal-btn" onClick={addKeyword}
                   style={{ ...btnStyle, padding: "6px 12px" }}>+</button>
               </div>
+              </div>
 
+              <div role="tabpanel" hidden={edTab !== "content"}>
               {/* Content */}
               <div className="signal-divider" style={{ marginBottom: 8 }}>
                 <div className="signal-divider-mark signal-divider-mark-left" />
@@ -1074,7 +1092,9 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                     onAccept={(text) => setEntry((prev) => ({ ...prev, content: text }))} />
                 )}
               </EntryHints>
+              </div>
 
+              <div role="tabpanel" hidden={edTab !== "st"}>
               {/* SillyTavern lorebook settings */}
               <div className="signal-divider" style={{ margin: "12px 0 10px" }}>
                 <div className="signal-divider-mark signal-divider-mark-left" />
@@ -1108,6 +1128,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
               </div>
 
               <AdvancedWI entry={entry} setEntry={setEntry} t={t} />
+              </div>
 
               {/* Save */}
               <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end", alignItems: "center" }}>

@@ -6,6 +6,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import re, requests
 from playwright.sync_api import sync_playwright
+from ui import menu, open_menu
 B = "http://127.0.0.1:5173"
 ST = os.getenv("ST_TEST_URL", "http://127.0.0.1:8123")
 USER, PW = os.getenv("ST_TEST_USER", "tester"), os.getenv("ST_TEST_PASSWORD", "pw-123")
@@ -43,10 +44,10 @@ with sync_playwright() as pw:
     lp = next(p for p in requests.get(B + "/api/lore/projects").json() if (p.get("entry_count") or 0) > 0 or True)
     pg.get_by_role("button", name=re.compile(r"^\s*LORE\s*$", re.I)).first.click(); pg.wait_for_timeout(800)
     pg.locator("div", has_text=re.compile("^" + re.escape(lp["project_name"]) + "$")).first.click(); pg.wait_for_timeout(800)
-    pg.get_by_role("button", name=re.compile("Send to SillyTavern")).click(); pg.wait_for_timeout(1500)
+    menu(pg, "EXPORT", "Send to SillyTavern"); pg.wait_for_timeout(1500)
     wi = st.post(ST + "/api/worldinfo/get", json={"name": lp["project_name"]}).json()
     ok(len(wi.get("entries") or {}) > 0, "lorebook arrived in SillyTavern's World Info")
-    pg.get_by_role("button", name=re.compile("Quick Replies")).click()
+    menu(pg, "EXPORT", "Quick Replies")
     pg.wait_for_selector("[role=dialog][aria-label='Quick Replies']", timeout=10000); pg.wait_for_timeout(500)
     dlg = pg.locator("[role=dialog][aria-label='Quick Replies']")
     ok("Recap" in dlg.inner_text(), "Quick Reply preview lists the buttons")
@@ -62,7 +63,7 @@ with sync_playwright() as pw:
     dlg.get_by_role("button", name="CLOSE").click(); pg.wait_for_timeout(300)
     # CHARACTER: new card, name it, send twice (the second replaces the first)
     pg.get_by_role("button", name=re.compile(r"^\s*CHARACTER\s*$", re.I)).first.click(); pg.wait_for_timeout(600)
-    pg.get_by_role("button", name=re.compile("New Card")).click(); pg.wait_for_timeout(1000)
+    menu(pg, "NEW", "New Card"); pg.wait_for_timeout(1000)
     before = len(st.post(ST + "/api/characters/all", json={}).json())
     name_box = pg.get_by_label(re.compile("^Name$", re.I)).first
     if name_box.count():

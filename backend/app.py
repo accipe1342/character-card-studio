@@ -89,6 +89,7 @@ import json
 import os
 import socket
 import sqlite3
+import re
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
@@ -128,7 +129,7 @@ from generator import (
     generate_lore_entry,
     _request as _gen_request,
     request_text, text_of, list_of,
-    _ensure_list,
+    _ensure_list, greeting_style, tidy_text, tidy_card, clean_card_payload,
     load_runtime_config,
 )
 from preview import (build_export_card_json, build_export_card_v3, format_structured_profile_text, normalise_lore_items,
@@ -506,7 +507,49 @@ CONFIG_PATH = BASE_DIR / "config" / "settings.json"
 
 load_dotenv(ENV_PATH, override=True)
 
+from flask import Request as _Request
+from werkzeug.exceptions import HTTPException as _HTTPException
+
+
+class _LenientRequest(_Request):
+    """A missing or broken JSON body reads as {} so every route answers with its own readable message
+    ("Missing source_id", ...) instead of an HTML "400 Bad Request" page."""
+    def on_json_loading_failed(self, e):
+        return {}
+
+    def get_json(self, *a, **kw):
+        data = super().get_json(*a, **kw)
+        return data if isinstance(data, dict) or data is None else {}   # every route here takes a JSON object
+
+
 app = Flask(__name__)
+app.request_class = _LenientRequest
+
+
+@app.errorhandler(_HTTPException)
+def _http_error_as_json(e):
+    """API errors come back as JSON {"error"} (the studios show the message), never as an HTML page."""
+    if request.path.startswith("/api/"):
+        return jsonify({"error": e.description or e.name}), e.code
+    return e
+
+
+_NOT_FOUND = re.compile(r"^(Card|Source|Lore entry|Lore project|Project|Entry|Chat|Job)\b.*\bnot found", re.I)
+
+
+@app.after_request
+def _not_found_is_404(resp):
+    """Routes that catch everything report a missing row as a 500; it is a 404."""
+    if resp.status_code == 500 and resp.is_json:
+        try:
+            msg = str((resp.get_json(silent=True) or {}).get("error") or "")
+        except Exception:
+            msg = ""
+        if _NOT_FOUND.match(msg):
+            resp.status_code = 404
+    return resp
+
+
 init_db()
 try:
     _n_interrupted = mark_interrupted_jobs()
@@ -586,6 +629,10 @@ from charx import register_charx   # Character Card V3 .charx (zip with the port
 register_charx(app)
 from story_export import register_story_export   # story bible (md / printable html), Data Bank pack
 register_story_export(app)
+from helper import register_helper   # SCRIBE-01: the studio helper side panel (cards, lorebooks, advice)
+register_helper(app)
+from card_import import register_card_import   # import a card PNG / JSON / CHARX into the library
+register_card_import(app)
 # (lore_routes is registered further down, once the job and logging helpers exist)
 
 # ── Custom logging setup ──────────────────────────────────────────────────────
@@ -705,7 +752,7 @@ def api_generate_start():
         if not source_id:
             return jsonify({"error": "Missing source_id"}), 400
 
-        options = {k: data.get(k) for k in ("story_point", "user_role", "token_target", "style", "deep")
+        options = {k: data.get(k) for k in ("story_point", "user_role", "token_target", "style", "deep", "greeting_style")
                    if data.get(k) not in (None, "")}
         if data.get("lore_project_id"):
             options["lore_aware"] = True
@@ -735,6 +782,7 @@ def api_generate_batch():
         if len(urls) > 10:
             return jsonify({"error": "Maximum 10 URLs per batch"}), 400
 
+        batch_opts = {"greeting_style": data["greeting_style"]} if data.get("greeting_style") else None
         job_id = create_job()
 
         def run():
@@ -753,7 +801,7 @@ def api_generate_batch():
                                progress=pct + 5,
                                message=f"[{i+1}/{len(urls)}] Generating {source.get('title', url.split('/')[-1])}...")
 
-                    generated = generate_full_card(source, provider, model); generated.pop("_warnings", None)
+                    generated = generate_full_card(source, provider, model, options=batch_opts); generated.pop("_warnings", None)
                     generated["provider"] = provider
                     generated["model"] = model
                     # Merge sex -> gender if needed
@@ -1023,7 +1071,10 @@ def api_get_card(card_id):
 
 @app.post("/api/save-card/<int:card_id>")
 def api_save_card(card_id):
-    payload = request.get_json(force=True)
+    payload = request.get_json(force=True) or {}
+    if not payload:
+        return jsonify({"error": "Send the card as a JSON object"}), 400
+    payload = clean_card_payload(payload)          # a list stays a list, text stays text, the profile stays an object
 
     card = get_card(card_id)
     payload["provider"] = card["provider"]
@@ -1071,13 +1122,14 @@ def api_generate_greeting(card_id: int):
         existing = greetings[idx] if idx is not None and idx < len(greetings) else ""
         existing_first = card.get("first_mes", "")
         name = card.get("name", "Character")
+        style_rule = greeting_style(data.get("greeting_style"))
 
         prompt = f"""You are writing a SillyTavern character card field.
 
 Task: Write ONE alternate first message (opening greeting) for the character "{name}".
-- Write in character, first person, in-character voice
+- Write in character, in the character's own voice
 - Make it distinct from the existing first message
-- Keep it concise and roleplay-ready (1-4 sentences)
+- {style_rule or "Match the point of view, tense and length of the existing first message"}
 - Do not write actions or dialogue for {{{{user}}}}
 - Output valid JSON only: {{"greeting": "..."}}
 
@@ -1092,7 +1144,7 @@ Character card context:
 {json.dumps({"name": name, "personality": card.get("personality",""), "scenario": card.get("scenario","")}, ensure_ascii=False)}"""
 
         result = request_text(card["provider"], card["model"], prompt, None, "greeting")
-        greeting = text_of(result.get("greeting"), "\n")      # plain-prose answers count too
+        greeting = tidy_text(text_of(result.get("greeting"), "\n"), name)      # plain-prose answers count too
         if not greeting:
             return jsonify({"error": "The model returned no greeting. Try again or pick another model."}), 502
 
@@ -1199,6 +1251,7 @@ def regenerate_field(card_id: int):
             custom_prompt=custom_prompt,
             include_current_card=include_current_card,
             include_source=include_source,
+            greeting_style_opt=data.get("greeting_style") or None,
         )
     except Exception as e:                     # a readable message for the studio instead of an HTML error page
         log_error(f"Field regenerate failed ({field_name}): {e}")
@@ -1272,12 +1325,19 @@ def api_export_v2():
     try:
         data = request.get_json(force=True) or {}
         card = data.get("card") or {}
+        if not isinstance(card, dict):
+            return jsonify({"error": "'card' must be the card object"}), 400
+        card = clean_card_payload(card)
         structured = data.get("mode") == "structured"
         out = (build_export_card_v3(card, structured=structured) if data.get("spec") == "v3"
                else build_export_card_json(card, structured=structured))
         lore_id = data.get("lore_project_id")
         if lore_id not in (None, "", 0, "0"):
-            book = build_character_book(int(lore_id))
+            try:
+                lore_id = int(lore_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "lore_project_id must be a number"}), 400
+            book = build_character_book(lore_id)
             if book["entries"]:
                 out["data"]["character_book"] = book
         return jsonify(out)
@@ -1315,41 +1375,40 @@ def api_get_prompts():
 def api_save_prompts():
     try:
         data = request.get_json(force=True) or {}
-        from prompt_templates import save_prompt_templates
-        save_prompt_templates(
-            data.get("character_generation_template", ""),
-            data.get("field_regeneration_template", ""),
-        )
-        # Save lore template to prompts.json
-        lore_tpl = data.get("lore_generation_template", "")
-        templates_path = str(BASE_DIR / "config" / "prompts.json")
-        os.makedirs("config", exist_ok=True)
+        # only the keys that were sent change: a partial or empty request must never blank the saved templates
+        templates_path = BASE_DIR / "config" / "prompts.json"
+        templates_path.parent.mkdir(parents=True, exist_ok=True)
         existing = {}
-        if os.path.exists(templates_path):
+        if templates_path.exists():
             try:
-                with open(templates_path, "r", encoding="utf-8") as f:
-                    existing = json.load(f)
-            except Exception:
-                pass
-        existing["lore_generation_template"] = lore_tpl
-        with open(templates_path, "w", encoding="utf-8") as f:
-            json.dump(existing, f, ensure_ascii=False, indent=2)
+                existing = json.loads(templates_path.read_text(encoding="utf-8")) or {}
+            except (OSError, ValueError):
+                existing = {}
+        for key in ("character_generation_template", "field_regeneration_template", "lore_generation_template"):
+            if key in data:
+                existing[key] = str(data.get(key) or "")
+        templates_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
 
-        # Save use_templates to settings.json (where generator reads it)
-        settings_path = str(BASE_DIR / "config" / "settings.json")
+        # use_templates / temperature / max tokens go to settings.json (where the generator reads them)
+        settings_path = BASE_DIR / "config" / "settings.json"
         settings = {}
-        if os.path.exists(settings_path):
+        if settings_path.exists():
             try:
-                with open(settings_path, "r", encoding="utf-8") as f:
-                    settings = json.load(f)
-            except Exception:
-                pass
-        settings["use_templates"] = data.get("use_templates", False)
-        settings["temperature"] = float(data.get("temperature", 0.7))
-        settings["max_tokens"] = int(data.get("max_tokens", 4096))
-        settings["extract_max_tokens"] = max(1024, min(int(data.get("extract_max_tokens", 8000)), 32768))
-        with open(settings_path, "w", encoding="utf-8") as f:
-            json.dump(settings, f, ensure_ascii=False, indent=2)
+                settings = json.loads(settings_path.read_text(encoding="utf-8")) or {}
+            except (OSError, ValueError):
+                settings = {}
+        try:
+            if "use_templates" in data:
+                settings["use_templates"] = bool(data.get("use_templates"))
+            if "temperature" in data:
+                settings["temperature"] = max(0.0, min(float(data["temperature"]), 2.0))
+            if "max_tokens" in data:
+                settings["max_tokens"] = max(64, min(int(data["max_tokens"]), 131072))
+            if "extract_max_tokens" in data:
+                settings["extract_max_tokens"] = max(1024, min(int(data["extract_max_tokens"]), 32768))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Temperature and token limits must be numbers."}), 400
+        settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
 
         return jsonify({"ok": True})
     except Exception as e:
@@ -1460,7 +1519,7 @@ def build_cast_card(card_ids, cast_name, provider, model):
     )
     raw = _gen_request(provider, model, prompt)
     # keep the card fields as text even when the model sends lists or objects
-    result = {k: text_of(raw.get(k), "\n") for k in ("name", "description", "personality", "scenario", "first_mes", "mes_example")}
+    result = tidy_card({k: text_of(raw.get(k), "\n") for k in ("name", "description", "personality", "scenario", "first_mes", "mes_example")})
     result["name"] = result["name"] or cast_name
     result["tags"] = list_of(raw.get("tags"))
 
@@ -1540,7 +1599,7 @@ def api_text_cast_cards(pid):
         return jsonify({"error": "No kept main characters. Keep some characters (main tier) or pick them."}), 400
     provider = data.get("provider") or "nanogpt"
     model = data.get("model") or ""
-    options = {k: data.get(k) for k in ("user_role", "token_target", "style", "deep", "story_point") if data.get(k)}
+    options = {k: data.get(k) for k in ("user_role", "token_target", "style", "deep", "story_point", "greeting_style") if data.get(k)}
     job_id = create_job()
     threading.Thread(target=run_cast_cards_job,
                      args=(job_id, pid, eids, provider, model, options, bool(data.get("group"))), daemon=True).start()

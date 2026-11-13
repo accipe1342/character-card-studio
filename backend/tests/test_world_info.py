@@ -28,13 +28,13 @@ def item(title, et="character", keys=(), content="", **kw):
 
 
 def test_defaults_sticky_characters_and_always_on_entries():
-    its = normalise_lore_items([item("Yuna", keys=["Yuna"]), item("Sword", "item"),
+    its = normalise_lore_items([item("Ilsa", keys=["Ilsa"]), item("Sword", "item"),
                                 item("Cast Roster", "concept"), item("Story So Far", "concept")])
     by = {i["title"]: i for i in its}
-    assert by["Yuna"]["sticky"] == 2 and by["Sword"]["sticky"] == 0
+    assert by["Ilsa"]["sticky"] == 2 and by["Sword"]["sticky"] == 0
     assert by["Cast Roster"]["constant"] and by["Story So Far"]["constant"] and by["Story So Far"]["order"] == 999
     # stored values beat the defaults; 0 is a real value, not "unset"
-    its = normalise_lore_items([item("Yuna", sticky=0, position=4, role=1, probability=0, constant=1,
+    its = normalise_lore_items([item("Ilsa", sticky=0, position=4, role=1, probability=0, constant=1,
                                      secondary_keys=["sad"], selective_logic=3, group_name="g", vectorized=1)])
     y = its[0]
     assert (y["sticky"], y["position"], y["role"], y["probability"], y["constant"]) == (0, 4, 1, 0, True)
@@ -43,23 +43,23 @@ def test_defaults_sticky_characters_and_always_on_entries():
 
 def test_patch_saves_wi_fields_marks_edits_and_exports(client, H):
     pid = db.create_lore_project("WI export")
-    lid = db.save_lore_entry(pid, None, "Yuna", "character", ["Yuna"], "s", "Yuna is a summoner.")
+    lid = db.save_lore_entry(pid, None, "Ilsa", "character", ["Ilsa"], "s", "Ilsa is a summoner.")
     full = client.get(f"/api/lore/entry/{lid}", headers=H).get_json()
     assert not full["user_edited"]
     body = {**full, "position": 4, "role": 2, "sticky": 3, "cooldown": 1, "delay": 2, "probability": 50,
             "secondary_keys": ["temple", " "], "selective_logic": 2, "group_name": "summoners", "group_weight": 70,
-            "group_prioritize": True, "vectorized": True, "char_filter": ["Tidus"], "constant": None}
+            "group_prioritize": True, "vectorized": True, "char_filter": ["Rowan"], "constant": None}
     assert client.patch(f"/api/lore/entry/{lid}", json=body, headers={**H, **O}).status_code == 200
     full = client.get(f"/api/lore/entry/{lid}", headers=H).get_json()
     assert not full["user_edited"]                      # settings only: the text was not touched
-    client.patch(f"/api/lore/entry/{lid}", json={**full, "content": "Yuna, edited by hand."}, headers={**H, **O})
+    client.patch(f"/api/lore/entry/{lid}", json={**full, "content": "Ilsa, edited by hand."}, headers={**H, **O})
     assert client.get(f"/api/lore/entry/{lid}", headers=H).get_json()["user_edited"] == 1
     e = list(client.get(f"/api/lore/export?project_id={pid}", headers=H).get_json()["entries"].values())[0]
     assert (e["position"], e["role"], e["sticky"], e["cooldown"], e["delay"], e["probability"]) == (4, 2, 3, 1, 2, 50)
     assert e["keysecondary"] == ["temple"] and e["selective"] and e["selectiveLogic"] == 2
     assert e["group"] == "summoners" and e["groupWeight"] == 70 and e["groupOverride"] and e["vectorized"]
-    assert e["characterFilter"]["names"] == ["Tidus"]
-    book = client.post("/api/export/v2", json={"card": {"name": "Yuna"}, "lore_project_id": pid}, headers=H).get_json()
+    assert e["characterFilter"]["names"] == ["Rowan"]
+    book = client.post("/api/export/v2", json={"card": {"name": "Ilsa"}, "lore_project_id": pid}, headers=H).get_json()
     be = book["data"]["character_book"]["entries"][0]
     assert be["secondary_keys"] == ["temple"] and be["extensions"]["sticky"] == 3 and be["extensions"]["role"] == 2
     assert client.patch("/api/lore/entry/999999", json={"title": "x"}, headers={**H, **O}).status_code == 404
@@ -68,23 +68,23 @@ def test_patch_saves_wi_fields_marks_edits_and_exports(client, H):
 def test_simulator_rules():
     its = normalise_lore_items([
         item("Recap", "concept", content="R" * 40, constant=1),
-        item("Yuna", keys=["Yuna"], content="Yuna carries the Staff of Light."),
+        item("Ilsa", keys=["Ilsa"], content="Ilsa carries the Staff of Light."),
         item("Staff of Light", "item", keys=["Staff of Light"], content="A holy staff."),
         item("Temple", "place", keys=["temple"], content="x", secondary_keys=["night"], selective_logic=0),
-        item("Big", "concept", keys=["Yuna"], content="B" * 8000),
+        item("Big", "concept", keys=["Ilsa"], content="B" * 8000),
         item("A1", "concept", keys=["dragon"], content="a", group_name="g", group_weight=10),
         item("A2", "concept", keys=["dragon"], content="b", group_name="g", group_weight=90),
     ])
-    r = simulate(its, "Yuna walks into the temple with a dragon.", budget=600)
+    r = simulate(its, "Ilsa walks into the temple with a dragon.", budget=600)
     kept = {a["title"]: a for a in r["activated"]}
     dropped = {d["title"]: d for d in r["dropped"]}
     assert kept["Recap"]["why"].startswith("constant")
-    assert "Yuna" in kept and "recursion" in kept["Staff of Light"]["why"]
+    assert "Ilsa" in kept and "recursion" in kept["Staff of Light"]["why"]
     assert "Temple" not in kept and any(b["title"] == "Temple" for b in r["blocked"])     # needs "night" too
     assert "budget" in dropped["Big"]["dropped"]
     assert "A2" in kept and "inclusion group" in dropped["A1"]["dropped"]
     assert r["activated"][0]["title"] == "Recap"                                          # constants first
-    assert simulate(its, "yuna at the temple at night", whole_words=True)["activated"][1]["title"] in ("Yuna", "Temple", "Big")
+    assert simulate(its, "ilsa at the temple at night", whole_words=True)["activated"][1]["title"] in ("Ilsa", "Temple", "Big")
 
 
 def test_graph_orphans_and_loops():
@@ -99,11 +99,11 @@ def test_graph_orphans_and_loops():
 
 def test_simulate_and_graph_routes(client, H):
     pid = db.create_lore_project("Sim")
-    db.save_lore_entry(pid, None, "Yuna", "character", ["Yuna"], "", "Yuna.")
-    r = client.post("/api/lore/simulate", json={"project_id": pid, "text": "Hi Yuna"}, headers={**H, **O}).get_json()
-    assert [a["title"] for a in r["activated"]] == ["Yuna"] and r["budget"] == 2048
+    db.save_lore_entry(pid, None, "Ilsa", "character", ["Ilsa"], "", "Ilsa.")
+    r = client.post("/api/lore/simulate", json={"project_id": pid, "text": "Hi Ilsa"}, headers={**H, **O}).get_json()
+    assert [a["title"] for a in r["activated"]] == ["Ilsa"] and r["budget"] == 2048
     assert client.post("/api/lore/simulate", json={"project_id": pid, "text": " "}, headers={**H, **O}).status_code == 400
-    assert client.get(f"/api/lore/project/{pid}/graph", headers=H).get_json()["nodes"][0]["title"] == "Yuna"
+    assert client.get(f"/api/lore/project/{pid}/graph", headers=H).get_json()["nodes"][0]["title"] == "Ilsa"
 
 
 def test_lore_trash(client, H):
@@ -129,24 +129,24 @@ def test_cast_roster_recap_position_and_resend(client, H, tproject):
     assert first["mode"] == "new"
     ex = client.get(f"/api/lore/export?project_id={lid}", headers=H).get_json()
     by = {e["comment"].rsplit(" - ", 1)[0]: e for e in ex["entries"].values()}
-    assert by["Cast Roster"]["constant"] and "- Yuna" in by["Cast Roster"]["content"] and "- Rikku" in by["Cast Roster"]["content"]
+    assert by["Cast Roster"]["constant"] and "- Ilsa" in by["Cast Roster"]["content"] and "- Corin" in by["Cast Roster"]["content"]
     assert by["Story So Far"]["position"] == 4 and by["Story So Far"]["depth"] == 4 and by["Story So Far"]["role"] == 0
-    assert by["Yuna"]["sticky"] == 2
-    # hand-edit Yuna in LORE, delete Rikku there, then change the recap and re-send
+    assert by["Ilsa"]["sticky"] == 2
+    # hand-edit Ilsa in LORE, delete Corin there, then change the recap and re-send
     rows = {e["title"]: e for e in db.list_lore_entries(crawl_id=lid)}
-    yuna = client.get(f"/api/lore/entry/{rows['Yuna']['id']}", headers=H).get_json()
-    client.patch(f"/api/lore/entry/{yuna['id']}", json={**yuna, "content": "My Yuna."}, headers={**H, **O})
+    ilsa = client.get(f"/api/lore/entry/{rows['Ilsa']['id']}", headers=H).get_json()
+    client.patch(f"/api/lore/entry/{ilsa['id']}", json={**ilsa, "content": "My Ilsa."}, headers={**H, **O})
     client.delete(f"/api/lore/entry/{rows['Story Timeline']['id']}", headers={**H, **O})
     client.put(f"/api/text/project/{tproject}/recap", json={"text": "Recap v2.", "upto": -1, "position": "before"}, headers=H)
     E = {e["name"]: e for e in client.get(f"/api/text/project/{tproject}", headers=H).get_json()["entities"]}
-    client.patch(f"/api/text/entity/{E['Rikku']['id']}", json={"keep": False}, headers=H)
+    client.patch(f"/api/text/entity/{E['Corin']['id']}", json={"keep": False}, headers=H)
     again = client.post(f"/api/text/project/{tproject}/commit", headers=H).get_json()
     assert again["mode"] == "update" and again["lore_project_id"] == lid
-    assert again["kept_edited"] == 1 and again["trashed"] == 2      # Rikku, and the roster (one character left)
+    assert again["kept_edited"] == 1 and again["trashed"] == 2      # Corin, and the roster (one character left)
     rows = {e["title"]: e for e in db.list_lore_entries(crawl_id=lid)}
-    assert "Story Timeline" not in rows and "Rikku" not in rows             # deleted in LORE / no longer kept
-    assert any(e["title"] == "Rikku" for e in db.list_lore_entries(crawl_id=lid, deleted=True))   # restorable
-    assert db.get_lore_entry(rows["Yuna"]["id"])["content"] == "My Yuna."     # hand edit kept
+    assert "Story Timeline" not in rows and "Corin" not in rows             # deleted in LORE / no longer kept
+    assert any(e["title"] == "Corin" for e in db.list_lore_entries(crawl_id=lid, deleted=True))   # restorable
+    assert db.get_lore_entry(rows["Ilsa"]["id"])["content"] == "My Ilsa."     # hand edit kept
     recap = db.get_lore_entry(rows["Story So Far"]["id"])
     assert recap["content"] == "Recap v2." and recap["position"] == 0
     fresh = client.post(f"/api/text/project/{tproject}/commit", json={"mode": "new"}, headers=H).get_json()
@@ -182,15 +182,15 @@ def test_cards_for_main_cast_and_group_card(client, H, tproject, monkeypatch):
                                                                     "personality": "", "scenario": "", "first_mes": "Yo.",
                                                                     "mes_example": "", "tags": []})
     E = {e["name"]: e for e in client.get(f"/api/text/project/{tproject}", headers=H).get_json()["entities"]}
-    client.patch(f"/api/text/entity/{E['Rikku']['id']}", json={"keep": True}, headers=H)
+    client.patch(f"/api/text/entity/{E['Corin']['id']}", json={"keep": True}, headers=H)
     r = client.post(f"/api/text/project/{tproject}/cast-cards", json={"group": True, "token_target": "lean"}, headers=H).get_json()
     assert r["count"] == 2
     j = wait(client, H, r["job_id"])["result"]
     names = sorted(c["name"] for c in j["cards"])
-    assert names == ["Rikku", "Yuna"] and j["group_card_id"] and not j["failed"]
+    assert names == ["Corin", "Ilsa"] and j["group_card_id"] and not j["failed"]
     assert all(o["token_target"] == "lean" and o["story_point"] and o.get("lore_aware") for _, o in seen)
     member = db.get_card(j["cards"][0]["card_id"])
-    assert member["name"] in ("Rikku", "Yuna")                      # the group card did not overwrite a member
+    assert member["name"] in ("Corin", "Ilsa")                      # the group card did not overwrite a member
     assert db.get_card(j["group_card_id"])["name"] == "WI Fic Cast"
     # running it again keeps the earlier cards and makes new ones
     j2 = wait(client, H, client.post(f"/api/text/project/{tproject}/cast-cards", json={}, headers=H).get_json()["job_id"])["result"]
@@ -198,8 +198,8 @@ def test_cards_for_main_cast_and_group_card(client, H, tproject, monkeypatch):
 
 
 ST_CHAT = "\n".join(json.dumps(x) for x in (
-    {"user_name": "You", "character_name": "Yuna", "create_date": "2026-10-01", "chat_metadata": {}},
-    *[{"name": "Yuna" if i % 2 else "You", "is_user": not i % 2, "is_system": False, "mes": f"Message {i}. " + "Words here. " * 20}
+    {"user_name": "You", "character_name": "Ilsa", "create_date": "2026-10-01", "chat_metadata": {}},
+    *[{"name": "Ilsa" if i % 2 else "You", "is_user": not i % 2, "is_system": False, "mes": f"Message {i}. " + "Words here. " * 20}
       for i in range(50)],
     {"name": "System", "is_user": False, "is_system": True, "mes": "hidden note"},
 ))
@@ -208,11 +208,11 @@ ST_CHAT = "\n".join(json.dumps(x) for x in (
 def test_st_chat_import_and_append(client, H, tproject):
     import io
     title, text = T.stchat_to_text(ST_CHAT.encode())
-    assert title == "Chat with Yuna" and "Yuna: Message 1." in text and "hidden note" not in text
+    assert title == "Chat with Ilsa" and "Ilsa: Message 1." in text and "hidden note" not in text
     assert "Part 1: messages 1-40" in text and "Part 2: messages 41-50" in text
     r = client.post("/api/text/ingest", data={"file": (io.BytesIO(ST_CHAT.encode()), "chat.jsonl"), "chunk_chars": "2000"},
                     headers=H, content_type="multipart/form-data").get_json()
-    assert r["name"] == "Chat with Yuna" and r["chunks"] >= 2
+    assert r["name"] == "Chat with Ilsa" and r["chunks"] >= 2
     a = client.post(f"/api/text/project/{tproject}/append", data={"file": (io.BytesIO(ST_CHAT.encode()), "more.jsonl")},
                     headers=H, content_type="multipart/form-data").get_json()
     assert a["new_chunks"] >= 2 and a["chunks"] == 5 + a["new_chunks"]
@@ -227,12 +227,12 @@ def test_st_chat_import_and_append(client, H, tproject):
 
 
 def test_relationship_tracker_and_arcs(monkeypatch):
-    ents = [{"name": "Yuna", "entity_type": "character", "aliases": ["Yunie"],
-             "relations": [{"with": "Rikku", "relation": "cousin"}, {"with": "Tidus", "relation": "lover"}]},
-            {"name": "Rikku", "entity_type": "character", "aliases": [], "relations": [{"with": "yunie", "relation": "Cousin"}]},
-            {"name": "Tidus", "entity_type": "character", "aliases": [], "relations": []}]
+    ents = [{"name": "Ilsa", "entity_type": "character", "aliases": ["Ilsie"],
+             "relations": [{"with": "Corin", "relation": "cousin"}, {"with": "Rowan", "relation": "lover"}]},
+            {"name": "Corin", "entity_type": "character", "aliases": [], "relations": [{"with": "ilsie", "relation": "Cousin"}]},
+            {"name": "Rowan", "entity_type": "character", "aliases": [], "relations": []}]
     t = T.relationship_tracker(ents)
-    assert t.count("Yuna & Rikku") + t.count("Rikku & Yuna") == 1 and "cousin" in t and "lover" in t
+    assert t.count("Ilsa & Corin") + t.count("Corin & Ilsa") == 1 and "cousin" in t and "lover" in t
     assert T.relationship_tracker(ents[:1] + [ents[2]]) == ""          # one pair only: no entry
     parts = [f"[Part {i}] thing {i}" for i in range(30)]
     monkeypatch.setattr(T, "_request", lambda p, m, u, system=None, **k: {"title": "Arc", "summary": "Condensed."})
@@ -298,9 +298,9 @@ def test_bundle_export_import_roundtrip(client, H, tproject):
 
 
 def test_global_search(client, H, tproject):
-    r = client.get("/api/search?q=Yuna", headers=H).get_json()
-    assert r["entities"] and r["entities"][0]["name"] == "Yuna" and r["entities"][0]["project_id"]
-    assert any(x["title"] == "Yuna" for x in r["lore"]) and any(c["name"] == "Yuna" for c in r["cards"])
+    r = client.get("/api/search?q=Ilsa", headers=H).get_json()
+    assert r["entities"] and r["entities"][0]["name"] == "Ilsa" and r["entities"][0]["project_id"]
+    assert any(x["title"] == "Ilsa" for x in r["lore"]) and any(c["name"] == "Ilsa" for c in r["cards"])
     assert client.get("/api/search?q=WI Fic", headers=H).get_json()["texts"]
     assert client.get("/api/search?q=y", headers=H).get_json()["cards"] == []
     assert client.get("/api/search?q=%25%25", headers=H).status_code == 200

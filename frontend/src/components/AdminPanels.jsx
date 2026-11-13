@@ -145,7 +145,7 @@ export default function AdminPanels({ showToast, t = {} }) {
   return (
     <>
       {error && (
-        <div style={{ color: "#c84a3a", fontSize: 13, padding: "8px 12px", border: "1px solid #c84a3a", display: "flex", justifyContent: "space-between" }}>
+        <div style={{ color: "var(--signal-accent)", fontSize: 13, padding: "8px 12px", border: "1px solid var(--signal-accent)", display: "flex", justifyContent: "space-between" }}>
           <span>⊗ {error}</span>
           <button onClick={() => setError("")} aria-label="Dismiss error" style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>✕</button>
         </div>
@@ -200,8 +200,8 @@ export default function AdminPanels({ showToast, t = {} }) {
             <div key={b.name} style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 10px", borderBottom: "1px solid var(--signal-border)", fontSize: 12, flexWrap: "wrap" }}>
               <span style={{ fontFamily: "monospace", flex: "1 1 260px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</span>
               <span style={hint}>{b.created} · {kb(b.bytes)}</span>
-              <button className="signal-btn" style={{ ...btn, padding: "4px 10px", borderColor: confirmRestore === b.name ? "#c84a3a" : undefined,
-                color: confirmRestore === b.name ? "#c84a3a" : undefined }} disabled={busy === "restore"} onClick={() => onRestore(b.name)}>
+              <button className="signal-btn" style={{ ...btn, padding: "4px 10px", borderColor: confirmRestore === b.name ? "var(--signal-accent)" : undefined,
+                color: confirmRestore === b.name ? "var(--signal-accent)" : undefined }} disabled={busy === "restore"} onClick={() => onRestore(b.name)}>
                 {confirmRestore === b.name ? "CLICK AGAIN TO RESTORE" : (t.restore || "Restore").toUpperCase()}</button>
             </div>
           ))}

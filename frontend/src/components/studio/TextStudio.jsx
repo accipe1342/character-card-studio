@@ -37,6 +37,7 @@ import CriticPanel from "./CriticPanel";
 import { EntityChapters, EntityMentions, EntityTabs, PortraitSlot, SecretsEditor } from "./EntityPanels";
 import { InterviewPanel, QuickRepliesButton, ResendPreviewModal, StoryExportsButton } from "./AssistPanels";
 import RelationshipMap from "./RelationshipMap";
+import { registerHelperFlush, setHelperContext } from "../../lib/helperBus";
 import { markBusy } from "../../lib/leaveGuard";
 import { DEFAULT_MODELS, Divider, btn, btnPrimary, btnSm, btnTool, headingStyle, hint, input, label, panelStyle, toolbarGrid } from "./textUi";
 import {
@@ -51,8 +52,8 @@ import {
 const ENTITY_TYPES = ["character", "place", "faction", "event", "item", "ability", "concept"];
 const SOURCE_TABS = ["paste", "file", "url"];
 const FLAG_STYLE = {
-  minor: { bg: "#c84a3a", fg: "#fff", label: "UNDER 18" },
-  check: { bg: "#b8860b", fg: "#fff", label: "CHECK AGE" },
+  minor: { bg: "var(--signal-accent)", fg: "#fff", label: "UNDER 18" },
+  check: { bg: "var(--signal-warn)", fg: "#fff", label: "CHECK AGE" },
   unknown: { bg: "transparent", fg: "var(--signal-text-dim)", label: "AGE ?" },
 };
 
@@ -114,9 +115,9 @@ function IssueBadges({ i }) {
     <span title={title} style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", background: bg, color: "#fff", letterSpacing: "0.04em" }}>{txt}</span>
   );
   return (<>
-    {i.dup && chip("DUP", "#b8860b", "Another entry has the same name or alias")}
-    {i.empty && chip("EMPTY", "#c84a3a", "Almost no content")}
-    {i.junk && chip("JUNK?", "#c84a3a", "Looks like a body part, act, feeling or scenery rather than lore")}
+    {i.dup && chip("DUP", "var(--signal-warn)", "Another entry has the same name or alias")}
+    {i.empty && chip("EMPTY", "var(--signal-accent)", "Almost no content")}
+    {i.junk && chip("JUNK?", "var(--signal-accent)", "Looks like a body part, act, feeling or scenery rather than lore")}
     {i.nokeys && chip("NO KEYS", "#6b6b6b", "No trigger keywords, so it will never load")}
   </>);
 }
@@ -381,6 +382,18 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
     const t = list[i + dir];
     if (t) selectEntity(t);
   }
+
+  // the helper side panel: what is open, and save the editor before the helper reads the story
+  const saveDraftRef = useRef(null);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
+  useEffect(() => {
+    const label = [project?.name, draft?.name].filter(Boolean).join(" / ");
+    setHelperContext("text", { text_project_id: project?.id || null, text_entity_id: draft?.id || null, label, provider, model });
+  }, [project?.id, project?.name, draft?.id, draft?.name, provider, model]);
+  useEffect(() => registerHelperFlush("text", async () => {
+    if (dirtyRef.current && saveDraftRef.current) await saveDraftRef.current(true);
+  }), []);
 
   async function saveDraft(silent) {
     const snap = draftRef.current;
@@ -689,6 +702,8 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
     } catch (e) { setError(e.message); setResendOpen(false); }
   }
 
+  saveDraftRef.current = saveDraft;
+
   const entities = project?.entities || [];
   const issues = useMemo(() => findIssues(project?.entities || []), [project]);
   const issueCount = entities.filter((e) => issueMatch(issues.get(e.id), "any")).length;
@@ -721,16 +736,10 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
 
   return (
     <div>
-      <h1 className="signal-title signal-heading" style={{ marginTop: 0, marginBottom: 4, display: "block", textAlign: "center" }}>
-        {t.textStudio || "Text Studio"}
-      </h1>
-      <p style={{ color: "var(--signal-text-dim)", textAlign: "center", marginBottom: 20, letterSpacing: "0.04em" }}>
-        {t.textSubtitle || "Fanfiction & long text • chapters • characters • events"}
-      </p>
 
       {resendOpen && project && <ResendPreviewModal projectId={project.id} onClose={() => setResendOpen(false)} onApply={applyResend} />}
       {error && (
-        <div style={{ color: "#c84a3a", fontSize: 13, marginBottom: 10, padding: "8px 12px", border: "1px solid #c84a3a",
+        <div style={{ color: "var(--signal-accent)", fontSize: 13, marginBottom: 10, padding: "8px 12px", border: "1px solid var(--signal-accent)",
           display: "flex", justifyContent: "space-between", gap: 8, textAlign: "left" }}>
           <span>⊗ {error}</span>
           <span style={{ cursor: "pointer" }} onClick={() => setError("")}>✕</span>
@@ -771,8 +780,8 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                   </div>
                   <button onClick={(e) => handleDeleteProject(p.id, e)} aria-label={deleteConfirm === p.id ? `Confirm: delete ${p.name}` : `Delete ${p.name}`}
                     title={deleteConfirm === p.id ? "Click again to delete" : "Delete text project"} style={{
-                    background: deleteConfirm === p.id ? "#c84a3a" : "none", border: "none", cursor: "pointer",
-                    color: deleteConfirm === p.id ? "#fff" : "#c84a3a", fontSize: 11, padding: "0 4px", flexShrink: 0,
+                    background: deleteConfirm === p.id ? "var(--signal-accent)" : "none", border: "none", cursor: "pointer",
+                    color: deleteConfirm === p.id ? "#fff" : "var(--signal-accent)", fontSize: 11, padding: "0 4px", flexShrink: 0,
                   }}>{deleteConfirm === p.id ? "?" : "✕"}</button>
                 </div>
               );
@@ -828,7 +837,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
           <div style={label}>CHUNK SIZE (chars)</div>
           <input type="number" min={1500} max={20000} step={500} style={input} value={chunkChars} onChange={(e) => setChunkChars(+e.target.value)} />
           {project && (
-            <button className="signal-btn" style={{ ...btn, width: "100%", marginTop: 8, borderColor: "#c84a3a", color: "#c84a3a", fontSize: 12 }}
+            <button className="signal-btn" style={{ ...btn, width: "100%", marginTop: 8, borderColor: "var(--signal-accent)", color: "var(--signal-accent)", fontSize: 12 }}
               disabled={busy} onClick={handleRechunk}
               title="Cut the open text into chunks of this size again. Deletes its extraction results: extraction starts over.">
               ✂ {(t.resplitText || "Resplit text").toUpperCase()} AT THIS SIZE
@@ -950,7 +959,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                     {(c.chars / 1000).toFixed(1)}k
                     {c.done ? ` · ${c.entities} ent / ${c.beats} ev ✓` : (busy && jobKind === "extract" ? " · …" : " ·")}
                     {c.done && c.chars >= 2000 && c.entities + c.beats < 3 && (
-                      <b style={{ color: "#b8860b", marginLeft: 6 }} title="Few results for this much text. Re-run with Deep mode.">LOW</b>
+                      <b style={{ color: "var(--signal-warn)", marginLeft: 6 }} title="Few results for this much text. Re-run with Deep mode.">LOW</b>
                     )}
                     {c.done && (
                       <button onClick={() => handleExtract(false, [c.idx])} disabled={busy} title="Redo just this chunk with the model selected above"
@@ -1013,7 +1022,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
               <textarea style={{ ...input, height: Math.max(150, Math.min(520, 40 + Math.ceil((recap.text || "").length / 46) * 20)), resize: "vertical",
                 fontFamily: (recap.text || "").startsWith("[HEADER]") ? "ui-monospace, Consolas, monospace" : undefined, fontSize: (recap.text || "").startsWith("[HEADER]") ? 12 : undefined }} value={recap.text}
                 onChange={(e) => { setRecap({ ...recap, text: e.target.value }); setRecapDirty(true); setRecapTyped(true); }} />
-              <div style={{ ...hint, color: (recap.text || "").length > recap.limit ? "#c84a3a" : undefined }}>
+              <div style={{ ...hint, color: (recap.text || "").length > recap.limit ? "var(--signal-accent)" : undefined }}>
                 {(recap.text || "").length.toLocaleString()} / {recap.limit.toLocaleString()} chars (about {Math.round((recap.text || "").length / 4)} tokens).
                 The timeline and recap stop at the starting point.
                 {(recap.text || "").length > 3000 && " This entry is always in context: in SillyTavern raise the World Info token budget (default 2048) so other entries still fit."}
@@ -1022,7 +1031,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                 <div style={label}>STORY TIMELINE · CHAPTER LOG (loads when the chat mentions the past)</div>
                 <textarea style={{ ...input, height: 160, resize: "vertical" }} value={recap.timeline}
                   onChange={(e) => { setRecap({ ...recap, timeline: e.target.value }); setRecapDirty(true); setTimelineTyped(true); }} />
-                <div style={{ ...hint, color: timelineStale ? "#b8860b" : undefined }}>
+                <div style={{ ...hint, color: timelineStale ? "var(--signal-warn)" : undefined }}>
                   {timelineStale ? "The starting point changed: this chapter log was written for the old one. Saving switches back to event lines; or write a new AI recap."
                     : `${recap.timeline.length.toLocaleString()} / ${(recap.timeline_limit || 9000).toLocaleString()} chars. Replaces the one-line-per-event timeline.`}
                 </div>
@@ -1091,7 +1100,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
 
           {entities.length > 0 && (<>
             {flaggedCount > 0 && (
-              <div style={{ border: "1px solid #c84a3a", color: "#c84a3a", padding: "8px 12px", fontSize: 12, marginBottom: 8 }}>
+              <div style={{ border: "1px solid var(--signal-accent)", color: "var(--signal-accent)", padding: "8px 12px", fontSize: 12, marginBottom: 8 }}>
                 ⊗ {flaggedCount} character(s) flagged under 18 / check age. Keep romantic or sexual content out of anything involving them.
               </div>
             )}
@@ -1162,7 +1171,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                 ))}
                 {(project.trash || []).length > 0 && (
                   <div style={{ padding: 8, textAlign: "right" }}>
-                    <button className="signal-btn" style={{ ...btnSm, borderColor: "#c84a3a", color: "#c84a3a" }} onClick={emptyTrash}>EMPTY TRASH</button>
+                    <button className="signal-btn" style={{ ...btnSm, borderColor: "var(--signal-accent)", color: "var(--signal-accent)" }} onClick={emptyTrash}>EMPTY TRASH</button>
                   </div>
                 )}
               </div>
@@ -1178,7 +1187,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
               <div style={{ ...toolbarGrid, marginBottom: 8 }}>
                 <button className="signal-btn" style={btnTool} onClick={() => bulkKeep(true)}>KEEP</button>
                 <button className="signal-btn" style={btnTool} onClick={() => bulkKeep(false)}>SKIP</button>
-                <button className="signal-btn" style={{ ...btnTool, borderColor: "#c84a3a", color: "#c84a3a" }} onClick={bulkDelete}>DELETE</button>
+                <button className="signal-btn" style={{ ...btnTool, borderColor: "var(--signal-accent)", color: "var(--signal-accent)" }} onClick={bulkDelete}>DELETE</button>
                 {checked.size >= 2 && <button className="signal-btn" style={btnTool} onClick={mergeChecked}>⇉ MERGE</button>}
               </div>
             )}
@@ -1203,7 +1212,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                   {e.entity_type === "character" && <Flag flag={e.age_flag} />}
                   <IssueBadges i={issues.get(e.id)} />
                   {e.entity_type === "event" && e.confidence === "low" && (
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", background: "#b8860b", color: "#fff" }}>UNSURE</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", background: "var(--signal-warn)", color: "#fff" }}>UNSURE</span>
                   )}
                   <button onClick={(ev) => toggleKeep(e, ev)} title={e.keep ? "Included — click to exclude" : "Excluded — click to include"}
                     style={btnSm}>{e.keep ? "KEEP" : "SKIP"}</button>
@@ -1237,7 +1246,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                         {e.name}
                         {e.first_chunk >= 0 && <span style={{ opacity: 0.55 }}> · part {e.first_chunk + 1}</span>}
                       </span>
-                      {e.confidence === "low" && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", background: "#b8860b", color: "#fff" }}>UNSURE</span>}
+                      {e.confidence === "low" && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", background: "var(--signal-warn)", color: "#fff" }}>UNSURE</span>}
                       <button onClick={(ev) => toggleKeep(e, ev)} style={btnSm}>{e.keep ? "KEEP" : "SKIP"}</button>
                     </div>
                   ))}
@@ -1321,7 +1330,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                 </>)}
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <button className="signal-btn" style={btnPrimary} onClick={() => saveDraft(false)}>SAVE</button>
-                  <button className="signal-btn" style={{ ...btn, borderColor: "#c84a3a", color: "#c84a3a", background: "transparent" }}
+                  <button className="signal-btn" style={{ ...btn, borderColor: "var(--signal-accent)", color: "var(--signal-accent)", background: "transparent" }}
                     onClick={removeEntity} title="Moves it to the trash (restorable)">DELETE</button>
                   {draft.entity_type === "character" && onMakeCard && (
                     <button className="signal-btn" style={{ ...btn, marginLeft: "auto", opacity: cardBusy === draft.id ? 0.6 : 1 }} disabled={!!cardBusy}

@@ -133,7 +133,7 @@ export default function MainJobStatus({ job, mode = "character" }) {
         textAlign: "center",
         fontSize: 14,
         fontWeight: isDone ? 600 : 400,
-        color: isFailed ? "#c84a3a" : "var(--signal-text)",
+        color: isFailed ? "var(--signal-accent)" : "var(--signal-text)",
         letterSpacing: "0.04em",
         minHeight: 20,
       }}>

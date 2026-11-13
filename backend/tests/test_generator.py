@@ -6,7 +6,7 @@ import preview as P
 
 
 def test_fic_source_prompt_says_fic_wins_and_story_point():
-    src = {"wiki_base": "text-studio", "normalized": {"title": "Yuna"}}
+    src = {"wiki_base": "text-studio", "normalized": {"title": "Ilsa"}}
     sp = G.card_system_prompt(src, {"story_point": "after chapter 2", "user_role": "a recruit", "lore_aware": True,
                                     "token_target": "lean", "style": "plist"})
     assert "FAN FICTION" in sp and "fan fiction is the truth" in sp
@@ -17,14 +17,14 @@ def test_fic_source_prompt_says_fic_wins_and_story_point():
 
 
 def test_validate_repairs_examples_tags_and_flags_user():
-    card = {"name": "Rikku", "description": "d" * 50, "personality": "p", "scenario": "s",
-            "first_mes": "{{user}}: hi\nRikku waves.", "mes_example": "{{char}}: one<START>{{char}}: two",
-            "tags": ["#Al Bhed", "al bhed", "thief"], "structured_profile": {"ethnicity": "Al Bhed", "age": "16",
+    card = {"name": "Corin", "description": "d" * 50, "personality": "p", "scenario": "s",
+            "first_mes": "{{user}}: hi\nCorin waves.", "mes_example": "{{char}}: one<START>{{char}}: two",
+            "tags": ["#Saltfolk", "saltfolk", "thief"], "structured_profile": {"ethnicity": "Saltfolk", "age": "16",
             "kinks": ["x"], "personal_parts": ["y"], "sexual_attraction": "z"}}
     out, warn = G.validate_card(card, {})
     assert out["mes_example"].startswith("<START>\n{{char}}: one\n\n<START>\n{{char}}: two")
-    assert out["tags"] == ["al bhed", "thief"]
-    assert out["structured_profile"]["species"] == "Al Bhed"
+    assert out["tags"] == ["saltfolk", "thief"]
+    assert out["structured_profile"]["species"] == "Saltfolk"
     sp = out["structured_profile"]
     assert sp["kinks"] == [] and sp["personal_parts"] == [] and sp["sexual_attraction"] == ""
     joined = " ".join(warn)
@@ -42,16 +42,16 @@ def test_deep_mode_runs_bible_card_check(monkeypatch):
     def fake(provider, model, prompt, system=None, max_tokens=None):
         if system and system.startswith("You build a CHARACTER BIBLE"):
             calls.append("bible")
-            return {"name": "Yuna", "age": "19"}
+            return {"name": "Ilsa", "age": "19"}
         if system and system.startswith("You check a SillyTavern"):
             calls.append("check")
             return {"fixes": {"scenario": "Fixed scenario.", "structured_profile.age": "19"}, "issues": ["scenario contradicted"]}
         calls.append("card")
         assert "CHARACTER BIBLE" in prompt
-        return {"name": "Yuna", "description": "desc", "personality": "p", "scenario": "wrong", "first_mes": "Hi.",
+        return {"name": "Ilsa", "description": "desc", "personality": "p", "scenario": "wrong", "first_mes": "Hi.",
                 "mes_example": "<START>\n{{char}}: hi", "tags": ["a"] * 1, "structured_profile": {"age": "12"}}
     monkeypatch.setattr(G, "_request", fake)
-    card = G.generate_full_card({"wiki_base": "fandom", "normalized": {"title": "Yuna"}}, "nanogpt", "m", {"deep": True})
+    card = G.generate_full_card({"wiki_base": "fandom", "normalized": {"title": "Ilsa"}}, "nanogpt", "m", {"deep": True})
     assert calls == ["bible", "card", "check"]
     assert card["scenario"] == "Fixed scenario." and card["structured_profile"]["age"] == "19"
     assert any("scenario contradicted" in w for w in card["_warnings"])
@@ -72,8 +72,8 @@ def test_card_note_and_system_prompt_saved_and_exported():
 
 
 def test_structured_export_prints_species_and_ethnicity():
-    txt = P.format_structured_profile_text("Rikku", {"species": "Human", "ethnicity": "Al Bhed", "motivations": ["find Brother"]})
-    assert 'Species ("Human")' in txt and 'Ethnicity ("Al Bhed")' in txt and 'Motivations ("find Brother")' in txt
+    txt = P.format_structured_profile_text("Corin", {"species": "Human", "ethnicity": "Saltfolk", "motivations": ["find Brother"]})
+    assert 'Species ("Human")' in txt and 'Ethnicity ("Saltfolk")' in txt and 'Motivations ("find Brother")' in txt
 
 
 def test_retry_after_parsing():

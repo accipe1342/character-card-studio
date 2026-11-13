@@ -13,7 +13,7 @@ import { DEFAULT_MODELS, Divider, btnPrimary, btnTool, headingStyle, hint, input
 
 function ScoreBar({ s }) {
   const v = Math.max(0, Math.min(10, Number(s.score) || 0));
-  const col = v >= 8 ? "var(--signal-text)" : v >= 5 ? "#b8860b" : "#c84a3a";
+  const col = v >= 8 ? "var(--signal-text)" : v >= 5 ? "var(--signal-warn)" : "var(--signal-accent)";
   return (
     <div style={{ marginBottom: 6 }} title={s.why}>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
@@ -26,7 +26,7 @@ function ScoreBar({ s }) {
   );
 }
 
-const scoreColor = (v) => (v >= 8 ? "var(--signal-text)" : v >= 5 ? "#b8860b" : "#c84a3a");
+const scoreColor = (v) => (v >= 8 ? "var(--signal-text)" : v >= 5 ? "var(--signal-warn)" : "var(--signal-accent)");
 
 /** Average score per critique, oldest to newest. */
 function ScoreHistory({ critiques, onOpen, currentId }) {
@@ -71,7 +71,7 @@ function RewriteBox({ projectId, quote, fix, provider, model }) {
           {busy ? "REWRITING…" : "✎ REWRITE THE PASSAGE"}
         </button>
       )}
-      {error && <div style={{ color: "#c84a3a", fontSize: 11 }}>⊗ {error}</div>}
+      {error && <div style={{ color: "var(--signal-accent)", fontSize: 11 }}>⊗ {error}</div>}
       {res && (
         <div style={{ borderLeft: "3px solid var(--signal-text)", padding: "4px 8px", marginTop: 4, fontSize: 12 }}>
           <div style={{ ...hint, marginTop: 0 }}>{res.found ? `From ${res.label}` : "Line not found in the text: rewrote the quote alone"}{res.notes ? ` · ${res.notes}` : ""}</div>
@@ -110,7 +110,7 @@ function SweepTable({ rows, projectId, provider, model }) {
               <div style={{ width: `${r.score * 10}%`, height: "100%", background: scoreColor(r.score) }} />
             </div>
           )}
-          {r.error && <div style={{ fontSize: 11, color: "#c84a3a" }}>⊗ {r.error}</div>}
+          {r.error && <div style={{ fontSize: 11, color: "var(--signal-accent)" }}>⊗ {r.error}</div>}
           {r.summary && <div style={{ fontSize: 12 }}>{r.summary}</div>}
           {r.worst && <div style={{ fontSize: 12 }}><b>Worst:</b> {r.worst}{r.quote && <i style={{ opacity: 0.8 }}> “{r.quote}”</i>}</div>}
           {r.fix && <div style={{ fontSize: 12 }}><b>Fix:</b> {r.fix}</div>}
@@ -352,7 +352,7 @@ export default function CriticPanel({ project, parallel = 3, showToast, setError
                     {c.scope}{c.focus ? ` · ${c.focus}` : ""} · {String(c.created_at).slice(0, 16)}{c.avg != null ? ` · ${c.avg}/10` : ""}
                   </span>
                   <button className="signal-btn" onClick={(ev) => { ev.stopPropagation(); removeCritique(c.id); }} aria-label="Delete critique"
-                    style={{ background: "none", border: "none", color: "#c84a3a", padding: "0 4px", cursor: "pointer", fontFamily: "inherit" }} title="Delete">✕</button>
+                    style={{ background: "none", border: "none", color: "var(--signal-accent)", padding: "0 4px", cursor: "pointer", fontFamily: "inherit" }} title="Delete">✕</button>
                 </div>
               ))}
             </div>

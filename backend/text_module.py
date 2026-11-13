@@ -62,7 +62,7 @@ from flask import Blueprint, jsonify, request
 from database import (_conn, create_lore_project, create_or_update_card, get_card, list_lore_projects,
                       save_lore_entry, save_source)
 from preview import build_export_card_json, character_book_from_items, normalise_lore_items
-from generator import _request, request_text, text_of, list_of, number_of
+from generator import _request, request_text, text_of, list_of, number_of, tidy_card
 
 
 def _ask_text(provider, model, prompt, system, key):
@@ -1676,7 +1676,7 @@ _GENERIC_KW = {"spell", "spells", "location", "magic", "skill", "skills", "abili
 
 def clean_keywords(e, other_names):
     """Trigger keywords for one entry: its own name/aliases first; drop generic words and names that
-    belong to other entries (so 'Mascot dress sphere' does not fire every time 'Paine' is mentioned)."""
+    belong to other entries (so 'Mascot spirit mask' does not fire every time 'Vessa' is mentioned)."""
     own = {norm_name(n) for n in [e["name"]] + list(e["aliases"])}
     out, seen = [], set()
     for k in (e["keywords"] or []):
@@ -2566,6 +2566,7 @@ def api_text_narrator(pid):
         card = {k: text_of(res.get(k), "\n") for k in ("name", "description", "personality", "scenario", "first_mes",
                                                        "system_prompt")}
         card["tags"] = list_of(res.get("tags"))
+        tidy_card(card)
         if not card["description"] or not card["first_mes"]:
             raise ValueError("model returned an incomplete card")
         _log(f"narrator card for project={pid} written by {provider}/{model or 'default'}")

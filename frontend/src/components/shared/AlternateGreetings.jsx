@@ -91,7 +91,7 @@ export default function AlternateGreetings({ greetings = [], onChange, t = {}, c
       </div>
 
       {error && (
-        <div style={{ color: "#c84a3a", fontSize: 12, marginBottom: 8 }}>{error}</div>
+        <div style={{ color: "var(--signal-accent)", fontSize: 12, marginBottom: 8 }}>{error}</div>
       )}
 
       {greetings.length === 0 && (
@@ -131,7 +131,7 @@ export default function AlternateGreetings({ greetings = [], onChange, t = {}, c
               <button
                 className="signal-btn"
                 onClick={() => remove(idx)}
-                style={{ ...btnStyle, color: "#c84a3a", borderColor: "#c84a3a" }}
+                style={{ ...btnStyle, color: "var(--signal-accent)", borderColor: "var(--signal-accent)" }}
               >
                 ✕
               </button>

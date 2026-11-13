@@ -29,11 +29,19 @@ if "%REQ_HASH%"=="%STORED_HASH%" (
 )
 
 :: ── Node deps ─────────────────────────────────────────────────────────────────
-if not exist frontend\node_modules (
+set PKG_HASH_FILE=frontend\node_modules\.pkg_hash
+for /f %%i in ('certutil -hashfile frontend\package.json MD5 ^| findstr /v "MD5\|CertUtil"') do set PKG_HASH=%%i
+set PKG_HASH=%PKG_HASH: =%
+set STORED_PKG=none
+if exist "%PKG_HASH_FILE%" set /p STORED_PKG=<"%PKG_HASH_FILE%"
+if "%PKG_HASH%"=="%STORED_PKG%" (
+    echo [OK] Frontend dependencies up to date.
+) else (
     echo [.] Installing frontend dependencies...
     cd frontend
     call npm install --silent
     cd ..
+    echo %PKG_HASH%> "%PKG_HASH_FILE%"
 )
 
 :: ── Copy .env if missing ──────────────────────────────────────────────────────
@@ -47,10 +55,10 @@ if not exist .env (
 :: ── Ensure data/ exists ───────────────────────────────────────────────────────
 if not exist data mkdir data
 
-:: ── Start Vite in background, opens browser automatically ────────────────────
+:: ── Start Vite in background; open the browser once the backend answers ──────
 echo [.] Starting Vite dev server in background...
-start /B "" cmd /c "cd frontend && npm run dev -- --open"
-timeout /t 3 /nobreak >nul
+start /B "" cmd /c "cd frontend && npm run dev"
+start /B "" powershell -NoProfile -WindowStyle Hidden -Command "for ($i = 0; $i -lt 240; $i++) { try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:5000/api/backups | Out-Null; break } catch { Start-Sleep -Milliseconds 500 } }; Start-Process http://localhost:5173"
 
 :: ── Start Flask in foreground (logs visible here) ────────────────────────────
 echo [OK] Flask starting - logs will appear below.

@@ -159,9 +159,15 @@ def api_get_presets():
 @bp.post("/api/config/presets")
 def api_save_presets():
     data = request.get_json(force=True) or {}
-    presets = {}
+    settings = _load_settings()
+    presets = dict(settings.get("model_presets") or {})       # tasks that were not sent keep their preset
     for task in PRESET_TASKS:
+        if task not in data:
+            presets.setdefault(task, {"provider": "", "model": ""})
+            continue
         v = data.get(task) or {}
+        if not isinstance(v, dict):
+            return jsonify({"error": f"{task} must be an object like {{\"provider\": \"...\", \"model\": \"...\"}}"}), 400
         prov = str(v.get("provider") or "").strip().lower()
         if prov and prov not in ("nanogpt", "openrouter", "local"):
             return jsonify({"error": f"Unknown provider for {task}: {prov}"}), 400
@@ -169,7 +175,8 @@ def api_save_presets():
         if len(model) > 200 or "\n" in model:
             return jsonify({"error": f"Invalid model for {task}"}), 400
         presets[task] = {"provider": prov, "model": model}
-    settings = _load_settings()
+    if not any(t in data for t in PRESET_TASKS) and "model_presets" not in settings:
+        return jsonify({"ok": True, "presets": presets})          # nothing sent, nothing saved
     settings["model_presets"] = presets
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_PATH.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")

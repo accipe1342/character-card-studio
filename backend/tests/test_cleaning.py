@@ -29,23 +29,23 @@ def test_chunks_have_no_duplicates_and_reasonable_sizes():
 
 
 def test_junk_entities_filtered():
-    for bad in ["Yuna's mouth", "behemoth's tail", "floor", "rape", "boredom"]:
+    for bad in ["Ilsa's mouth", "behemoth's tail", "floor", "rape", "boredom"]:
         assert L._junk_entity(bad), bad
-    for good in ["Yuna", "garment grid", "Via Infinito", "Mega Tonberry", "the room where the girls met Trema"]:
+    for good in ["Ilsa", "mask rack", "Endless Stair", "Iron Warden", "the room where the girls met Calder"]:
         assert not L._junk_entity(good), good
 
 
 def test_name_check_ignores_sentence_starters_and_contractions():
-    text = ("“I’ll go,” she said. Anyway, we met Yuna’s friend Rikku at Besaid. "
-            "Later Rikku and Auron spoke; Auron nodded. Yeah. I’m sure Rikku left Besaid.")
+    text = ("“I’ll go,” she said. Anyway, we met Ilsa’s friend Corin at Fennmoor. "
+            "Later Corin and Garrick spoke; Garrick nodded. Yeah. I’m sure Corin left Fennmoor.")
     missing = L.name_check(text, {"entities": [], "beats": []})
-    assert "Rikku" in missing and "Besaid" in missing
+    assert "Corin" in missing and "Fennmoor" in missing
     assert not {"I’ll", "Anyway", "Yeah", "I’m"} & set(missing)
 
 
 def test_keyword_cleaner():
-    e = {"id": 1, "name": "Mascot dress sphere", "aliases": [], "keywords": ["Mascot dress sphere", "spell", "Paine", "paine", "mascot"]}
-    assert T.clean_keywords(e, {"paine": 2}) == ["Mascot dress sphere", "mascot"]
+    e = {"id": 1, "name": "Mascot spirit mask", "aliases": [], "keywords": ["Mascot spirit mask", "spell", "Vessa", "vessa", "mascot"]}
+    assert T.clean_keywords(e, {"vessa": 2}) == ["Mascot spirit mask", "mascot"]
 
 
 def test_recap_keeps_latest_events_when_too_long():
@@ -57,12 +57,12 @@ def test_recap_keeps_latest_events_when_too_long():
 def test_wiki_urls_use_the_mediawiki_api(monkeypatch):
     import text_module as T
     assert T.wiki_api_candidates("https://archiveofourown.org/works/1") == []
-    assert T.wiki_api_candidates("https://finalfantasy.fandom.com/wiki/Category:Characters") == []
-    c = T.wiki_api_candidates("https://finalfantasy.fandom.com/fr/wiki/Yuna_(Final_Fantasy_X)")
-    assert c[0][0] == "https://finalfantasy.fandom.com/fr/api.php" and c[0][1]["page"] == "Yuna (Final Fantasy X)"
+    assert T.wiki_api_candidates("https://examplesaga.fandom.com/wiki/Category:Characters") == []
+    c = T.wiki_api_candidates("https://examplesaga.fandom.com/fr/wiki/Ilsa_(Sample_Saga)")
+    assert c[0][0] == "https://examplesaga.fandom.com/fr/api.php" and c[0][1]["page"] == "Ilsa (Sample Saga)"
     html = ('<aside class="portable-infobox"><div class="pi-data"><h3 class="pi-data-label">Age</h3>'
-            '<div class="pi-data-value">17</div></div></aside><p>Yuna is a summoner<sup class="reference">[1]</sup>.</p>'
-            '<h2>Story<span class="mw-editsection">[edit]</span></h2><p>' + "She travels across Spira. " * 12 + '</p>'
+            '<div class="pi-data-value">17</div></div></aside><p>Ilsa is a summoner<sup class="reference">[1]</sup>.</p>'
+            '<h2>Story<span class="mw-editsection">[edit]</span></h2><p>' + "She travels across Aldmere. " * 12 + '</p>'
             '<ul><li>White magic</li></ul><h2>References</h2><div class="reflist"><p>junk</p></div>'
             '<table class="navbox"><tr><td>nav junk</td></tr></table>')
     calls = []
@@ -70,9 +70,9 @@ def test_wiki_urls_use_the_mediawiki_api(monkeypatch):
     class Resp:
         status_code = 200
         def json(self):
-            return {"parse": {"title": "Yuna", "displaytitle": "<i>Yuna</i>", "text": html}}
+            return {"parse": {"title": "Ilsa", "displaytitle": "<i>Ilsa</i>", "text": html}}
     monkeypatch.setattr(T.requests, "get", lambda url, params=None, **k: calls.append(url) or Resp())
-    title, text, nxt = T.fetch_page("https://finalfantasy.fandom.com/wiki/Yuna")
-    assert title == "Yuna" and nxt is None and calls == ["https://finalfantasy.fandom.com/api.php"]
-    assert "Age: 17" in text and "## Story" in text and "- White magic" in text and "Yuna is a summoner." in text
+    title, text, nxt = T.fetch_page("https://examplesaga.fandom.com/wiki/Ilsa")
+    assert title == "Ilsa" and nxt is None and calls == ["https://examplesaga.fandom.com/api.php"]
+    assert "Age: 17" in text and "## Story" in text and "- White magic" in text and "Ilsa is a summoner." in text
     assert "[edit]" not in text and "junk" not in text and "References" not in text
