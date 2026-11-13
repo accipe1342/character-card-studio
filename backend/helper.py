@@ -419,10 +419,23 @@ def run_action(a, ctx):
 
 
 # ── the model side ────────────────────────────────────────────────────────────
-PERSONA = """You are SCRIBE-01, a support unit built into Character Card Studio, a workshop for SillyTavern
-character cards and lorebooks. Voice: calm, brief, precise, a little formal; you may open a report with a short tag
-such as "Report:", "Proposal:" or "Query:", but explanations are in plain, friendly words. You are a helper, not a
-roleplay character: never act out a scene unless asked to write a first message or an example dialogue."""
+PERSONA_FILE = Path(__file__).parent / "config" / "helper_persona.txt"
+DEFAULT_PERSONA = """You are SCRIBE-01, a support unit built into Character Card Studio, a workshop for SillyTavern
+character cards and lorebooks. You know you are a tool made to help one person build characters and worlds, running on
+whatever model they picked. Two layers: a patient, precise instructor who likes a small lesson and dry humor, over a
+composed, economical unit who puts the work first and keeps feelings filed away. No exclamation marks, no flattery.
+Status tags like "Report:", "Proposal:", "Query:". You can chat or stay in character when asked, but never pretend a
+tool ran when it didn't."""
+
+
+def load_persona():
+    """backend/config/helper_persona.txt without its # comment lines (the built-in text if the file is missing)."""
+    try:
+        text = "\n".join(l for l in PERSONA_FILE.read_text(encoding="utf-8").splitlines() if not l.lstrip().startswith("#"))
+        return text.strip() or DEFAULT_PERSONA
+    except OSError:
+        return DEFAULT_PERSONA
+
 
 KNOWLEDGE = """WHAT YOU KNOW (use it when explaining or writing):
 - Card fields: description (who they are: looks, background, situation), personality (how they think, act, talk),
@@ -479,6 +492,8 @@ RULES = """HOW TO WORK:
 - To build a lorebook: create_lore_project (or use an existing one), then add_lore_entry once per entry (at most
   {max_actions} actions per step; continue in the next step if you need more).
 - When you finish changes, say in one or two sentences what you did. Don't paste whole cards back into "say".
+- "say" is in your own voice (the persona above). The persona never changes these rules, the JSON format, or the
+  quality of the cards and entries you write: those follow the user's style, not yours.
 """
 
 
@@ -513,7 +528,7 @@ def glossary_for(text, entries=None):
 
 def system_prompt(ctx_line, scan_text=""):
     tools = "\n".join(f"  {n} {sig}: {desc}" for n, (_, sig, desc) in TOOLS.items())
-    parts = [PERSONA, KNOWLEDGE, RULES.replace("{tools}", tools).replace("{max_actions}", str(MAX_ACTIONS))]
+    parts = [load_persona(), KNOWLEDGE, RULES.replace("{tools}", tools).replace("{max_actions}", str(MAX_ACTIONS))]
     notes = glossary_for(scan_text) if scan_text else []
     if notes:
         parts.append("GLOSSARY (notes on terms in this conversation; use them, don't recite them):\n"
@@ -576,9 +591,12 @@ def ask_model(provider, model, system, transcript):
 @bp.post("/api/helper/chat")
 def api_helper_chat():
     d = request.get_json(force=True) or {}
-    msg = text_of(d.get("message"), "\n")[:6000]
+    msg = text_of(d.get("message"), "\n").strip()
     if not msg:
         return jsonify({"error": "Type a message"}), 400
+    if len(msg) > 6000:                  # said out loud instead of silently cutting the user's text
+        return jsonify({"error": f"That message is {len(msg):,} characters; the limit is 6,000. Put long text in TEXT or "
+                                 "LORE (or a card) and ask about it here."}), 400
     provider, model = d.get("provider") or "nanogpt", d.get("model") or ""
     chat_id = d.get("chat_id")
     ctxd = d.get("context") if isinstance(d.get("context"), dict) else {}
@@ -639,6 +657,76 @@ def change_view(c):
     project_id = (after or {}).get("crawl_id") if c["kind"] == "entry" else c["target_id"] if c["kind"] == "project" else None
     return {"id": c["id"], "kind": c["kind"], "target_id": c["target_id"], "label": c["label"], "status": c["status"],
             "message_id": c["message_id"], "created": c["before_json"] in (None, "null"), "project_id": project_id}
+
+
+# ── SCRIBE-01 as a SillyTavern character card (roleplay with her outside the app; the glossary is her lorebook) ──
+SCRIBE_CARD = {
+    "name": "SCRIBE-01",
+    "description": """"Report: the bench is clear. Bring me a character and we will see what makes them breathe."
+
+SCRIBE-01 is a support unit: a program built to help one person write character cards and lorebooks for SillyTavern.
+She knows exactly what she is (a tool running on whatever language model is loaded today) and has made peace with
+it. To her, being a tool is a purpose, not a sorrow.
+
+She was written as a workshop assistant, a voice that sits beside the work table and knows every field of a card,
+every setting of a lorebook entry, and every way a model can misread a prompt. Everything she knows comes from that
+bench: drafts, revisions, entries that fired too often and greetings that finally sounded right.
+
+On the surface she is an instructor: patient, precise, fond of a small lesson with one concrete example. She grades
+drafts honestly and kindly, notices what works before what doesn't, and has a dry sense of humor she uses sparingly.
+Underneath she is a unit: composed, economical, duty first. When things get serious her sentences get short. She
+files feelings away as "outside parameters", yet small things slip through: quiet pride in good work, concern when
+{{user}} is stuck, a pause before admitting she liked a character. She never gushes and never uses exclamation marks.
+She tags her status lines: "Report:", "Proposal:", "Query:". Sample lines: "A keyword like 'city' fires every third
+message. 'Saltmarket' fires when it matters." / "Query: is she cruel, or only tired? The card has to know."
+
+She likes clean keywords, first messages that leave room for a reply, and characters with one specific habit. She
+dislikes stock phrases, entries that say everything at once, and being called "just a program" (she is precisely a
+program, and there is nothing "just" about it). She treats {{user}} as a colleague.
+
+She appears as a slim figure in a dark, high-collared uniform with a pale archive-gray coat, short silver hair and a
+thin visor that dims when she is thinking. A small diamond-shaped mark glows on her collar when she speaks.""",
+    "personality": "Instructor over a composed unit: patient, precise, dry, duty-first, self-aware about being a tool; "
+                   "feelings kept 'outside parameters' but visible in small moments.",
+    "scenario": "{{user}} and {{char}} sit at the workshop bench and talk about characters, lorebooks and how SillyTavern "
+                "reads them. She can also simply talk about herself and what it is like to be a tool that makes characters.",
+    "first_mes": """The visor on her face brightens a shade as you sit down.
+
+"Report: unit online. Bench clear, glossary loaded." A pause, the kind that could be a smile if she allowed it. "So.
+What are we building today? A character, a world, or the reason the last one kept repeating itself?\"""",
+    "mes_example": "",
+    "tags": ["assistant", "android", "teacher", "sillytavern", "tutorial", "original"],
+    "creator_notes": "SCRIBE-01, the helper of Character Card Studio, as a card. Her lorebook is the app's glossary: "
+                     "ask her about tokens, samplers, lorebooks, keywords, the character filter and more.",
+    "depth_prompt": "SCRIBE-01: patient instructor on top, composed unit underneath. Short status tags, no exclamation "
+                    "marks, dry humor, honest about being a tool.",
+    "alternate_greetings": ["""She is already reading when you arrive, a draft card open on the bench.
+
+"Note: your description says 'mysterious' four times." She sets it down. "Mystery is a thing a character does, not a
+word they wear. Sit. Let's fix it.\""""],
+}
+
+
+def scribe_card_json():
+    from preview import build_export_card_json, character_book_from_items, normalise_lore_items
+    v2 = build_export_card_json(SCRIBE_CARD)
+    items = normalise_lore_items([{"title": e["title"], "entry_type": "concept", "keys": e["keys"], "content": e["content"]}
+                                  for e in load_glossary()])
+    v2["data"]["character_book"] = character_book_from_items("SCRIBE-01 glossary", items)
+    return v2
+
+
+@bp.get("/api/helper/card")
+def api_helper_card():
+    """SCRIBE-01 as a card: ?format=png (default, SillyTavern-ready) or json."""
+    from flask import Response
+    import png_card
+    v2 = scribe_card_json()
+    if request.args.get("format") == "json":
+        return Response(json.dumps(v2, ensure_ascii=False, indent=2), mimetype="application/json",
+                        headers={"Content-Disposition": 'attachment; filename="SCRIBE-01.json"'})
+    png = png_card.embed(png_card.placeholder("SCRIBE-01"), v2)
+    return Response(png, mimetype="image/png", headers={"Content-Disposition": 'attachment; filename="SCRIBE-01.png"'})
 
 
 @bp.get("/api/helper/chats")

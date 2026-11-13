@@ -283,3 +283,24 @@ def test_profile_uses_the_structured_view_fields(client, H, mara):
     assert len(d["changes"]) == 1
     from generator import PROFILE_LIST_FIELDS, PROFILE_TEXT_FIELDS
     assert set(sp) <= set(PROFILE_LIST_FIELDS) | set(PROFILE_TEXT_FIELDS) | {"likes"}
+
+
+def test_persona_file_and_scribe_card(client, H, tmp_path, monkeypatch):
+    persona = tmp_path / "persona.txt"
+    persona.write_text("# a comment that must not reach the model\nYou are SCRIBE-01, testing voice.\n", encoding="utf-8")
+    monkeypatch.setattr(HLP, "PERSONA_FILE", persona)
+    SCRIPT[:] = [{"say": "Report: online.", "actions": []}]
+    chat(client, H, "hello")
+    system = SEEN[-1]["messages"][0]["content"]
+    assert system.startswith("You are SCRIBE-01, testing voice.") and "a comment that must not" not in system
+    assert "The persona never changes these rules" in system
+    monkeypatch.setattr(HLP, "PERSONA_FILE", tmp_path / "missing.txt")
+    assert HLP.load_persona() == HLP.DEFAULT_PERSONA
+    import png_card
+    r = client.get("/api/helper/card", headers=H)
+    assert r.status_code == 200 and r.mimetype == "image/png"
+    card = png_card.read(r.data)["chara"]["data"]
+    assert card["name"] == "SCRIBE-01" and "{{user}}" in card["scenario"]
+    assert len(card["character_book"]["entries"]) == len(HLP.load_glossary()) > 20
+    j = client.get("/api/helper/card?format=json", headers=H).get_json()
+    assert j["spec"] == "chara_card_v2" and j["data"]["first_mes"].startswith("The visor")

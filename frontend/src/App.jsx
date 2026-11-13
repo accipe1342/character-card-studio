@@ -48,10 +48,10 @@ import StudioHeader, { KeyFooter } from "./components/StudioHeader";
 export default function App() {
   const [mode, setMode] = useState("character"); // "character" | "lore" | "text" | "config"
   const [modeDir, setModeDir] = useState("right");
-  const [lang, setLang] = useState(() => localStorage.getItem("signal-lang") || "en");
+  const [lang, setLang] = useState(() => { try { return localStorage.getItem("signal-lang") || "en"; } catch { return "en"; } });
   const t = useStrings(lang);
 
-  useEffect(() => { localStorage.setItem("signal-lang", lang); }, [lang]); // which direction to slide
+  useEffect(() => { try { localStorage.setItem("signal-lang", lang); } catch { /* storage blocked */ } }, [lang]); // which direction to slide
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryCards, setLibraryCards] = useState([]);
   const [libraryLoading, setLibraryLoading] = useState(false);

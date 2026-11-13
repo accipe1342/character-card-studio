@@ -22,7 +22,7 @@ import threading
 from flask import Blueprint, jsonify, request
 
 from database import save_lore_entry, save_source
-from generator import _ensure_list, generate_lore_entry
+from generator import _ensure_list, generate_lore_entry, list_of, text_of
 from lore_tools import lorebook_entries
 from preview import character_book_from_items, world_info_book
 
@@ -297,7 +297,17 @@ def api_new_lore_entry():
     try:
         data = request.get_json(force=True) or {}
         project_id = data.get("project_id")
-        title = data.get("title", "New Entry").strip()
+        title = (text_of(data.get("title")) or "New Entry").strip()[:200]
+        if project_id not in (None, ""):
+            try:
+                project_id = int(project_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "project_id must be a number"}), 400
+            c0 = get_db_connection()
+            found = c0.execute("SELECT 1 FROM lore_crawls WHERE id = ?", (project_id,)).fetchone()
+            c0.close()
+            if not found:
+                return jsonify({"error": "Lore project not found"}), 404
 
         # Get any existing source_id, or create a placeholder source
         conn = get_db_connection()
@@ -450,36 +460,44 @@ def api_update_lore_entry(lore_id):
     try:
         data = request.get_json(force=True) or {}
         conn = get_db_connection()
-        new_order = int(data.get("insertion_order", 100))
-        prev = conn.execute("SELECT order_manual FROM lore_entries WHERE id = ?", (lore_id,)).fetchone()
-        before = conn.execute("SELECT title, content, keywords_json FROM lore_entries WHERE id = ?", (lore_id,)).fetchone()
-        if before is None:
+        cur_row = conn.execute("SELECT title, content, summary, keywords_json, scan_depth, insertion_order, entry_depth, "
+                               "order_manual FROM lore_entries WHERE id = ?", (lore_id,)).fetchone()
+        if cur_row is None:
             conn.close()
             return jsonify({"error": "Lore entry not found"}), 404
-        order_manual = 1 if (new_order != 100 or (prev and prev[0])) else 0
+        # a PATCH: fields that were not sent keep their saved value (a partial body must never blank the entry)
+        def num(key, default, lo, hi):
+            if key not in data:
+                return cur_row[key] if cur_row[key] is not None else default
+            try:
+                return max(lo, min(int(data[key]), hi))
+            except (TypeError, ValueError):
+                raise ValueError(f"{key} must be a whole number")
+        try:
+            new_order = num("insertion_order", 100, 0, 100000)
+            scan_depth = num("scan_depth", 2, 0, 1000)
+            entry_depth = num("entry_depth", 4, 0, 10000)
+        except ValueError as ve:
+            conn.close()
+            return jsonify({"error": str(ve)}), 400
+        title = text_of(data["title"]).strip()[:200] if "title" in data else cur_row["title"]
+        content = text_of(data["content"], "\n") if "content" in data else (cur_row["content"] or "")
+        summary = text_of(data["summary"], "\n") if "summary" in data else (cur_row["summary"] or "")
+        old_keys = json.loads(cur_row["keywords_json"] or "[]")
+        keywords = list_of(data["keywords"]) if "keywords" in data else old_keys
+        order_manual = 1 if ("insertion_order" in data and new_order != 100) or cur_row["order_manual"] else 0
         conn.execute(
             """UPDATE lore_entries SET
                title = ?, keywords_json = ?, content = ?, summary = ?,
                scan_depth = ?, insertion_order = ?, entry_depth = ?, order_manual = ?,
                updated_at = CURRENT_TIMESTAMP
                WHERE id = ?""",
-            (
-                data.get("title", ""),
-                json.dumps(data.get("keywords", []), ensure_ascii=False),
-                data.get("content", ""),
-                data.get("summary", ""),
-                int(data.get("scan_depth", 2)),
-                new_order,
-                int(data.get("entry_depth", 4)),
-                order_manual,
-                lore_id,
-            )
-        )
+            (title, json.dumps(keywords, ensure_ascii=False), content, summary, scan_depth, new_order, entry_depth,
+             order_manual, lore_id))
         if data.get("entry_type"):   # the type buttons in the editor were never saved before
             conn.execute("UPDATE lore_entries SET entry_type = ? WHERE id = ?", (str(data["entry_type"]), lore_id))
         # a hand edit of the text marks the entry, so re-sending from TEXT keeps it
-        if before and (before["title"] != data.get("title", "") or (before["content"] or "") != data.get("content", "")
-                       or json.loads(before["keywords_json"] or "[]") != list(data.get("keywords", []))):
+        if cur_row["title"] != title or (cur_row["content"] or "") != content or old_keys != keywords:
             conn.execute("UPDATE lore_entries SET user_edited = 1 WHERE id = ?", (lore_id,))
         conn.commit()
         conn.close()

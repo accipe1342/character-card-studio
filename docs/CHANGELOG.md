@@ -18,6 +18,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   (from URL, several URLs, from a prompt, deep extraction), New Entry, TOOLS ▾ (Clean Keywords, Test Activation,
   Links, Trash all entries), EXPORT ▾ (SillyTavern .json, Send to SillyTavern, Quick Replies, Bible / Data Bank,
   DeepLore) and Trash. The LORE entry editor has CONTENT / KEYS / SILLYTAVERN tabs.
+- SCRIBE-01 has a personality: a patient, precise instructor over a composed, duty-first unit, self-aware about
+  being a tool built to make cards; you can simply chat with her or keep her in character. The persona is an editable
+  text file (`backend/config/helper_persona.txt`); the work rules always apply on top of it.
+- SCRIBE-01 as a SillyTavern card: ⇩ CARD in the console (or GET /api/helper/card, ?format=json) gives a card PNG
+  with the glossary embedded as her lorebook.
 - `docs/DESIGN.md`: the design system in depth (principles, color and contrast, type, spacing, ornaments, every
   component, motion, copy, dark mode, a drop-in stylesheet and React components) for use in other projects.
 - Import character cards: CHARACTER NEW ▾ > Import card takes a card PNG (V2 or V3 data inside), a card .json
@@ -54,6 +59,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   changed.
 
 ### Fixed
+- The SCRIBE-01 console looked and sized its buttons differently in light and dark mode; it now has its own buttons,
+  identical in both. Scrolling inside it no longer moves the page behind it.
+- Unavailable menu items now say what they need ("open a card first", "pick a lorebook first") instead of only
+  looking faded. Escape closes the Interview dialog.
+- A floating SCRIBE-01 window saved on a bigger screen opens fully on screen; menus near the edge of a phone open the
+  other way instead of off-screen.
+- The app no longer breaks in a private window or with site storage blocked (theme and language settings).
+- Saving prompt templates or model presets with a partial request no longer blanks the templates, turns templates
+  off or clears the other presets; numbers are checked.
+- Saving a lore entry changes only the fields that were sent (a partial save could blank the title and content);
+  keywords sent as text become a list; bad numbers are refused; a new entry for a missing lorebook is refused.
+- Saving or exporting a card keeps every field in its shape (tags and greetings stay lists, the profile stays an object).
+- Every API route answers a missing or broken request body with a readable JSON message instead of an HTML error page,
+  and a missing card or entry is a 404 instead of a 500.
+- SCRIBE-01 says when a message is over 6,000 characters instead of silently cutting it.
+- A .charx import that would unpack to more than 200 MB is refused.
 - Starting the app no longer floods the log with proxy errors: the browser opens once the backend answers, and
   SCRIBE-01 retries loading its last chat instead of forgetting it when the backend is still starting.
 - Accent and dark-mode dim text darkened / lightened to meet 4.5:1 contrast.

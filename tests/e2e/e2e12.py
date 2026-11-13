@@ -42,6 +42,22 @@ with sync_playwright() as pw:
     pg.reload(); pg.wait_for_timeout(1000)
     pg.get_by_role("button", name=re.compile(r"^\s*CHARACTER\s*$")).first.click(); pg.wait_for_timeout(500)
     ok(pg.locator("h1.nier-title").inner_text().strip() == "CHARACTER", "NieR header shows the studio name")
+    pg.get_by_role("button", name="NEW ▾").click(); pg.get_by_role("menuitem", name=re.compile("New Card")).click(); pg.wait_for_timeout(600)
+    pg.reload(); pg.wait_for_timeout(900)                                   # nothing open again
+    m = open_menu(pg, "TOOLS")
+    audit = m.get_by_role("menuitem", name=re.compile("Audit"))
+    ok(audit.is_disabled() and "open a card first" in audit.inner_text(), "an unavailable tool says what it needs")
+    pg.keyboard.press("Escape")
+    pg.keyboard.press("Control+/"); pg.wait_for_timeout(300)
+    con = pg.locator("aside[aria-label=Helper]")
+    b1 = con.bounding_box(); h1 = con.locator("button").first.bounding_box()
+    pg.get_by_role("button", name=re.compile("Switch to dark mode")).click(); pg.wait_for_timeout(500)
+    b2 = con.bounding_box(); h2 = con.locator("button").first.bounding_box()
+    pg.get_by_role("button", name=re.compile("Switch to light mode")).click(); pg.wait_for_timeout(300)
+    ok(b1 == b2 and h1 == h2, f"the console keeps its size and its buttons in both themes ({b1} / {b2})")
+    ok(con.get_by_role("link", name=re.compile("CARD")).get_attribute("href") == "/api/helper/card", "SCRIBE-01 card download in the console")
+    ok(requests.get(B + "/api/helper/card").headers["content-type"] == "image/png", "the card downloads as a PNG")
+    pg.keyboard.press("Control+/"); pg.wait_for_timeout(300)
 
     # import a card PNG
     with pg.expect_file_chooser() as fc:
@@ -110,6 +126,20 @@ with sync_playwright() as pw:
     pg.set_viewport_size({"width": 390, "height": 800}); pg.wait_for_timeout(600)
     sw = pg.evaluate("document.documentElement.scrollWidth")
     ok(sw <= 392, f"no sideways scrolling on a phone ({sw}px)")
+    pg.get_by_role("button", name=re.compile(r"^\s*CHARACTER\s*$")).first.click(); pg.wait_for_timeout(500)
+    for label in ("NEW", "TOOLS", "EXPORT"):
+        if pg.get_by_role("button", name=f"{label} ▾").is_disabled():
+            continue
+        mm = open_menu(pg, label); pg.wait_for_timeout(150)
+        r = mm.bounding_box()
+        ok(r["x"] >= 0 and r["x"] + r["width"] <= 391, f"the {label} menu fits on a phone ({r})")
+        pg.keyboard.press("Escape")
+    pg.set_viewport_size({"width": 1440, "height": 900})
+    pg.evaluate("() => { localStorage.setItem('ccs.helper.open', '1'); localStorage.setItem('ccs.helper.mode', 'float'); localStorage.setItem('ccs.helper.pos', JSON.stringify({x: 3000, y: 2000, w: 660, h: 460})); }")
+    pg.reload(); pg.wait_for_timeout(1200)
+    fb = pg.locator("aside[aria-label=Helper]").bounding_box()
+    ok(fb["x"] >= 0 and fb["x"] + fb["width"] <= 1440 and fb["y"] + fb["height"] <= 900, f"a window saved off-screen opens fully on screen ({fb})")
+    pg.evaluate("() => { localStorage.setItem('ccs.helper.mode', 'dock'); localStorage.removeItem('ccs.helper.open'); }")
     ok(not errs, f"no page errors {errs[:2]}")
     b.close()
 print("FAILS:", R.count(False))

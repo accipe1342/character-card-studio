@@ -28,12 +28,12 @@ import { useState, useEffect } from "react";
 
 export default function TopNav({ mode, setMode, onLibrary, onSearch, lang, setLang, t = {} }) {
   const [dark, setDark] = useState(() => {
-    return localStorage.getItem("signal-theme") === "dark";
+    try { return localStorage.getItem("signal-theme") === "dark"; } catch { return document.documentElement.getAttribute("data-theme") === "dark"; }
   });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
-    localStorage.setItem("signal-theme", dark ? "dark" : "light");
+    try { localStorage.setItem("signal-theme", dark ? "dark" : "light"); } catch { /* storage blocked: this session only */ }
   }, [dark]);
 
   const buttonStyle = {

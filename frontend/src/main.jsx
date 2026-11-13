@@ -13,7 +13,8 @@
 import { StrictMode } from 'react'
 
 // Restore theme before first render to avoid flash
-const savedTheme = localStorage.getItem('signal-theme') || 'light'
+let savedTheme = 'light'
+try { savedTheme = localStorage.getItem('signal-theme') || 'light' } catch { /* storage blocked (private window): light theme */ }
 document.documentElement.setAttribute('data-theme', savedTheme)
 import { createRoot } from 'react-dom/client'
 import '@fontsource/noto-sans-jp/300.css'   // NieR-style type, bundled so it works offline

@@ -9,13 +9,15 @@
  * Closes on a pick, a click outside or Escape. Items are real buttons (role="menuitem"), so tests and keyboards
  * reach them the same way.
  */
-import { Children, cloneElement, isValidElement, useEffect, useRef, useState } from "react";
+import { Children, cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-export function MenuItem({ children, onClick, disabled, title, keepOpen, _close }) {
+/** why: shown (dim, on the right) when the item is disabled, so an unavailable item says what it needs. */
+export function MenuItem({ children, onClick, disabled, title, keepOpen, why, _close }) {
   return (
-    <button type="button" role="menuitem" className="nier-menu-item" disabled={disabled} title={title} data-keep-open={keepOpen ? "" : undefined}
-      onClick={(e) => { if (!keepOpen) _close?.(); onClick?.(e); }}>
+    <button type="button" role="menuitem" className="nier-menu-item" disabled={disabled} title={disabled && why ? why : title}
+      data-keep-open={keepOpen ? "" : undefined} onClick={(e) => { if (!keepOpen) _close?.(); onClick?.(e); }}>
       {children}
+      {disabled && why && <span className="why">{why}</span>}
     </button>
   );
 }
@@ -31,7 +33,16 @@ export function MenuSep() {
 /** keepMounted: the items stay mounted while the menu is closed (for items that own a dialog, like Quick Replies). */
 export default function NierMenu({ label, children, align = "left", primary = false, style, title, disabled, width, keepMounted = false }) {
   const [open, setOpen] = useState(false);
+  const [side, setSide] = useState(align);
   const ref = useRef(null);
+  const pop = useRef(null);
+  // open on the side that fits: a menu near the right edge of a phone opens leftwards instead of off-screen
+  useLayoutEffect(() => {
+    if (!open || !pop.current || !ref.current) { setSide(align); return; }
+    const r = pop.current.getBoundingClientRect(), b = ref.current.getBoundingClientRect();
+    if (side === "left" && r.right > window.innerWidth - 8 && b.right - r.width >= 8) setSide("right");
+    else if (side === "right" && r.left < 8 && b.left + r.width <= window.innerWidth - 8) setSide("left");
+  }, [open, side, align]);
   useEffect(() => {
     if (!open) return undefined;
     const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -50,9 +61,10 @@ export default function NierMenu({ label, children, align = "left", primary = fa
         {label} ▾
       </button>
       {(open || keepMounted) && (
-        <div role="menu" aria-label={String(label)} className="nier-menu" hidden={!open}
+        <div ref={pop} role="menu" aria-label={String(label)} className="nier-menu" hidden={!open}
           onClick={(e) => { if (e.target.closest && e.target.closest("button") && !e.target.closest("[data-keep-open]")) close(); }}
-          style={{ top: "calc(100% + 6px)", [align === "right" ? "right" : "left"]: 0, minWidth: width || 240, display: open ? "block" : "none" }}>
+          style={{ top: "calc(100% + 6px)", [side === "right" ? "right" : "left"]: 0, minWidth: Math.min(width || 240, window.innerWidth - 16),
+            maxWidth: "calc(100vw - 16px)", display: open ? "block" : "none" }}>
           {kids}
         </div>
       )}

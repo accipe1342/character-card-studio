@@ -146,6 +146,16 @@ function auditCard(card) {
   return { score: Math.max(0, score), issues, perm };
 }
 
+/** closes a dialog on Escape while it is mounted */
+function EscapeCloses({ onClose }) {
+  useEffect(() => {
+    const k = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return null;
+}
+
 export default function CharacterStudio({
   t = {},
   showToast,
@@ -1041,9 +1051,9 @@ export default function CharacterStudio({
         <input ref={importRef} type="file" accept=".png,.json,.charx,image/png,application/json" aria-label="Import a card file"
           style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleImportCard(f); }} />
         <NierMenu label={t.toolsMenu || "TOOLS"}>
-          <MenuItem disabled={!card} onClick={runAudit} title="Check the card for problems (no model call)">⚖ {t.auditCard || "Audit"}</MenuItem>
-          <MenuItem disabled={!card} onClick={() => setInterviewOpen(true)} title="Ask the character questions to test its voice (one model call per answer, not saved)">◇ {t.interview || "Interview"}</MenuItem>
-          <MenuItem disabled={!source} onClick={() => setSourceOpen(true)}>{t.viewSource || "View Source"}</MenuItem>
+          <MenuItem disabled={!card} why="open a card first" onClick={runAudit} title="Check the card for problems (no model call)">⚖ {t.auditCard || "Audit"}</MenuItem>
+          <MenuItem disabled={!card} why="open a card first" onClick={() => setInterviewOpen(true)} title="Ask the character questions to test its voice (one model call per answer, not saved)">◇ {t.interview || "Interview"}</MenuItem>
+          <MenuItem disabled={!source} why="scrape a page first" onClick={() => setSourceOpen(true)}>{t.viewSource || "View Source"}</MenuItem>
         </NierMenu>
 
         <div style={{ flex: 1 }} />
@@ -1053,7 +1063,7 @@ export default function CharacterStudio({
             {cardDirty ? "● EDITING (AUTOSAVES)" : "✓ SAVED"}
           </span>
         )}
-        <NierMenu label={t.exportMenu || "EXPORT"} align="right" disabled={!card} width={300}>
+        <NierMenu label={t.exportMenu || "EXPORT"} align="right" disabled={!card} width={300} title={card ? "" : "Open or make a card first"}>
           <MenuItem onClick={() => handleExportCard("v2")} title="Character Card V2 JSON: what SillyTavern and most sites import">
             {characterViewMode === "structured" ? (t.exportStructuredJson || "Export Structured JSON") : (t.exportCardJson || "Export Card JSON")}
           </MenuItem>
@@ -1163,6 +1173,7 @@ export default function CharacterStudio({
         </div>
       )}
 
+      {interviewOpen && card && <EscapeCloses onClose={() => setInterviewOpen(false)} />}
       {interviewOpen && card && (
         <div onClick={() => setInterviewOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 300,
           display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>

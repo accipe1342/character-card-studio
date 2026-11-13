@@ -87,6 +87,8 @@ def read_file(name, raw):
             raise ImportError_("This .charx file is damaged.")
         if "card.json" not in z.namelist():
             raise ImportError_("This zip has no card.json, so it is not a CHARX card.")
+        if sum(i.file_size for i in z.infolist()) > 200 * 1024 * 1024 or z.getinfo("card.json").file_size > 20 * 1024 * 1024:
+            raise ImportError_("This .charx unpacks to more than 200 MB; it can't be imported.")
         obj = json.loads(z.read("card.json").decode("utf-8"))
         image = None
         assets = ((obj.get("data") or {}).get("assets") or []) if isinstance(obj, dict) else []

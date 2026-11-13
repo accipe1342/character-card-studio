@@ -627,20 +627,20 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
           {entries.length} {entries.length === 1 ? "entry" : "entries"}
         </span>
         <NierMenu label={t.toolsMenu || "TOOLS"} align="right" width={260}>
-          <MenuItem disabled={!activeProject || !entries.length} onClick={handleCleanKeywords}
+          <MenuItem disabled={!activeProject || !entries.length} why={!activeProject ? "pick a lorebook first" : "no entries yet"} onClick={handleCleanKeywords}
             title="Remove generic trigger words and other entries' names from keywords, so each entry fires only for itself">
             {t.cleanKeywords || "Clean Keywords"}
           </MenuItem>
-          <MenuItem disabled={!entries.length} onClick={() => setToolPanel(p => p === "sim" ? null : "sim")}
+          <MenuItem disabled={!entries.length} why="no entries yet" onClick={() => setToolPanel(p => p === "sim" ? null : "sim")}
             title="Paste chat text and see which entries SillyTavern would insert, and why">
             {t.testActivation || "Test Activation"}{toolPanel === "sim" ? " ✓" : ""}
           </MenuItem>
-          <MenuItem disabled={!activeProject || !entries.length} onClick={() => setToolPanel(p => p === "links" ? null : "links")}
+          <MenuItem disabled={!activeProject || !entries.length} why={!activeProject ? "pick a lorebook first" : "no entries yet"} onClick={() => setToolPanel(p => p === "links" ? null : "links")}
             title="Which entries mention which (recursion), unlinked entries and entries that never fire">
             {t.links || "Links"}{toolPanel === "links" ? " ✓" : ""}
           </MenuItem>
           <MenuSep />
-          <MenuItem disabled={!activeProject || !entries.length} onClick={async () => {
+          <MenuItem disabled={!activeProject || !entries.length} why={!activeProject ? "pick a lorebook first" : "no entries yet"} onClick={async () => {
             if (!window.confirm(`Move all ${entries.length} entries in "${activeProject.project_name}" to the trash?`)) return;
             try {
               await clearLoreProject(activeProject.id);   // keeps the project id (TEXT links and card lorebooks point at it)
@@ -656,7 +656,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
           <MenuItem onClick={handleExport} title="World Info lorebook for SillyTavern (import in the World Info panel)">
             {t.exportSillyTavern || "SillyTavern (.json)"}
           </MenuItem>
-          <MenuItem disabled={!activeProject} onClick={handleSendToST}
+          <MenuItem disabled={!activeProject} why="pick a lorebook first" onClick={handleSendToST}
             title="Save this project as a World Info lorebook in a running SillyTavern (Config → SillyTavern). Same name = replaced.">
             {t.sendToSTShort || "Send to SillyTavern"}
           </MenuItem>

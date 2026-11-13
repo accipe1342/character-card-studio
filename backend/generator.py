@@ -1576,6 +1576,31 @@ def tidy_text(value, name=""):
     return s.strip()
 
 
+def clean_card_payload(card):
+    """Card JSON from the browser (or another client) with every field in the shape the database and exports expect."""
+    out = dict(card)
+    for k in CARD_TEXT_FIELDS + ("depth_prompt", "post_history", "system_prompt", "creator_notes"):
+        if k in out and out[k] is not None and not isinstance(out[k], str):
+            out[k] = text_of(out[k], "\n")
+    if "tags" in out:
+        out["tags"] = list_of(out["tags"])
+    if "alternate_greetings" in out:
+        out["alternate_greetings"] = list_of(out["alternate_greetings"], split=False)
+    if "structured_profile" in out:
+        sp = out["structured_profile"]
+        if isinstance(sp, str):
+            try:
+                sp = json.loads(sp)
+            except ValueError:
+                sp = {}
+        sp = dict(sp) if isinstance(sp, dict) else {}
+        for f in PROFILE_LIST_FIELDS:
+            if f in sp and not isinstance(sp[f], list):
+                sp[f] = list_of(sp[f])
+        out["structured_profile"] = sp
+    return out
+
+
 GREETING_FIELDS = ("first_mes", "alternate_greetings")
 
 

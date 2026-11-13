@@ -40,7 +40,7 @@ const STARTERS = {
     "What should go in the card and what in the lorebook?"],
 };
 const STUDIO_NAME = { character: "CHARACTER", lore: "LORE", text: "TEXT" };
-const small = { padding: "3px 9px", fontSize: 11, border: "1px solid transparent", cursor: "pointer", letterSpacing: "0.12em", fontFamily: "inherit" };
+const small = {};                           // size and look come from .scribe-btn (same in both themes)
 
 function ChangeCard({ c, onKeep, onUndo, onOpen, busy }) {
   const done = c.status !== "open";
@@ -52,11 +52,11 @@ function ChangeCard({ c, onKeep, onUndo, onOpen, busy }) {
         {c.status === "kept" && <span style={{ color: DIM }}>✓ kept</span>}
         {c.status === "undone" && <span style={{ color: red }}>↶ undone</span>}
         {c.status !== "undone" && onOpen && (c.kind !== "entry" || c.project_id) && (
-          <button className="signal-btn" style={small} onClick={() => onOpen(c)}>OPEN</button>
+          <button className="scribe-btn" style={small} onClick={() => onOpen(c)}>OPEN</button>
         )}
         {!done && <>
-          <button className="signal-btn" style={small} disabled={busy} onClick={() => onKeep(c)}>KEEP</button>
-          <button className="signal-btn" style={small} disabled={busy} onClick={() => onUndo(c)}>UNDO</button>
+          <button className="scribe-btn" style={small} disabled={busy} onClick={() => onKeep(c)}>KEEP</button>
+          <button className="scribe-btn" style={small} disabled={busy} onClick={() => onUndo(c)}>UNDO</button>
         </>}
       </div>
       {c.error && <div style={{ color: red, marginTop: 3 }}>⊗ {c.error}</div>}
@@ -204,9 +204,12 @@ export default function HelperPanel({ studio, onOpen }) {
 
   const floating = mode === "float";
   const fp = pos || { x: Math.max(0, window.innerWidth - 700), y: Math.max(0, window.innerHeight - 520), w: 660, h: 460 };
+  // a window saved on a bigger screen must still be reachable: keep its title bar inside the viewport
+  const fw = Math.min(fp.w, window.innerWidth), fh = Math.min(fp.h, window.innerHeight);
   const frame = floating
-    ? { left: fp.x, top: fp.y, width: Math.min(fp.w, window.innerWidth), height: Math.min(fp.h, window.innerHeight) }
-    : { left: 24, right: 24, bottom: 6, height };
+    ? { left: Math.min(Math.max(0, fp.x), Math.max(0, window.innerWidth - fw)),
+        top: Math.min(Math.max(0, fp.y), Math.max(0, window.innerHeight - fh)), width: fw, height: fh }
+    : { left: 24, right: 24, bottom: 6, height: Math.min(height, Math.max(160, window.innerHeight - 120)) };
   const groups = messages.filter((m) => m.role === "helper").map((m) => ({ m, list: changes.filter((c) => c.message_id === m.id) }))
     .filter((g) => g.list.length);
   return (
@@ -230,15 +233,18 @@ export default function HelperPanel({ studio, onOpen }) {
           <option value="">New chat</option>
           {chats.map((c) => <option key={c.id} value={c.id}>{c.title || `Chat ${c.id}`}</option>)}
         </select>
-        <button className="signal-btn" style={small} onClick={newChat} disabled={busy}>NEW</button>
-        <button className="signal-btn" style={small} onClick={() => setMode(floating ? "dock" : "float")}
+        <button className="scribe-btn" style={small} onClick={newChat} disabled={busy}>NEW</button>
+        <a className="scribe-btn" href="/api/helper/card" download="SCRIBE-01.png" style={{ textDecoration: "none" }}
+          title="SCRIBE-01 as a SillyTavern character card, to talk with her there (the glossary comes along as her lorebook)">⇩ CARD</a>
+        <button className="scribe-btn" style={small} onClick={() => setMode(floating ? "dock" : "float")}
           aria-label={floating ? "Dock at the bottom" : "Float as a window"}>{floating ? "⇊ DOCK" : "⧉ FLOAT"}</button>
-        <button className="signal-btn" style={small} onClick={() => setOpen(false)} aria-label="Close the helper">▾ HIDE</button>
+        <button className="scribe-btn" style={small} onClick={() => setOpen(false)} aria-label="Close the helper">▾ HIDE</button>
       </div>
 
       <div style={{ flex: 1, display: "flex", minHeight: 0, flexWrap: floating && fp.w < 560 ? "wrap" : "nowrap" }}>
         <div style={{ flex: "1 1 360px", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
-          <div ref={listRef} aria-live="polite" style={{ flex: 1, overflowY: "auto", padding: "8px 14px", fontSize: 13, lineHeight: 1.7 }}>
+          <div ref={listRef} aria-live="polite" tabIndex={0} aria-label="Conversation" className="scribe-scroll"
+            style={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", padding: "8px 14px", fontSize: 13, lineHeight: 1.7, outline: "none" }}>
             {!messages.length && (
               <div>
                 <div style={{ marginBottom: 8 }}><span style={{ color: DIM, letterSpacing: "0.14em" }}>SCRIBE-01 ::</span> Report: unit online. I can write or edit
@@ -246,7 +252,7 @@ export default function HelperPanel({ studio, onOpen }) {
                   is saved at once and listed on the right with KEEP and UNDO.</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {(STARTERS[studio] || []).map((s) => (
-                    <button key={s} className="signal-btn" style={{ ...small, letterSpacing: "0.04em", fontSize: 12, padding: "5px 10px" }}
+                    <button key={s} className="scribe-btn" style={{ ...small, letterSpacing: "0.04em", fontSize: 12, padding: "5px 10px" }}
                       disabled={busy} onClick={() => (s.endsWith("idea") ? setText("Write a new character: ") : send(s))}>{s}</button>
                   ))}
                 </div>
@@ -266,11 +272,11 @@ export default function HelperPanel({ studio, onOpen }) {
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
               style={{ flex: 1, boxSizing: "border-box", resize: "none", fontSize: 13, fontFamily: "inherit", padding: "7px 10px",
                 background: "rgba(218,214,195,0.1)", color: INK, border: "none", boxShadow: `inset 0 0 0 1px ${LINE}` }} />
-            <button className="signal-btn signal-btn-active" style={{ ...small, padding: "9px 16px", fontSize: 12 }} disabled={busy || !text.trim()}
+            <button className="scribe-btn is-primary" style={{ ...small, padding: "9px 16px", fontSize: 12 }} disabled={busy || !text.trim()}
               onClick={() => send()}>{busy ? "WORKING…" : "SEND"}</button>
           </div>
         </div>
-        <div style={{ flex: "0 1 360px", borderLeft: `1px solid ${LINE}`, padding: "8px 14px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+        <div className="scribe-scroll" style={{ flex: "0 1 360px", borderLeft: `1px solid ${LINE}`, padding: "8px 14px", overflowY: "auto", overscrollBehavior: "contain", display: "flex", flexDirection: "column", gap: 6, minWidth: 0, minHeight: 0 }}>
           <div style={{ letterSpacing: "0.24em", fontWeight: 500, fontSize: 12 }}>CHANGES · {openCount} OPEN</div>
           {!groups.length && <div style={{ color: DIM, fontSize: 12 }}>What SCRIBE-01 changes shows up here, with OPEN, KEEP and UNDO.</div>}
           {groups.map(({ m, list }) => {
@@ -280,8 +286,8 @@ export default function HelperPanel({ studio, onOpen }) {
                 {list.map((c) => <ChangeCard key={c.id} c={c} onKeep={keep} onUndo={undo} onOpen={onOpen} busy={busy} />)}
                 {openOnes.length > 1 && (
                   <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                    <button className="signal-btn" style={small} disabled={busy} onClick={() => openOnes.forEach(keep)}>KEEP ALL</button>
-                    <button className="signal-btn" style={small} disabled={busy} onClick={() => undoAll(openOnes)}>UNDO ALL</button>
+                    <button className="scribe-btn" style={small} disabled={busy} onClick={() => openOnes.forEach(keep)}>KEEP ALL</button>
+                    <button className="scribe-btn" style={small} disabled={busy} onClick={() => undoAll(openOnes)}>UNDO ALL</button>
                   </div>
                 )}
               </div>
