@@ -7,6 +7,7 @@ import re, sys, requests
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "backend"))
 import png_card
 from playwright.sync_api import sync_playwright
+from ui import menu, open_menu
 B = "http://127.0.0.1:5173"
 R = []
 def ok(c, n): R.append(bool(c)); print(("PASS " if c else "FAIL ") + n)
@@ -22,14 +23,14 @@ with sync_playwright() as pw:
     pg.on("dialog", lambda d: d.accept())
     pg.goto("http://localhost:5173/"); pg.wait_for_timeout(800)
     pg.get_by_role("button", name=re.compile(r"^\s*CHARACTER\s*$", re.I)).first.click(); pg.wait_for_timeout(500)
-    pg.get_by_role("button", name=re.compile("New Card")).click(); pg.wait_for_timeout(1000)
+    menu(pg, "NEW", "New Card"); pg.wait_for_timeout(1000)
     pg.locator("section").filter(has_text="Preview").locator("input[type=file]").first.set_input_files(pic)
     pg.wait_for_timeout(2000)
     cards = requests.get(B + "/api/cards").json()
     newest = next((c for c in cards if c.get("image") == PIC), {})
     ok(bool(newest), "uploaded portrait saved with the card")
     # another blank card: no picture
-    pg.get_by_role("button", name=re.compile("New Card")).click(); pg.wait_for_timeout(1000)
+    menu(pg, "NEW", "New Card"); pg.wait_for_timeout(1000)
     ok(pg.locator("text=No image uploaded yet").count() == 1, "a new card starts without the last picture")
     # reload, open the first card from the Library: its picture comes back
     pg.reload(); pg.wait_for_timeout(1000)
@@ -41,7 +42,7 @@ with sync_playwright() as pw:
     ok(shown == f"/api/images/{newest['image']}", f"reopened card shows its saved portrait ({shown})")
     import io, json, zipfile
     with pg.expect_download() as dl:
-        pg.get_by_role("button", name="CHARX", exact=True).click()
+        menu(pg, "EXPORT", r"^CHARX$")
     z = zipfile.ZipFile(dl.value.path())
     v3 = json.loads(z.read("card.json"))
     ok(dl.value.suggested_filename.endswith(".charx") and z.read("assets/icon/images/main.png") == raw

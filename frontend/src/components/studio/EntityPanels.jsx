@@ -30,7 +30,7 @@ export function EntityChapters({ entityId, onJump }) {
     setD(null); setError("");
     getEntityChapters(entityId).then(setD).catch((e) => setError(e.message));
   }, [entityId]);
-  if (error) return <div style={{ color: "#c84a3a", fontSize: 12, marginTop: 8 }}>⊗ {error}</div>;
+  if (error) return <div style={{ color: "var(--signal-accent)", fontSize: 12, marginTop: 8 }}>⊗ {error}</div>;
   if (!d) return <div style={{ ...hint, marginTop: 8 }}>Loading…</div>;
   let markerShown = false;
   return (
@@ -51,8 +51,8 @@ export function EntityChapters({ entityId, onJump }) {
         return (
           <div key={c.chunk}>
             {marker && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0", color: "#c84a3a", fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}>
-                <span style={{ flex: 1, borderTop: "1px dashed #c84a3a" }} /> ROLEPLAY STARTS HERE <span style={{ flex: 1, borderTop: "1px dashed #c84a3a" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0", color: "var(--signal-accent)", fontSize: 11, fontWeight: 700, letterSpacing: "0.1em" }}>
+                <span style={{ flex: 1, borderTop: "1px dashed var(--signal-accent)" }} /> ROLEPLAY STARTS HERE <span style={{ flex: 1, borderTop: "1px dashed var(--signal-accent)" }} />
               </div>
             )}
             <div style={{ ...box, opacity: c.after_start && d.cutoff ? 0.55 : 1 }}>
@@ -82,7 +82,7 @@ export function EntityMentions({ entityId }) {
     setD(null); setError("");
     getEntityMentions(entityId, anyCase).then(setD).catch((e) => setError(e.message));
   }, [entityId, anyCase]);
-  if (error) return <div style={{ color: "#c84a3a", fontSize: 12, marginTop: 8 }}>⊗ {error}</div>;
+  if (error) return <div style={{ color: "var(--signal-accent)", fontSize: 12, marginTop: 8 }}>⊗ {error}</div>;
   if (!d) return <div style={{ ...hint, marginTop: 8 }}>Searching the text…</div>;
   const shown = d.chapters.reduce((n, c) => n + c.lines.length, 0);
   return (
@@ -133,7 +133,7 @@ export function PortraitSlot({ entityId, image, onChange }) {
       <div style={{ fontSize: 11, color: "var(--signal-text-dim)", lineHeight: 1.5 }}>
         {image ? <>Portrait saved. <button className="signal-btn" onClick={clear} style={{ ...btnTool, padding: "2px 6px", fontSize: 10 }}>REMOVE</button></>
           : "Optional portrait, used when you make a card."}
-        {error && <div style={{ color: "#c84a3a" }}>⊗ {error}</div>}
+        {error && <div style={{ color: "var(--signal-accent)" }}>⊗ {error}</div>}
       </div>
     </div>
   );
@@ -194,7 +194,7 @@ export function SecretsEditor({ entity, characterNames, onChange }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
           <button className="signal-btn" style={{ ...btnTool, padding: "3px 8px", fontSize: 11 }} disabled={rows.length >= 12}
             onClick={() => setRows((rs) => [...rs, { text: "", known_by: [] }])}>+ ADD A SECRET</button>
-          {status && <span style={{ fontSize: 11, color: status.startsWith("⊗") ? "#c84a3a" : "var(--signal-text-dim)" }}>{status}</span>}
+          {status && <span style={{ fontSize: 11, color: status.startsWith("⊗") ? "var(--signal-accent)" : "var(--signal-text-dim)" }}>{status}</span>}
         </div>
       </>)}
     </div>

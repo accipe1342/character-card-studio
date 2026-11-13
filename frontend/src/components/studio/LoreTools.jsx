@@ -32,7 +32,7 @@ export function BudgetMeter({ entries, budget = 2048 }) {
   const always = on.reduce((n, e) => n + entryTokens(e), 0);
   const all = entries.reduce((n, e) => n + entryTokens(e), 0);
   const pct = Math.min(100, Math.round((always / budget) * 100));
-  const color = pct >= 90 ? "#c84a3a" : pct >= 60 ? "#b8860b" : "var(--signal-text)";
+  const color = pct >= 90 ? "var(--signal-accent)" : pct >= 60 ? "var(--signal-warn)" : "var(--signal-text)";
   return (
     <div title={`Always-on entries are inserted first and use the World Info budget before any keyword entry. SillyTavern's default budget is ${budget} tokens (estimate: 4 characters per token).`}
       style={{ marginBottom: 8 }}>
@@ -44,7 +44,7 @@ export function BudgetMeter({ entries, budget = 2048 }) {
         style={{ height: 6, border: "1px solid var(--signal-border)", background: "var(--signal-bg-input)" }}>
         <div style={{ width: `${pct}%`, height: "100%", background: color }} />
       </div>
-      {pct >= 90 && <div style={{ ...dim, color: "#c84a3a", marginTop: 3 }}>Always-on entries fill the budget: keyword entries will be cut. Shorten them or raise the budget in SillyTavern.</div>}
+      {pct >= 90 && <div style={{ ...dim, color: "var(--signal-accent)", marginTop: 3 }}>Always-on entries fill the budget: keyword entries will be cut. Shorten them or raise the budget in SillyTavern.</div>}
     </div>
   );
 }
@@ -163,7 +163,7 @@ export function SimulatorPanel({ project, onOpen, onClose, t = {} }) {
     <div style={{ display: "flex", gap: 8, padding: "6px 8px", borderBottom: "1px solid var(--signal-border)", fontSize: 12, alignItems: "baseline", flexWrap: "wrap", opacity: dropped ? 0.7 : 1 }}>
       <button className="signal-btn" onClick={() => r.lore_id && onOpen(r.lore_id)} style={{ background: "none", border: "none", padding: 0, color: "inherit", cursor: "pointer", fontWeight: 700, fontFamily: "inherit", fontSize: 12, textDecoration: dropped ? "line-through" : "none" }}>{r.title}</button>
       <span style={dim}>{r.entry_type} · order {r.order} · {POS_SHORT[r.position] || r.position} · ~{r.tokens} tok</span>
-      <span style={{ flexBasis: "100%", ...dim, color: dropped ? "#c84a3a" : "var(--signal-text-dim)" }}>{dropped ? `✕ ${r.dropped}` : r.why}{r.notes?.length ? ` · ${r.notes.join(" · ")}` : ""}</span>
+      <span style={{ flexBasis: "100%", ...dim, color: dropped ? "var(--signal-accent)" : "var(--signal-text-dim)" }}>{dropped ? `✕ ${r.dropped}` : r.why}{r.notes?.length ? ` · ${r.notes.join(" · ")}` : ""}</span>
     </div>
   );
   return (
@@ -186,7 +186,7 @@ export function SimulatorPanel({ project, onOpen, onClose, t = {} }) {
         <button className="signal-btn" style={{ ...sbtn, marginLeft: "auto", background: "var(--signal-btn-active-bg)", color: "var(--signal-btn-active-text)" }}
           disabled={busy || !text.trim()} onClick={run}>{busy ? "TESTING…" : "▶ RUN TEST"}</button>
       </div>
-      {error && <div style={{ color: "#c84a3a", fontSize: 12, marginTop: 8 }}>⊗ {error}</div>}
+      {error && <div style={{ color: "var(--signal-accent)", fontSize: 12, marginTop: 8 }}>⊗ {error}</div>}
       {res && (
         <div style={{ marginTop: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
@@ -221,16 +221,16 @@ export function LinksPanel({ project, onOpen, onClose, t = {} }) {
         <span style={dim}>An entry that mentions another entry's key pulls it in by recursion.</span>
         <button className="signal-btn" onClick={onClose} aria-label="Close links" style={{ ...sbtn, marginLeft: "auto" }}>✕</button>
       </div>
-      {error && <div style={{ color: "#c84a3a", fontSize: 12 }}>⊗ {error}</div>}
+      {error && <div style={{ color: "var(--signal-accent)", fontSize: 12 }}>⊗ {error}</div>}
       {!g && !error && <div style={dim}>Loading…</div>}
       {g && (<>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, marginBottom: 8 }}>
           <span>{g.nodes.length} entries</span><span>{g.edges.length} links</span>
           <span title="Never mentioned by another entry and mention no other entry">{g.orphans.length} unlinked</span>
-          <span title="Not always on and no keys: never fires" style={{ color: g.no_keys.length ? "#c84a3a" : undefined }}>{g.no_keys.length} without keys</span>
+          <span title="Not always on and no keys: never fires" style={{ color: g.no_keys.length ? "var(--signal-accent)" : undefined }}>{g.no_keys.length} without keys</span>
           <span title="Two entries that mention each other">{g.loops.length} mutual pairs</span>
         </div>
-        {g.no_keys.length > 0 && <div style={{ ...dim, color: "#c84a3a", marginBottom: 6 }}>Never fire (no keys): {g.no_keys.join(", ")}</div>}
+        {g.no_keys.length > 0 && <div style={{ ...dim, color: "var(--signal-accent)", marginBottom: 6 }}>Never fire (no keys): {g.no_keys.join(", ")}</div>}
         {g.loops.length > 0 && <div style={{ ...dim, marginBottom: 6 }}>Mention each other: {g.loops.map((l) => l.join(" ⇄ ")).join(" · ")}</div>}
         {g.orphans.length > 0 && <div style={{ ...dim, marginBottom: 6 }}>Unlinked (only their own keys bring them in): {g.orphans.join(", ")}</div>}
         <div style={{ border: "1px solid var(--signal-border)", maxHeight: 300, overflowY: "auto" }}>
@@ -273,18 +273,18 @@ export function TrashPanel({ project, onChanged, onClose, refreshKey, t = {} }) 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         <strong style={{ fontSize: 13, letterSpacing: "0.08em" }}>:: {(t.trash || "Trash").toUpperCase()}</strong>
         <span style={dim}>{project ? project.project_name : "All projects"} · deleted entries stay here until you empty it</span>
-        {items?.length > 0 && <button className="signal-btn" onClick={empty} style={{ ...sbtn, marginLeft: "auto", color: "#c84a3a", borderColor: confirmEmpty ? "#c84a3a" : undefined }}>
+        {items?.length > 0 && <button className="signal-btn" onClick={empty} style={{ ...sbtn, marginLeft: "auto", color: "var(--signal-accent)", borderColor: confirmEmpty ? "var(--signal-accent)" : undefined }}>
           {confirmEmpty ? "CLICK AGAIN TO EMPTY" : "EMPTY TRASH"}</button>}
         <button className="signal-btn" onClick={onClose} aria-label="Close trash" style={{ ...sbtn, marginLeft: items?.length ? 0 : "auto" }}>✕</button>
       </div>
-      {error && <div style={{ color: "#c84a3a", fontSize: 12 }}>⊗ {error}</div>}
+      {error && <div style={{ color: "var(--signal-accent)", fontSize: 12 }}>⊗ {error}</div>}
       {items && !items.length && <div style={dim}>The trash is empty.</div>}
       <div style={{ maxHeight: 260, overflowY: "auto" }}>
         {(items || []).map((e) => (
           <div key={e.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "5px 8px", borderBottom: "1px solid var(--signal-border)", fontSize: 12 }}>
             <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.title || "Untitled"} <span style={dim}>· {e.entry_type}</span></span>
             <button className="signal-btn" style={sbtn} onClick={() => restore(e.id)}>RESTORE</button>
-            <button className="signal-btn" style={{ ...sbtn, color: "#c84a3a" }} onClick={() => purge(e.id)} aria-label={`Delete ${e.title} for good`}>✕</button>
+            <button className="signal-btn" style={{ ...sbtn, color: "var(--signal-accent)" }} onClick={() => purge(e.id)} aria-label={`Delete ${e.title} for good`}>✕</button>
           </div>
         ))}
       </div>
@@ -311,7 +311,7 @@ export function EntryHints({ entry, children }) {
   return (
     <div style={{ ...dim, margin: "6px 0 0", lineHeight: 1.5 }}>
       {long && (
-        <div style={{ color: tok > ENTRY_TOKEN_SOFT_LIMIT * 2 ? "#c84a3a" : "#b8860b" }}>
+        <div style={{ color: tok > ENTRY_TOKEN_SOFT_LIMIT * 2 ? "var(--signal-accent)" : "var(--signal-warn)" }}>
           ~{tok} tokens: keyword entries work best at about 50–{ENTRY_TOKEN_SOFT_LIMIT}. Long entries crowd out others when several fire at once.
         </div>
       )}

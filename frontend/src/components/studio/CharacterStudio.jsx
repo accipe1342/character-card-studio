@@ -76,6 +76,7 @@ import { markBusy } from "../../lib/leaveGuard";
 import { InterviewPanel, TrimButton } from "./AssistPanels";
 import { onHelperChange, registerHelperFlush, setHelperContext } from "../../lib/helperBus";
 import { getGreetingStyle, setGreetingStyle } from "../../lib/greetingStyle";
+import NierMenu, { MenuItem, MenuLabel, MenuSep } from "../shared/NierMenu";
 import {
   getJob,
   regenerateField,
@@ -91,7 +92,7 @@ import {
   listLoreProjects,
   getPresets,
   renameCard,
-  scanCardProse, setCardImage, uploadImage, loadCard } from "../../lib/api";
+  scanCardProse, setCardImage, uploadImage, loadCard, importCard } from "../../lib/api";
 
 // ── static card audit (no model call): what would make this card weaker in SillyTavern ──
 function auditCard(card) {
@@ -170,8 +171,10 @@ export default function CharacterStudio({
   setCustomPrompt,
   pendingHandoff = null,        // from TEXT "Make card": {lore_project_id, story_point}
   clearPendingHandoff,
+  onLoadCard,                   // App's loader: puts a saved card (and its source and portrait) in the studio
 }) {
   const [loading, setLoading] = useState(false);
+  const importRef = useRef(null);
   const [error, setError] = useState("");
   // lorebook embedded in exported cards (data.character_book); remembered per card
   const [loreProjects, setLoreProjects] = useState([]);
@@ -196,6 +199,14 @@ export default function CharacterStudio({
     }
   }, [cardId]);
 
+  // a lorebook attached from elsewhere (an import, TEXT) must be in the list, or the menu shows "No lorebook attached"
+  const loreFetchedFor = useRef("");
+  useEffect(() => {
+    if (attachLore && loreFetchedFor.current !== String(attachLore) && !loreProjects.some((p) => String(p.id) === String(attachLore))) {
+      loreFetchedFor.current = String(attachLore);      // once per lorebook, so a deleted one can't loop
+      listLoreProjects().then((p) => setLoreProjects(p || [])).catch(() => {});
+    }
+  }, [attachLore, loreProjects]);
   function chooseLore(v) {
     setAttachLore(v);
     try { if (cardId) localStorage.setItem(`ccs-card-lore-${cardId}`, v); } catch {}
@@ -498,6 +509,22 @@ export default function CharacterStudio({
     return () => clearInterval(id);
   }, [fieldBusy]);
 
+  // NEW ▾ > Import card: a card PNG / JSON / CHARX becomes a new card; its embedded lorebook becomes a LORE project
+  async function handleImportCard(file) {
+    try {
+      setError("");
+      const r = await importCard(file);
+      if (r.lore_project_id) {
+        try { localStorage.setItem(`ccs-card-lore-${r.card_id}`, String(r.lore_project_id)); } catch { /* attach it by hand */ }
+      }
+      if (onLoadCard) await onLoadCard(r.card_id);
+      showToast?.(`Imported ${r.name}` + (r.entries ? ` with a ${r.entries}-entry lorebook (now in LORE)` : ""));
+      (r.warnings || []).forEach((w) => showToast?.(w));
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   async function handleNewCard() {
     try {
       setError("");
@@ -795,11 +822,6 @@ export default function CharacterStudio({
 
   return (
     <>
-      <h1 className="signal-title signal-heading" style={{ marginTop: 0, marginBottom: 4, display: 'block', textAlign: 'center' }}>Character Card Studio</h1>
-      <p style={{ color: "var(--signal-text-dim)" }}>
-        {t.subtitle || "Preview image • Source data • Editable card"}
-      </p>
-
       {/* Row 1: inputs */}
       <div
         style={{
@@ -990,88 +1012,71 @@ export default function CharacterStudio({
 
       </div>
 
-      {/* Row 2: actions — evenly spaced across the bar */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <button onClick={handleNewCard} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}>
-          {t.newCard || "New Card"}
-        </button>
-
-        <button onClick={handleScrape} disabled={loading} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}>
+      {/* Row 2: actions. Making a card on the left, then New / Tools / Export menus (NieR-style, as in LORE) */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <button onClick={handleScrape} disabled={loading} className="signal-btn" style={{ ...buttonStyle, whiteSpace: "nowrap" }}>
           {loading ? (t.working || "Working...") : (t.scrape || "Scrape")}
         </button>
-
-        <button
-          onClick={handleGenerate}
-          disabled={loading || !sourceId}
-          className="signal-btn"
-          style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
-        >
+        <button onClick={handleGenerate} disabled={loading || !sourceId} className="signal-btn signal-btn-active" style={{ ...buttonStyle, whiteSpace: "nowrap" }}>
           {t.generateCard || "Generate Card"}
         </button>
-
-        <button className={genOpen ? "signal-btn signal-btn-active" : "signal-btn"} style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
+        <button className={genOpen ? "signal-btn signal-btn-active" : "signal-btn"} style={{ ...buttonStyle, whiteSpace: "nowrap" }}
           onClick={() => setGenOpen((v) => !v)} aria-expanded={genOpen}
-          title="Story point, your role, size, style and In-depth mode for Generate Card">
+          title="Story point, your role, size, style, first message point of view and In-depth mode for Generate Card">
           ⚙ {t.genOptions || "Options"}
         </button>
-        <button className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }} disabled={!card} onClick={runAudit}
-          title="Check the card for problems (no model call)">
-          ⚖ {t.auditCard || "Audit"}
-        </button>
-        <button className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }} disabled={!card} onClick={() => setInterviewOpen(true)}
-          title="Ask the character questions to test its voice (one model call per answer, not saved)">
-          ◇ {t.interview || "Interview"}
-        </button>
-
-        <button
-          className="signal-btn"
-          onClick={() => { setBatchMode(b => !b); setBatchResults(null); }}
-          style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
-        >
+        <button className={batchMode ? "signal-btn signal-btn-active" : "signal-btn"} onClick={() => { setBatchMode(b => !b); setBatchResults(null); }}
+          style={{ ...buttonStyle, whiteSpace: "nowrap" }}>
           {batchMode ? (t.cancelBatch || "Cancel Batch") : (t.batchGenerate || "Batch Generate")}
         </button>
 
-        <div aria-hidden="true" style={{ flexBasis: "100%", height: 0, margin: "-4px 0" }} />{/* row break: make / check above, export below */}
-        <button onClick={() => handleExportCard("v2")} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
-          title="Character Card V2 JSON: what SillyTavern and most sites import">
-          {characterViewMode === "structured"
-            ? (t.exportStructuredJson || "Export Structured JSON")
-            : (t.exportCardJson || "Export Card JSON")}
-        </button>
-        <button onClick={() => handleExportCard("v3")} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
-          title="Character Card V3 JSON (chara_card_v3) for V3-aware sites. PNG exports already carry both V2 and V3">
-          {t.exportV3Json || "V3 JSON"}
-        </button>
-        <button onClick={handleExportCharx} disabled={!card} className="signal-btn" style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
-          title="Character Card V3 .charx: a zip with the card and its portrait (and the attached lorebook). SillyTavern imports it like a PNG">
-          {t.exportCharx || "CHARX"}
-        </button>
+        <div aria-hidden="true" style={{ width: 1, alignSelf: "stretch", background: "var(--signal-border)", opacity: 0.5, margin: "0 4px" }} />
 
-        <button
-          onClick={() => setSourceOpen(true)}
-          disabled={!source}
-          className="signal-btn"
-          style={{ ...buttonStyle, flex: "1 1 auto", whiteSpace: "nowrap" }}
-        >
-          {t.viewSource || "View Source"}
-        </button>
+        <NierMenu label={t.newMenu || "NEW"}>
+          <MenuItem onClick={handleNewCard}>{t.newCard || "New Card"} (blank)</MenuItem>
+          <MenuItem onClick={() => importRef.current?.click()} title="A card PNG, a card .json (V1, V2 or V3) or a .charx">
+            {t.importCard || "Import card (PNG, JSON, CHARX)"}…
+          </MenuItem>
+        </NierMenu>
+        <input ref={importRef} type="file" accept=".png,.json,.charx,image/png,application/json" aria-label="Import a card file"
+          style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleImportCard(f); }} />
+        <NierMenu label={t.toolsMenu || "TOOLS"}>
+          <MenuItem disabled={!card} onClick={runAudit} title="Check the card for problems (no model call)">⚖ {t.auditCard || "Audit"}</MenuItem>
+          <MenuItem disabled={!card} onClick={() => setInterviewOpen(true)} title="Ask the character questions to test its voice (one model call per answer, not saved)">◇ {t.interview || "Interview"}</MenuItem>
+          <MenuItem disabled={!source} onClick={() => setSourceOpen(true)}>{t.viewSource || "View Source"}</MenuItem>
+        </NierMenu>
 
-        <select value={attachLore} onChange={(e) => chooseLore(e.target.value)} disabled={!card}
-          title="Embed a LORE project in exported cards (JSON and PNG) as the card's own lorebook"
-          style={{ ...buttonStyle, fontWeight: 400, maxWidth: 260 }}
-          onFocus={() => listLoreProjects().then((p) => setLoreProjects(p || [])).catch(() => {})}>
-          <option value="">{t.noLorebook || "No lorebook attached"}</option>
-          {loreProjects.map((p) => (
-            <option key={p.id} value={p.id}>📖 {p.project_name || p.name}</option>
-          ))}
-        </select>
-
+        <div style={{ flex: 1 }} />
         {card && cardId && (
-          <span style={{ alignSelf: "center", fontSize: 12, color: "var(--signal-text-dim)", letterSpacing: "0.04em" }}
+          <span style={{ fontSize: 12, color: "var(--signal-text-dim)", letterSpacing: "0.14em" }}
             title="Edits are saved automatically 1.5 s after you stop typing">
-            {cardDirty ? "● editing (autosaves)" : "✓ saved"}
+            {cardDirty ? "● EDITING (AUTOSAVES)" : "✓ SAVED"}
           </span>
         )}
+        <NierMenu label={t.exportMenu || "EXPORT"} align="right" disabled={!card} width={300}>
+          <MenuItem onClick={() => handleExportCard("v2")} title="Character Card V2 JSON: what SillyTavern and most sites import">
+            {characterViewMode === "structured" ? (t.exportStructuredJson || "Export Structured JSON") : (t.exportCardJson || "Export Card JSON")}
+          </MenuItem>
+          <MenuItem onClick={() => handleExportCard("v3")} title="Character Card V3 JSON (chara_card_v3) for V3-aware sites. PNG exports already carry both V2 and V3">
+            {t.exportV3Json || "V3 JSON"}
+          </MenuItem>
+          <MenuItem onClick={handleExportCharx} title="Character Card V3 .charx: a zip with the card and its portrait (and the attached lorebook). SillyTavern imports it like a PNG">
+            {t.exportCharx || "CHARX"}
+          </MenuItem>
+          <MenuSep />
+          <MenuLabel>EMBEDDED LOREBOOK</MenuLabel>
+          <div style={{ padding: "4px 14px 10px" }}>
+            <select value={attachLore} onChange={(e) => chooseLore(e.target.value)} aria-label="Embedded lorebook"
+              title="Embed a LORE project in exported cards (JSON and PNG) as the card's own lorebook"
+              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit" }}
+              onFocus={() => listLoreProjects().then((p) => setLoreProjects(p || [])).catch(() => {})}>
+              <option value="">{t.noLorebook || "No lorebook attached"}</option>
+              {loreProjects.map((p) => (
+                <option key={p.id} value={p.id}>{p.project_name || p.name}</option>
+              ))}
+            </select>
+          </div>
+        </NierMenu>
       </div>
 
       {genOpen && (
@@ -1124,7 +1129,7 @@ export default function CharacterStudio({
       )}
 
       {genWarnings.length > 0 && (
-        <div style={{ border: "1px solid #b8860b", padding: "8px 12px", marginBottom: 12, fontSize: 12, textAlign: "left", display: "flex", gap: 8 }}>
+        <div style={{ border: "1px solid var(--signal-warn)", padding: "8px 12px", marginBottom: 12, fontSize: 12, textAlign: "left", display: "flex", gap: 8 }}>
           <div style={{ flex: 1 }}>
             <b>Check these:</b>
             <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{genWarnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
@@ -1137,7 +1142,7 @@ export default function CharacterStudio({
         <div style={{ border: "1px solid var(--signal-border)", background: "var(--signal-bg-panel)", padding: 12, marginBottom: 12, textAlign: "left" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <b style={{ letterSpacing: "0.08em" }}>CARD AUDIT</b>
-            <span style={{ fontSize: 20, fontWeight: 700, color: audit.score >= 85 ? "var(--signal-text)" : audit.score >= 60 ? "#b8860b" : "#c84a3a" }}>{audit.score}/100</span>
+            <span style={{ fontSize: 20, fontWeight: 700, color: audit.score >= 85 ? "var(--signal-text)" : audit.score >= 60 ? "var(--signal-warn)" : "var(--signal-accent)" }}>{audit.score}/100</span>
             <span style={{ fontSize: 11, color: "var(--signal-text-dim)" }}>~{audit.perm} permanent tokens</span>
             <span style={{ marginLeft: "auto", cursor: "pointer" }} onClick={() => setAudit(null)} role="button" aria-label="Close audit">✕</span>
           </div>
@@ -1151,7 +1156,7 @@ export default function CharacterStudio({
           {audit.issues.length === 0 ? <div style={{ fontSize: 12 }}>No problems found.</div> : (
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
               {audit.issues.map(([sev, msg], i) => (
-                <li key={i}><b style={{ color: sev === "high" ? "#c84a3a" : sev === "med" ? "#b8860b" : "var(--signal-text-dim)" }}>{sev.toUpperCase()}</b> {msg}</li>
+                <li key={i}><b style={{ color: sev === "high" ? "var(--signal-accent)" : sev === "med" ? "var(--signal-warn)" : "var(--signal-text-dim)" }}>{sev.toUpperCase()}</b> {msg}</li>
               ))}
             </ul>
           )}
@@ -1203,7 +1208,7 @@ export default function CharacterStudio({
                 <button
                   className="signal-btn"
                   onClick={() => setBatchUrls(prev => prev.filter((_, idx) => idx !== i))}
-                  style={{ ...buttonStyle, color: "#c84a3a", borderColor: "#c84a3a", padding: "7px 10px" }}
+                  style={{ ...buttonStyle, color: "var(--signal-accent)", borderColor: "var(--signal-accent)", padding: "7px 10px" }}
                 >✕</button>
               )}
             </div>
@@ -1242,7 +1247,7 @@ export default function CharacterStudio({
             </div>
           ))}
           {batchResults.errors?.map((e, i) => (
-            <div key={i} style={{ fontSize: 12, marginBottom: 4, color: "#c84a3a" }}>
+            <div key={i} style={{ fontSize: 12, marginBottom: 4, color: "var(--signal-accent)" }}>
               ✗ {e.url} — {e.error}
             </div>
           ))}

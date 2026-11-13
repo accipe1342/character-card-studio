@@ -26,9 +26,15 @@ else
 fi
 
 # ── Node deps ─────────────────────────────────────────────────────────────────
-if [ ! -d frontend/node_modules ]; then
+# (re)install when package.json changed, e.g. after an update that adds a package
+PKG_HASH_FILE="frontend/node_modules/.pkg_hash"
+PKG_HASH=$(md5sum frontend/package.json 2>/dev/null | cut -d' ' -f1 || md5 -q frontend/package.json 2>/dev/null || echo "none")
+if [ ! -d frontend/node_modules ] || [ ! -f "$PKG_HASH_FILE" ] || [ "$(cat $PKG_HASH_FILE)" != "$PKG_HASH" ]; then
     echo "[.] Installing frontend dependencies..."
-    cd frontend && npm install --silent && cd ..
+    (cd frontend && npm install --silent)
+    echo "$PKG_HASH" > "$PKG_HASH_FILE"
+else
+    echo "[OK] Frontend dependencies up to date."
 fi
 
 # ── Copy .env if missing ──────────────────────────────────────────────────────

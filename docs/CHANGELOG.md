@@ -9,7 +9,19 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ## [2.6.0] - 2026-11-12
 
 ### Added
-- Helper side panel (SCRIBE-01) in the CHARACTER, LORE and TEXT studios: a support unit you talk to in plain words.
+- NieR-style look across the app: warm beige with warm dark grey text, staff-line borders top and bottom, a large
+  thin studio title with ":: subtitle" and what is open on the right, dark header strips on panels, borderless
+  buttons with offset shadows, a single drab red-orange accent, darker screen edges and a key-hint footer.
+  Noto Sans JP is bundled (no internet needed). Dark mode follows the same rules.
+- Toolbars grouped into menus. CHARACTER: Scrape, Generate Card, Options, Batch, then NEW ▾ (blank card, import),
+  TOOLS ▾ (Audit, Interview, View Source) and EXPORT ▾ (JSON, V3 JSON, CHARX, embedded lorebook). LORE: GENERATE ▾
+  (from URL, several URLs, from a prompt, deep extraction), New Entry, TOOLS ▾ (Clean Keywords, Test Activation,
+  Links, Trash all entries), EXPORT ▾ (SillyTavern .json, Send to SillyTavern, Quick Replies, Bible / Data Bank,
+  DeepLore) and Trash. The LORE entry editor has CONTENT / KEYS / SILLYTAVERN tabs.
+- Import character cards: CHARACTER NEW ▾ > Import card takes a card PNG (V2 or V3 data inside), a card .json
+  (V1, V2 or V3, from this app or others) or a .charx. It becomes a new card with its portrait; an embedded lorebook
+  becomes a LORE project and is attached to the card. Route: POST /api/card/import.
+- Helper (SCRIBE-01) in the CHARACTER, LORE and TEXT studios: a support unit you talk to in plain words.
   It can create and edit character cards, create lorebooks and add, edit or trash their entries, read TEXT
   projects and their entries, and explain SillyTavern and card-writing ideas.
 - It works on what is open: the studio tells it the open card, lorebook, entry or story, and unsaved edits are
@@ -23,7 +35,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Default card layout the helper follows: plain prose paragraphs (optional opening quote, overview, backstory,
   personality with a few speech samples, likes/dislikes/relationships, appearance), no PList/W++.
 - Chats are stored and can be reopened from the panel. New routes under `/api/helper/`.
-- On wide screens the studio moves over while the panel is open instead of hiding under it.
+- It lives in a console along the bottom (chat on the left, changes on the right). Drag the top edge to resize,
+  HIDE shrinks it to a bar, FLOAT makes it a window you can drag and resize, Ctrl+/ or the footer hint shows and
+  hides it. Its place and size are remembered.
 - PROSE SCAN: a HABITS section for patterns models fall into: "not X, but Y" emphasis, narrating what doesn't
   happen ("she doesn't move"), a reply that repeats the other speaker's words as a question, em-dash overuse and
   most paragraphs opening the same way. Per-chapter columns too. Generated cards get the same checks in their
@@ -44,7 +58,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Tests
 - `backend/tests/test_helper.py` (through the real request code, with a scripted model) and browser suite
-  `tests/e2e/e2e11.py`; `backend/tests/test_v26_writing.py` for the writing checks, clean-up and greeting style.
+  `tests/e2e/e2e11.py`; `backend/tests/test_v26_writing.py` for the writing checks, clean-up and greeting style; `backend/tests/test_card_import.py`;
+  browser suite `tests/e2e/e2e12.py` for the layout, console and import (tests/e2e/ui.py opens menus).
 
 ---
 

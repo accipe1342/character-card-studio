@@ -16,6 +16,10 @@ import { StrictMode } from 'react'
 const savedTheme = localStorage.getItem('signal-theme') || 'light'
 document.documentElement.setAttribute('data-theme', savedTheme)
 import { createRoot } from 'react-dom/client'
+import '@fontsource/noto-sans-jp/300.css'   // NieR-style type, bundled so it works offline
+import '@fontsource/noto-sans-jp/400.css'
+import '@fontsource/noto-sans-jp/500.css'
+import '@fontsource/noto-sans-jp/700.css'
 import './index.css'
 import './signal-ui.css'
 import App from './App.jsx'

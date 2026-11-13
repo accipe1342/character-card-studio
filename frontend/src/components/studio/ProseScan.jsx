@@ -120,7 +120,7 @@ export default function ProseScanModal({ res, name, onClose }) {
                   <td style={{ padding: "4px 6px", textAlign: "right" }}>{p.cliches}</td>
                   <td style={{ padding: "4px 6px", textAlign: "right" }}>
                     <span style={{ display: "inline-block", width: 40, height: 6, border: "1px solid var(--signal-border)", marginRight: 4, verticalAlign: "middle" }}>
-                      <span style={{ display: "block", height: "100%", width: `${(p.cliches_per1k / maxC) * 100}%`, background: p.cliches_per1k > 1 ? "#c84a3a" : "var(--signal-text)" }} />
+                      <span style={{ display: "block", height: "100%", width: `${(p.cliches_per1k / maxC) * 100}%`, background: p.cliches_per1k > 1 ? "var(--signal-accent)" : "var(--signal-text)" }} />
                     </span>{p.cliches_per1k}
                   </td>
                   <td style={{ padding: "4px 6px", textAlign: "right" }}>{p.adverbs_per1k}</td>

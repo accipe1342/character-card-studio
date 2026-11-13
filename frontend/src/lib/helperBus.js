@@ -40,3 +40,11 @@ export function onHelperChange(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
+
+/* the console's open / hidden state, so the footer hint and Ctrl+/ can toggle it from anywhere */
+const toggleListeners = new Set();
+export function toggleHelper() { toggleListeners.forEach((fn) => fn()); }
+export function onHelperToggle(fn) {
+  toggleListeners.add(fn);
+  return () => toggleListeners.delete(fn);
+}

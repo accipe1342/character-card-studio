@@ -44,7 +44,7 @@ function tokenColor(count) {
   if (count < 200) return "#9a4a4a";
   if (count < 400) return "#b04a4a";
   if (count < 700) return "#c8603a";
-  return "#c84a3a";
+  return "var(--signal-accent)";
 }
 
 // ── Cheatsheet data ───────────────────────────────────────────────────────────
@@ -176,7 +176,7 @@ export default function CheatsheetBar({ textareaRef, value, onChange, t = {}, to
             fontSize: 13,
             fontWeight: 700,
             letterSpacing: "0.04em",
-            color: totalTokens > 2000 ? "#c84a3a" : totalTokens > 1000 ? "#c8923a" : "#9a4a4a",
+            color: totalTokens > 2000 ? "var(--signal-accent)" : totalTokens > 1000 ? "#c8923a" : "#9a4a4a",
           }}>
             <span style={{ opacity: 0.6, fontSize: 10, fontWeight: 400 }}>total ~</span>
             {totalTokens}

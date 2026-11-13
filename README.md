@@ -111,10 +111,10 @@ After the first run, launching is instant.
 - Story bible, Data Bank pack and Quick Reply set, as in LORE
 
 ### Helper (SCRIBE-01)
-- A side panel in CHARACTER, LORE and TEXT (the ◇ SCRIBE-01 tab on the right edge)
+- A console along the bottom of CHARACTER, LORE and TEXT: press Ctrl+/ or click the SCRIBE-01 bar. Resize it from its top edge, HIDE it, or FLOAT it as a window you can drag
 - Ask in plain words: it writes or edits cards, builds lorebooks and their entries, reads your TEXT stories, and explains SillyTavern settings
 - Knows what is open: "tighten this description" or "make a lorebook for this card's world" works on the open card or entry
-- Every change is saved at once and listed under the reply with OPEN, KEEP and UNDO (plus KEEP ALL / UNDO ALL); UNDO refuses if you edited the item since, so your work is never overwritten
+- Every change is saved at once and listed on the right with OPEN, KEEP and UNDO (plus KEEP ALL / UNDO ALL); UNDO refuses if you edited the item since, so your work is never overwritten
 - Unsaved edits in the studio are saved before the helper reads, and the studio reloads what it changed
 - Keyword glossary like a lorebook: `backend/config/helper_glossary.json` (edit freely)
 - Chats are kept; pick earlier ones from the panel
@@ -138,7 +138,8 @@ After the first run, launching is instant.
 - Wiki hedging cleanup (`"Unknown or Chinese"` → `"Chinese"`)
 
 ### UI
-- Signal UI design system — light and dark mode
+- NieR-style design: staff-line borders, large thin studio titles, panels with dark header strips, menus for less-used actions (NEW / TOOLS / EXPORT, GENERATE in LORE), a key-hint footer; light and dark mode
+- Import cards: NEW ▾ > Import card in CHARACTER takes a card PNG, JSON (V1/V2/V3) or CHARX, with its lorebook
 - EN / 日本語 / 中文 interface
 - Ctrl+K search across everything
 - Live elapsed timer on all jobs and field regeneration

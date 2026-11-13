@@ -68,7 +68,8 @@ with sync_playwright() as pw:
     ok(pg.locator("[role=option]").count() >= 1, "search finds Wakka")
     pg.keyboard.press("Enter"); pg.wait_for_timeout(1500)
     title = pg.locator("section.signal-screen-panel input").first.input_value() if pg.locator("section.signal-screen-panel input").count() else ""
-    ok(title == "Wakka" and pg.locator("text=📁 Besaid Lore").count() == 1, f"search opened the LORE entry ({title})")
+    ctx = pg.locator(".nier-ctx").first.inner_text().lower()
+    ok(title == "Wakka" and "besaid lore" in ctx and "wakka" in ctx, f"search opened the LORE entry ({title}; header: {ctx!r})")
     # search -> TEXT entity
     pg.locator("button[aria-label='Search everything']").click(); pg.wait_for_timeout(300)
     pg.keyboard.type("Trema"); pg.wait_for_timeout(800)

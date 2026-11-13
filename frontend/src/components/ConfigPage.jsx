@@ -169,15 +169,9 @@ export default function ConfigPage({ t = {}, showToast }) {
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
-      <h1 className="signal-title signal-heading" style={{ textAlign: "center", marginBottom: 4 }}>
-        Config
-      </h1>
-      <p style={{ textAlign: "center", color: "var(--signal-text-dim)", marginBottom: 24, letterSpacing: "0.04em" }}>
-        Prompt templates • API keys
-      </p>
 
       {error && (
-        <div style={{ color: "#c84a3a", border: "1px solid #c84a3a", padding: "10px 14px", marginBottom: 16, fontSize: 13 }}>
+        <div style={{ color: "var(--signal-accent)", border: "1px solid var(--signal-accent)", padding: "10px 14px", marginBottom: 16, fontSize: 13 }}>
           ⊗ {error}
         </div>
       )}
@@ -429,7 +423,7 @@ function SillyTavernSection({ envKeys, setEnvKeys, saveEnv, savingEnv, inputStyl
         {field("ST_USER", "User name (basic auth)", "leave empty if not used")}
         {field("ST_PASSWORD", "Password (basic auth)", "", true)}
       </div>
-      {test && <div role="status" style={{ fontSize: 12, marginTop: 10, color: test.ok ? "var(--signal-text)" : "#c84a3a" }}>{test.ok ? "✓" : "⊗"} {test.text}</div>}
+      {test && <div role="status" style={{ fontSize: 12, marginTop: 10, color: test.ok ? "var(--signal-text)" : "var(--signal-accent)" }}>{test.ok ? "✓" : "⊗"} {test.text}</div>}
       <div style={{ marginTop: 14, display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <button className="signal-btn" onClick={runTest} disabled={testing} style={{ ...btnStyle, opacity: testing ? 0.5 : 1 }}>
           {testing ? "TESTING…" : "TEST CONNECTION"}

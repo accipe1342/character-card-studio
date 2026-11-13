@@ -588,6 +588,8 @@ from story_export import register_story_export   # story bible (md / printable h
 register_story_export(app)
 from helper import register_helper   # SCRIBE-01: the studio helper side panel (cards, lorebooks, advice)
 register_helper(app)
+from card_import import register_card_import   # import a card PNG / JSON / CHARX into the library
+register_card_import(app)
 # (lore_routes is registered further down, once the job and logging helpers exist)
 
 # ── Custom logging setup ──────────────────────────────────────────────────────

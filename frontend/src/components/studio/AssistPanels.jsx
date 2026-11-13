@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 import { getQuickReplySet, interviewCharacter, previewCommit, pushQuickRepliesToST, trimText } from "../../lib/api";
 import { btn, btnPrimary, btnTool, headingStyle, hint, input, panelStyle } from "./textUi";
 
-const red = "#c84a3a";
+const red = "var(--signal-accent)";
 const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 300, display: "flex",
   alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" };
 const dialog = { ...panelStyle, width: "min(900px, 100%)", padding: 20, boxShadow: "0 8px 32px rgba(0,0,0,0.3)", fontSize: 13 };

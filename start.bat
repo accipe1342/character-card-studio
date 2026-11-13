@@ -29,11 +29,19 @@ if "%REQ_HASH%"=="%STORED_HASH%" (
 )
 
 :: ── Node deps ─────────────────────────────────────────────────────────────────
-if not exist frontend\node_modules (
+set PKG_HASH_FILE=frontend\node_modules\.pkg_hash
+for /f %%i in ('certutil -hashfile frontend\package.json MD5 ^| findstr /v "MD5\|CertUtil"') do set PKG_HASH=%%i
+set PKG_HASH=%PKG_HASH: =%
+set STORED_PKG=none
+if exist "%PKG_HASH_FILE%" set /p STORED_PKG=<"%PKG_HASH_FILE%"
+if "%PKG_HASH%"=="%STORED_PKG%" (
+    echo [OK] Frontend dependencies up to date.
+) else (
     echo [.] Installing frontend dependencies...
     cd frontend
     call npm install --silent
     cd ..
+    echo %PKG_HASH%> "%PKG_HASH_FILE%"
 )
 
 :: ── Copy .env if missing ──────────────────────────────────────────────────────

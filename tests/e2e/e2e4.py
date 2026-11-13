@@ -3,6 +3,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import re, json, requests
 from playwright.sync_api import sync_playwright
+from ui import menu, open_menu
 B = "http://127.0.0.1:5173"
 R = []
 def ok(c, n): R.append(c); print(("PASS " if c else "FAIL ") + n)
@@ -27,14 +28,14 @@ with sync_playwright() as pw:
     eid = [e for e in requests.get(B + f"/api/lore/entries?project_id={pid}").json() if e["title"] == "Paine"][0]["id"]
     full = requests.get(B + f"/api/lore/entry/{eid}").json()
     ok(full["content"] == "Paine is a stoic warrior." and full["entry_type"] == "character", "LORE autosave + type change persisted")
-    pg.get_by_role("button", name=re.compile("Clean Keywords")).click(); pg.wait_for_timeout(1200)
+    menu(pg, "TOOLS", "Clean Keywords"); pg.wait_for_timeout(1200)
     m = [e for e in requests.get(B + f"/api/lore/entries?project_id={pid}").json() if e["title"] == "Mascot dress sphere"][0]
     ok(m["keywords"] == ["Mascot dress sphere"], f"Clean Keywords applied: {m['keywords']}")
-    pg.get_by_role("button", name=re.compile("Trash all entries")).click(); pg.wait_for_timeout(800)
+    menu(pg, "TOOLS", "Trash all entries"); pg.wait_for_timeout(800)
     ok(any(x["id"] == pid for x in requests.get(B + "/api/lore/projects").json()), "Trash all entries keeps the project id")
     # CHARACTER autosave
     pg.get_by_role("button", name=re.compile(r"^\s*CHARACTER\s*$", re.I)).first.click(); pg.wait_for_timeout(600)
-    pg.get_by_role("button", name=re.compile("New Card")).click(); pg.wait_for_timeout(1000)
+    menu(pg, "NEW", "New Card"); pg.wait_for_timeout(1000)
     ta = pg.locator("textarea").first
     ta.fill("A brand new description typed by hand.")
     pg.wait_for_timeout(2400)

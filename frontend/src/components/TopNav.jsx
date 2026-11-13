@@ -37,13 +37,14 @@ export default function TopNav({ mode, setMode, onLibrary, onSearch, lang, setLa
   }, [dark]);
 
   const buttonStyle = {
-    padding: "10px 14px",
-    border: "1px solid var(--signal-border, #3a3a3a)",
-    background: "var(--signal-btn-active-bg, #2b2b2b)",
-    color: "var(--signal-btn-active-text, #f5f1e8)",
+    padding: "9px 18px",
+    border: "1px solid transparent",
+    background: "var(--signal-bg-btn)",
+    color: "var(--signal-text)",
     cursor: "pointer",
-    fontWeight: 700,
-    letterSpacing: "0.08em",
+    fontWeight: 500,
+    fontSize: 13,
+    letterSpacing: "0.2em",
   };
 
   const activeStyle = {
@@ -64,7 +65,9 @@ export default function TopNav({ mode, setMode, onLibrary, onSearch, lang, setLa
   };
 
   return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
+    <>
+    <div className="nier-staff" aria-hidden="true"><i /><b /><i /></div>
+    <div style={{ display: "flex", gap: 8, margin: "12px 0 0", alignItems: "center", flexWrap: "wrap" }}>
       <button
         className={`signal-btn${mode === "character" ? " signal-btn-active" : ""}`}
         style={mode === "character" ? activeStyle : buttonStyle}
@@ -199,5 +202,6 @@ export default function TopNav({ mode, setMode, onLibrary, onSearch, lang, setLa
         )}
       </button>
     </div>
+    </>
   );
 }

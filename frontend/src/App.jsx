@@ -43,6 +43,7 @@ import SearchModal from "./components/SearchModal";
 import { anyBusy } from "./lib/leaveGuard";
 import { listCards, loadCard, deleteCard, renameCard, duplicateCard, imageSrc } from "./lib/api";
 import HelperPanel from "./components/HelperPanel";
+import StudioHeader, { KeyFooter } from "./components/StudioHeader";
 
 export default function App() {
   const [mode, setMode] = useState("character"); // "character" | "lore" | "text" | "config"
@@ -190,7 +191,8 @@ export default function App() {
       setImageUrl(imageSrc(loaded.image));      // its own saved portrait (or none), never the previous card's
       setSourceId(loaded.source_id);
       setSource(loadedSource);
-      setUrl(loaded.url || loadedSource?.url || "");
+      const u = loaded.url || loadedSource?.url || "";
+      setUrl(u.startsWith("manual://") ? "" : u);   // hand-made, imported and helper cards have no wiki page
       setLibraryOpen(false);
     } catch (e) {
       setLibraryError(e.message);
@@ -204,10 +206,10 @@ export default function App() {
         width: "100%",
         background: "var(--signal-bg, #e8e3d3)",
         backgroundImage: `
-          linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px)
+          linear-gradient(var(--signal-grid) 1px, transparent 1px),
+          linear-gradient(90deg, var(--signal-grid) 1px, transparent 1px)
         `,
-        backgroundSize: "40px 40px",
+        backgroundSize: "32px 32px",
       }}
     >
     <main
@@ -407,9 +409,9 @@ export default function App() {
                     onClick={(e) => handleDeleteCard(c.id, e)}
                     style={{
                       padding: "3px 8px",
-                      border: `1px solid ${deleteConfirm === c.id ? "#c84a3a" : "var(--signal-border)"}`,
-                      background: deleteConfirm === c.id ? "#c84a3a" : "transparent",
-                      color: deleteConfirm === c.id ? "#fff" : "#c84a3a",
+                      border: `1px solid ${deleteConfirm === c.id ? "var(--signal-accent)" : "var(--signal-border)"}`,
+                      background: deleteConfirm === c.id ? "var(--signal-accent)" : "transparent",
+                      color: deleteConfirm === c.id ? "#fff" : "var(--signal-accent)",
                       cursor: "pointer",
                       fontSize: 11,
                       fontWeight: 700,
@@ -438,6 +440,7 @@ export default function App() {
           setLang={setLang}
           t={t}
         />
+        <StudioHeader mode={mode} t={t} />
 
         <div key={mode} className={modeDir === "right" ? "signal-mode-enter" : "signal-mode-enter-left"} style={{ display: "contents" }}>
         {mode === "config" ? (
@@ -470,6 +473,7 @@ export default function App() {
             setRegenPreview={setRegenPreview}
             pendingHandoff={handoff}
             clearPendingHandoff={() => setHandoff(null)}
+            onLoadCard={handleLoadCard}
           />
         ) : mode === "text" ? (
           <TextStudio
@@ -515,6 +519,7 @@ export default function App() {
           />
         )}
         </div>
+        <KeyFooter mode={mode} />
       </div>
     </main>
     </div>

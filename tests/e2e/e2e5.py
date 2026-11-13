@@ -4,6 +4,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import re, json, requests
 from playwright.sync_api import sync_playwright
+from ui import menu, open_menu
 B = "http://127.0.0.1:5173"
 R = []
 def ok(c, n): R.append(bool(c)); print(("PASS " if c else "FAIL ") + n)
@@ -26,6 +27,7 @@ with sync_playwright() as pw:
     ok(pg.locator("text=/ALWAYS ON 1 ·/").count() == 1, "budget meter counts the always-on recap")
     # advanced settings
     pg.locator("div", has_text=re.compile(r"^Wakka$")).first.click(); pg.wait_for_timeout(500)
+    pg.get_by_role("tab", name="SILLYTAVERN").click()
     pg.get_by_role("button", name=re.compile("ADVANCED SILLYTAVERN SETTINGS")).click()
     pg.locator("label", has_text="POSITION").locator("select").select_option("4")
     pg.locator("label", has_text="ROLE (AT DEPTH)").locator("select").select_option("2")
@@ -41,14 +43,14 @@ with sync_playwright() as pw:
     w = [e for e in ex["entries"].values() if e["comment"].startswith("Wakka")][0]
     ok(w["position"] == 4 and w["role"] == 2 and w["keysecondary"] == ["blitzball", "machina"] and w["selective"], "exported to ST JSON")
     # activation test
-    pg.get_by_role("button", name=re.compile("Test Activation")).click(); pg.wait_for_timeout(300)
+    menu(pg, "TOOLS", "Test Activation"); pg.wait_for_timeout(300)
     pg.get_by_label("Chat text to test").fill("Wakka grumbles about blitzball and the Aurochs.")
     pg.get_by_role("button", name=re.compile("RUN TEST")).click(); pg.wait_for_timeout(800)
     sim = pg.locator("section[aria-label='Activation test']").inner_text()
     ok("3 inserted" in sim and "constant" in sim and "key 'Wakka'" in sim and "Lonely rock" not in sim, "activation test result")
     pg.get_by_role("button", name="Close activation test").click()
     # links
-    pg.get_by_role("button", name=re.compile(r"Links")).click(); pg.wait_for_timeout(800)
+    menu(pg, "TOOLS", r"^Links"); pg.wait_for_timeout(800)
     links = pg.locator("section[aria-label='Entry links']").inner_text()
     ok("Besaid Aurochs" in links and "Lonely rock" in links, "links panel: Wakka -> Aurochs, rock unlinked")
     pg.get_by_role("button", name="Close links").click()
@@ -74,9 +76,9 @@ with sync_playwright() as pw:
     pg.screenshot(path=OUT + "/lore_tools.png", full_page=True)
     # CHARACTER: V3 JSON export
     pg.get_by_role("button", name=re.compile(r"^\s*CHARACTER\s*$", re.I)).first.click(); pg.wait_for_timeout(600)
-    pg.get_by_role("button", name=re.compile("New Card")).click(); pg.wait_for_timeout(1000)
+    menu(pg, "NEW", "New Card"); pg.wait_for_timeout(1000)
     with pg.expect_download() as dl:
-        pg.get_by_role("button", name=re.compile(r"^V3 JSON$")).click()
+        menu(pg, "EXPORT", r"^V3 JSON$")
     data = json.loads(open(dl.value.path()).read())
     ok(data["spec"] == "chara_card_v3" and dl.value.suggested_filename.endswith("_v3.json"), "V3 JSON export")
     ok(not errs, f"no page errors {errs[:2]}")

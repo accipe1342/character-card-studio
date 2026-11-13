@@ -3,6 +3,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import json, re, time, zipfile, io
 from playwright.sync_api import sync_playwright
+from ui import menu, open_menu
 R = []
 def ok(c, n): R.append((c, n)); print(("PASS " if c else "FAIL ") + n)
 with sync_playwright() as p:
@@ -93,11 +94,12 @@ with sync_playwright() as p:
         pg.wait_for_timeout(500)
         if pg.locator("text=Generated from the fic").count() or pg.locator("textarea", has_text="Generated from the fic").count(): break
     ok(pg.locator("textarea", has_text="Generated from the fic").count() >= 1 or pg.locator("text=Generated from the fic").count() >= 1, "card generated from the fic source")
+    open_menu(pg, "EXPORT")
     lsel = pg.locator("select").filter(has=pg.locator("option", has_text="No lorebook attached"))
     opts = lsel.locator("option").all_inner_texts()
     lsel.select_option(index=1); pg.wait_for_timeout(300)
     with pg.expect_download() as dl2:
-        pg.get_by_role("button", name=re.compile("Export Card JSON", re.I)).click()
+        pg.get_by_role("menu").locator("button", has_text=re.compile("Export Card JSON", re.I)).first.click()
     d2 = json.loads(open(dl2.value.path()).read())
     ok(d2["data"].get("character_book", {}).get("entries"), f"card JSON embeds lorebook ({opts[1] if len(opts) > 1 else '?'})")
     pg.screenshot(path=OUT + "/character.png")
@@ -106,7 +108,7 @@ with sync_playwright() as p:
     pj = pg.locator("text=/Gamerz Fantasy X-2/").first
     if pj.count(): pj.click(); pg.wait_for_timeout(800)
     with pg.expect_download() as dl3:
-        pg.get_by_role("button", name=re.compile("DeepLore", re.I)).click()
+        menu(pg, "EXPORT", "DeepLore")
     z = zipfile.ZipFile(dl3.value.path())
     ok(len(z.namelist()) >= 3, f"DeepLore zip with {len(z.namelist())} notes")
     pg.screenshot(path=OUT + "/lore.png")

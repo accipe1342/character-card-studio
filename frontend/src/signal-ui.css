@@ -154,9 +154,10 @@
   inset: 0;
   pointer-events: none;
   background: radial-gradient(ellipse at center,
-    transparent 50%,
-    rgba(0,0,0,0.12) 100%
+    transparent 55%,
+    rgba(60,56,46,0.16) 100%
   );
+  box-shadow: inset 0 0 160px rgba(60,56,46,0.22);
   animation: signal-vignette 1.8s var(--signal-soft) both;
   z-index: 9999;
 }
@@ -176,7 +177,7 @@
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: #3a3a3a;
+  background: var(--signal-border);
   transform: scaleX(0);
   transform-origin: left;
   animation: signal-line-draw 0.35s var(--signal-snappy) both;
@@ -230,11 +231,11 @@
 .signal-btn:hover::after {
   animation: signal-sweep 0.4s var(--signal-soft) forwards;
 }
-.signal-btn:hover {
-  background: #d4cdb8 !important;
+.signal-btn:hover:not(:disabled) {
+  background: var(--signal-btn-hover) !important;
 }
 .signal-btn-active:hover {
-  background: #3d3d3d !important;
+  background: #3e3b34 !important;
 }
 .signal-btn:active {
   transform: scale(0.97);
@@ -328,7 +329,7 @@
    ---------------------------------------------------------- */
 
 .signal-heading {
-  color: #2b2b2b;
+  color: var(--signal-text);
   letter-spacing: 0.1em;
   background: none;
   border: none;
@@ -357,22 +358,29 @@ h2.signal-heading {
    ---------------------------------------------------------- */
 
 :root {
-  --signal-bg:        #e8e3d3;
-  --signal-bg-panel:  #efe8d8;
-  --signal-bg-field:  #f7f2e7;
-  --signal-bg-input:  #f7f2e7;
-  --signal-bg-btn:    #dcd6c4;
-  --signal-bg-dark:   #2b2b2b;
-  --signal-bg-mid:    #d3cbb8;
+  /* NieR-style: warm beige ground, warm dark grey instead of black, one drab red-orange accent */
+  --signal-bg:        #d1cdb7;
+  --signal-bg-panel:  #dad6c3;
+  --signal-bg-field:  #e4e0cf;
+  --signal-bg-input:  #e4e0cf;
+  --signal-bg-btn:    #c4bea8;
+  --signal-bg-dark:   #4e4b42;
+  --signal-bg-mid:    #c9c3ad;
 
-  --signal-text:      #2b2b2b;
-  --signal-text-inv:  #f5f1e8;
-  --signal-text-dim:  #666666;
-  --signal-border:    #3a3a3a;
+  --signal-text:      #4e4b42;
+  --signal-text-inv:  #dad6c3;
+  --signal-text-dim:  #58544a;
+  --signal-border:    #6e695b;
 
-  --signal-btn-hover: #d4cdb8;
-  --signal-btn-active-bg: #2b2b2b;
-  --signal-btn-active-text: #f5f1e8;
+  --signal-btn-hover: #58544a;
+  --signal-btn-active-bg: #4e4b42;
+  --signal-btn-active-text: #dad6c3;
+
+  --signal-accent:    #9a4430;
+  --signal-warn:      #66501e;
+  --signal-shadow:    rgba(78, 75, 66, 0.25);
+  --signal-grid:      rgba(78, 75, 66, 0.06);
+  --signal-font: 'Noto Sans JP', system-ui, 'Segoe UI', Roboto, sans-serif;
 }
 
 [data-theme="dark"] {
@@ -393,6 +401,11 @@ h2.signal-heading {
   --signal-btn-active-bg: #c8c0a8;
   --signal-btn-active-text: #1a1814;
   --signal-text-inv: #1a1814;
+
+  --signal-accent:    #d98a6e;
+  --signal-warn:      #c9a65a;
+  --signal-shadow:    rgba(0, 0, 0, 0.45);
+  --signal-grid:      rgba(200, 192, 168, 0.04);
 }
 
 /* Apply theme vars to structural elements */
@@ -454,7 +467,8 @@ html[data-theme="dark"] button.signal-btn,
 html[data-theme="dark"] button.signal-btn:not(:hover) {
   background: #2e2b26 !important;
   color: #c8c0a8 !important;
-  border-color: #4a4540 !important;
+  border-color: transparent !important;
+  box-shadow: 3px 3px 0 var(--signal-shadow);
 }
 html[data-theme="dark"] button.signal-btn.signal-btn-active,
 html[data-theme="dark"] button.signal-btn.signal-btn-active:not(:hover) {
@@ -466,23 +480,27 @@ html[data-theme="dark"] button.signal-btn:hover {
   color: #c8c0a8 !important;
 }
 
-/* Light mode buttons */
+/* Light mode buttons: borderless blocks with an offset shadow; hover and selected turn dark (NieR menu items) */
 html[data-theme="light"] button.signal-btn,
 html button.signal-btn {
-  background: #dcd6c4 !important;
-  color: #2b2b2b !important;
-  border-color: #3a3a3a !important;
+  background: var(--signal-bg-btn) !important;
+  color: var(--signal-text) !important;
+  border-color: transparent !important;
+  box-shadow: 3px 3px 0 var(--signal-shadow);
+  font-weight: 500 !important;
 }
 html[data-theme="light"] button.signal-btn.signal-btn-active,
 html button.signal-btn.signal-btn-active {
-  background: #2b2b2b !important;
-  color: #f5f1e8 !important;
+  background: var(--signal-btn-active-bg) !important;
+  color: var(--signal-btn-active-text) !important;
 }
-html[data-theme="light"] button.signal-btn:hover,
-html button.signal-btn:hover {
-  background: #d4cdb8 !important;
-  color: #2b2b2b !important;
+html[data-theme="light"] button.signal-btn:hover:not(:disabled),
+html button.signal-btn:hover:not(:disabled) {
+  background: var(--signal-btn-hover) !important;
+  color: var(--signal-text-inv) !important;
+  box-shadow: 4px 4px 0 var(--signal-shadow);
 }
+html button.signal-btn:disabled { opacity: 0.55; box-shadow: none; }
 
 
 /* Fetch models button */
@@ -803,7 +821,7 @@ html[data-theme="dark"] button.signal-fetch-btn.signal-fetch-btn-loading {
 .signal-progress-failed {
   width: 100%;
   height: 100%;
-  background: #c84a3a;
+  background: var(--signal-accent);
 }
 
 /* ── 4. Field accepted flash on save ── */
@@ -837,9 +855,73 @@ html[data-theme="dark"] button.signal-fetch-btn.signal-fetch-btn-loading {
 /* Entry delete flash */
 @keyframes signal-entry-delete {
   0%   { background: rgba(200,74,58,0); border-color: var(--signal-border); }
-  30%  { background: rgba(200,74,58,0.25); border-color: #c84a3a; }
-  100% { background: rgba(200,74,58,0.15); border-color: #c84a3a; }
+  30%  { background: rgba(200,74,58,0.25); border-color: var(--signal-accent); }
+  100% { background: rgba(200,74,58,0.15); border-color: var(--signal-accent); }
 }
 .signal-entry-delete-flash {
   animation: signal-entry-delete 0.3s ease forwards;
 }
+
+
+/* ----------------------------------------------------------
+   NieR PASS (2.6) — font, panels with dark header strips and offset shadows,
+   staff-line ornaments, studio header, key-hint footer
+   ---------------------------------------------------------- */
+
+body, button, input, select, textarea { font-family: var(--signal-font); }
+
+.signal-panel { box-shadow: 4px 4px 0 var(--signal-shadow); }
+
+/* a panel's own heading becomes the dark strip NieR menus put on top of a panel */
+.signal-panel h2.signal-heading,
+h2.signal-heading.signal-strip {
+  display: block;
+  background: var(--signal-btn-active-bg) !important;
+  color: var(--signal-btn-active-text) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.22em !important;
+  text-align: left !important;
+  text-transform: uppercase;
+  padding: 7px 12px !important;
+  margin: 0 0 12px 0 !important;
+  filter: none !important;
+}
+.signal-panel h2.signal-heading::before { content: ''; display: inline-block; width: 7px; height: 7px; background: currentColor; margin-right: 10px; vertical-align: 1px; opacity: 1; }
+.signal-panel h2.signal-heading::after { content: ''; }
+
+/* staff lines: two hairlines with a row of small squares between them */
+.nier-staff { height: 14px; display: flex; flex-direction: column; justify-content: space-between; }
+.nier-staff > i { display: block; height: 1px; background: var(--signal-text); opacity: 0.55; }
+.nier-staff > b { display: block; height: 4px; opacity: 0.55;
+  background-image: repeating-linear-gradient(90deg, var(--signal-text) 0 4px, transparent 4px 12px); }
+.nier-staff-thin { height: 7px; }
+
+.nier-title { font: 300 46px/1 var(--signal-font); letter-spacing: 0.32em; color: var(--signal-text); margin: 0; text-align: left; }
+.nier-sub { font: 400 13px var(--signal-font); letter-spacing: 0.24em; color: var(--signal-text-dim); margin-top: 8px; text-transform: uppercase; }
+.nier-ctx { font: 400 12px/1.6 var(--signal-font); letter-spacing: 0.14em; color: var(--signal-text-dim); text-align: right; text-transform: uppercase; }
+.nier-diamond { width: 8px; height: 8px; border: 1px solid currentColor; transform: rotate(45deg); flex: none; }
+.nier-keys { display: flex; gap: 22px; justify-content: flex-end; flex-wrap: wrap; font: 400 11px var(--signal-font);
+  letter-spacing: 0.16em; color: var(--signal-text-dim); margin-top: 5px; }
+
+/* drop-down menus (Generate / Tools / Export) */
+.nier-menu { position: absolute; z-index: 120; min-width: 240px; background: var(--signal-bg-panel);
+  box-shadow: 4px 4px 0 var(--signal-shadow), 0 8px 24px rgba(0,0,0,0.18); padding: 4px 0; text-align: left; }
+.nier-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent;
+  color: var(--signal-text); font: 400 13px var(--signal-font); letter-spacing: 0.04em; padding: 9px 14px; cursor: pointer; text-align: left; }
+.nier-menu-item::before { content: ''; width: 6px; height: 6px; background: currentColor; opacity: 0.5; flex: none; }
+.nier-menu-item:hover:not(:disabled), .nier-menu-item:focus-visible { background: var(--signal-btn-active-bg); color: var(--signal-btn-active-text); }
+.nier-menu-item:disabled { opacity: 0.5; cursor: default; }
+.nier-menu-label { font: 500 11px var(--signal-font); letter-spacing: 0.2em; color: var(--signal-text-dim); padding: 8px 14px 4px; }
+.nier-menu-sep { height: 1px; background: var(--signal-border); opacity: 0.4; margin: 4px 0; }
+
+/* buttons that live inside a menu (Quick Replies, Bible / Data Bank) look like the menu's own items */
+html .nier-menu button.signal-btn, html[data-theme="dark"] .nier-menu button.signal-btn {
+  display: flex; width: 100%; text-align: left; background: transparent !important; color: var(--signal-text) !important;
+  box-shadow: none !important; border: none !important; font: 400 13px var(--signal-font) !important; letter-spacing: 0.04em !important;
+  padding: 9px 14px !important; justify-content: flex-start; }
+html .nier-menu button.signal-btn:hover:not(:disabled), html[data-theme="dark"] .nier-menu button.signal-btn:hover:not(:disabled) {
+  background: var(--signal-btn-active-bg) !important; color: var(--signal-btn-active-text) !important; }
+.nier-menu label.nier-menu-check { display: flex; align-items: center; gap: 8px; padding: 9px 14px; font: 400 13px var(--signal-font); cursor: pointer; }
+
+#root { border-inline: none; }

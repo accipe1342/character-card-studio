@@ -3,7 +3,7 @@
     cd frontend && npm run build && cd ..
     python tests/e2e/run_all.py
 
-Starts mock_backend.py (port 5000) and proxy.py (port 5173), runs e2e1..e2e11 in order (later ones use what earlier
+Starts mock_backend.py (port 5000) and proxy.py (port 5173), runs e2e1..e2e12 in order (later ones use what earlier
 ones made), stops both and prints a summary. Screenshots go to tests/e2e/out (or $E2E_OUT).
 """
 import os
@@ -13,7 +13,7 @@ import time
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCRIPTS = ["e2e1.py", "e2e2.py", "e2e3.py", "e2e4.py", "e2e5.py", "e2e6.py", "e2e7.py", "e2e8.py", "e2e9.py", "e2e10.py", "e2e11.py"]
+SCRIPTS = ["e2e1.py", "e2e2.py", "e2e3.py", "e2e4.py", "e2e5.py", "e2e6.py", "e2e7.py", "e2e8.py", "e2e9.py", "e2e10.py", "e2e11.py", "e2e12.py"]
 
 
 def wait_up(url, seconds=20):

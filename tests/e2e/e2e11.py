@@ -5,6 +5,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import re, requests
 from playwright.sync_api import sync_playwright
+from ui import menu, open_menu
 B = "http://127.0.0.1:5173"
 R = []
 def ok(c, n): R.append(bool(c)); print(("PASS " if c else "FAIL ") + n)
@@ -17,7 +18,7 @@ with sync_playwright() as pw:
     pg.evaluate("() => { try { localStorage.removeItem('ccs.helper.open'); localStorage.removeItem('ccs.helper.chat'); } catch (e) {} }")
     pg.reload(); pg.wait_for_timeout(800)
     pg.get_by_role("button", name=re.compile(r"^\s*CHARACTER\s*$", re.I)).first.click(); pg.wait_for_timeout(400)
-    pg.get_by_role("button", name=re.compile("New Card")).click(); pg.wait_for_timeout(1000)
+    menu(pg, "NEW", "New Card"); pg.wait_for_timeout(1000)
     desc = pg.locator("textarea:not([aria-label='Message to the helper'])").first                        # the card editor, not the helper's message box
     desc.fill("Old description."); pg.wait_for_timeout(300)        # not autosaved yet: the panel must save it first
     pg.get_by_role("button", name="Open the helper").click(); pg.wait_for_timeout(300)

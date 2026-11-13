@@ -425,7 +425,7 @@ export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card,
             style={{ ...btnStyle, width: "100%", marginTop: 6, opacity: exporting ? 0.6 : 1 }}>
             ⇢ {t.sendToST || "SEND TO SILLYTAVERN"}
           </button>
-          {stStatus && <div role="status" style={{ fontSize: 12, marginTop: 6, color: stStatus.ok ? "var(--signal-text)" : "#c84a3a" }}>{stStatus.ok ? "✓" : "⊗"} {stStatus.text}</div>}
+          {stStatus && <div role="status" style={{ fontSize: 12, marginTop: 6, color: stStatus.ok ? "var(--signal-text)" : "var(--signal-accent)" }}>{stStatus.ok ? "✓" : "⊗"} {stStatus.text}</div>}
         </div>
       )}
 

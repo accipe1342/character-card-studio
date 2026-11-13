@@ -5,6 +5,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import re, requests
 from playwright.sync_api import sync_playwright
+from ui import menu, open_menu
 B = "http://127.0.0.1:5173"
 R = []
 def ok(c, n): R.append(bool(c)); print(("PASS " if c else "FAIL ") + n)
@@ -82,14 +83,14 @@ with sync_playwright() as pw:
     ok("A trimmed entry that keeps the names." in str(full), "trimmed text accepted and autosaved")
     # CHARACTER: personality layers + interview
     pg.get_by_role("button", name=re.compile(r"^\s*CHARACTER\s*$", re.I)).first.click(); pg.wait_for_timeout(600)
-    pg.get_by_role("button", name=re.compile("New Card")).click(); pg.wait_for_timeout(1000)
+    menu(pg, "NEW", "New Card"); pg.wait_for_timeout(1000)
     pg.locator("textarea").first.fill("Kel is a smith in a mountain town.")
-    pg.get_by_role("button", name=re.compile("Interview", re.I)).first.click(); pg.wait_for_timeout(300)
+    menu(pg, "TOOLS", "Interview"); pg.wait_for_timeout(300)
     ok(pg.locator("[role=dialog][aria-label=Interview]").count() == 1, "CHARACTER interview opens")
     pg.get_by_label("Question").fill("What do you make?"); pg.keyboard.press("Enter"); pg.wait_for_timeout(1000)
     ok(pg.locator("text=Ask quick, I have places to be.").count() == 1, "CHARACTER interview replies")
     pg.get_by_role("button", name="Close interview").click(); pg.wait_for_timeout(300)
-    pg.get_by_role("button", name=re.compile("Audit", re.I)).first.click(); pg.wait_for_timeout(1200)
+    menu(pg, "TOOLS", "Audit"); pg.wait_for_timeout(1200)
     ok(pg.locator("text=/with strangers \\/ with people close to them/").count() >= 1, "audit suggests the personality layers")
     ok(not errs, f"no page errors {errs[:2]}")
     b.close()

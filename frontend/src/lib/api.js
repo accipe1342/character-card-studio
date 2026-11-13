@@ -761,3 +761,14 @@ export async function helperKeep(changeId) {
 export async function helperUndo(changeId) {
   return _json(await _postJson(`/api/helper/change/${changeId}/undo`, {}), "Could not undo");
 }
+
+
+/** A card PNG / .json / .charx -> {card_id, name, lore_project_id?, entries?, image?, warnings}. */
+export async function importCard(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/card/import", { method: "POST", body: fd });
+  const data = await readJsonSafe(res);
+  if (!res.ok) throw new Error(data.error || "Import failed");
+  return data;
+}
