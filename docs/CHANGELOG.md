@@ -23,6 +23,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   text file (`backend/config/helper_persona.txt`); the work rules always apply on top of it.
 - SCRIBE-01 as a SillyTavern card: ⇩ CARD in the console (or GET /api/helper/card, ?format=json) gives a card PNG
   with the glossary embedded as her lorebook.
+- New README screenshots (`preview.png`, `docs/screenshots/`) with original sample content, and
+  `docs/UPDATE-v2.6.md`, an overview of this release.
 - `docs/DESIGN.md`: the design system in depth (principles, color and contrast, type, spacing, ornaments, every
   component, motion, copy, dark mode, a drop-in stylesheet and React components) for use in other projects.
 - Import character cards: CHARACTER NEW ▾ > Import card takes a card PNG (V2 or V3 data inside), a card .json
