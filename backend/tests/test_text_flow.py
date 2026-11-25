@@ -223,3 +223,69 @@ def test_critic_job_and_history(client, H, project):
     assert seen == ["STORY"] and j["status"] == "done"
     client.delete(f"/api/text/critique/{cid}", headers=H)
     assert all(x["id"] != cid for x in client.get(f"/api/text/project/{project}/critiques", headers=H).get_json())
+
+
+def _epub(chapters):
+    """A minimal but real epub: container.xml -> content.opf -> one xhtml per chapter."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("META-INF/container.xml",
+                   '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                   '<rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')
+        items = refs = ""
+        for i, (heading, line) in enumerate(chapters, 1):
+            body = "".join(f"<p>{line} Paragraph {n}.</p>" for n in range(90))
+            z.writestr(f"ch{i}.xhtml", f"<html><body><h1>{heading}</h1>{body}</body></html>")
+            items += f'<item id="c{i}" href="ch{i}.xhtml" media-type="application/xhtml+xml"/>'
+            refs += f'<itemref idref="c{i}"/>'
+        z.writestr("content.opf",
+                   '<package xmlns="http://www.idpf.org/2007/opf"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+                   f'<dc:title>Test Fic</dc:title></metadata><manifest>{items}</manifest><spine>{refs}</spine></package>')
+    return buf.getvalue()
+
+
+def test_epub_keeps_chapter_headings():
+    """A chapter heading that already reads "Chapter N: ..." must survive ingest: the chunker splits on it,
+    and "roleplay starts after chapter N" has nothing to anchor to without it."""
+    title, text = T.epub_to_text(_epub([("Chapter 1: The Harbor", "Mara walked the docks."),
+                                        ("Chapter 2: The Lantern Steps", "The Grey Watch lit the stair."),
+                                        ("A Note From the Author", "Thanks for reading.")]))
+    assert title == "Test Fic"
+    assert "Chapter 1: The Harbor" in text and "Chapter 2: The Lantern Steps" in text
+    assert "Chapter: A Note From the Author" in text          # an odd heading still becomes a section
+    labels = [c["label"] for c in T.chunk_text(text)]
+    # a long chapter may be split into "(part 1/2)" pieces, but every chunk is still named for its chapter
+    assert labels[0] == "Chapter 1: The Harbor", labels
+    assert any(l.startswith("Chapter 2: The Lantern Steps") for l in labels), labels
+    assert all(l.startswith("Chapter") for l in labels), labels
+
+
+AO3_CHAPTER = """<html><body><h2 class="title heading">Saltmere Nights</h2>
+<div id="chapters"><div class="chapter" id="chapter-1"><h3 class="title"><a>Chapter 1</a>: The Harbor</h3>
+<div class="userstuff" role="article"><h3 class="landmark">Chapter Text</h3><p>Mara walked the docks.</p></div>
+</div></div><ul class="work navigation actions">
+<li class="chapter next"><a href="/works/555/chapters/2">Next Chapter &rarr;</a></li>
+<li><a href="/works/556">Next Work &rarr;</a></li></ul></body></html>"""
+
+
+def test_ao3_chapter_heading_is_not_doubled():
+    """AO3's own h3.title already reads "Chapter 1: ..." - prefixing another one gives
+    "Chapter 1: Chapter 1 : The Harbor" in every chunk label."""
+    _, text = T.html_to_text(AO3_CHAPTER)
+    assert text.startswith("Chapter 1: The Harbor"), text[:60]
+    assert "Chapter Text" not in text                      # AO3's landmark heading is junk
+
+
+def test_next_chapter_link_survives_an_arrow(monkeypatch):
+    """The next link is rendered "Next Chapter ->" on AO3; an exact-match rule stops after page one.
+    "Next Work" is a different link on the same page and must not be followed."""
+    import text_module
+
+    class R:
+        status_code = 200
+        content = AO3_CHAPTER.encode()
+        def raise_for_status(self): pass
+
+    monkeypatch.setattr(text_module.requests, "get", lambda *a, **k: R())
+    _, _, nxt = text_module.fetch_page("https://archiveofourown.org/works/555/chapters/1")
+    assert nxt and nxt.endswith("/works/555/chapters/2"), nxt

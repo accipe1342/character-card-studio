@@ -500,8 +500,10 @@ def html_to_text(html: str):
             if body:
                 for junk in body.select("h3.landmark"):
                     junk.decompose()
-                head = t.get_text(" ", strip=True) if t else ""
-                out.append(f"Chapter {i}: {head}".strip() + "\n\n" + _paras(body))
+                head = re.sub(r"\s+:", ":", t.get_text(" ", strip=True)) if t else ""
+                # AO3's own heading already reads "Chapter 3: Title"; don't prefix a second one.
+                label = head if CHAPTER_RE.match(head) else f"Chapter {i}: {head}".strip()
+                out.append(label + "\n\n" + _paras(body))
         if out:
             return title, "\n\n".join(out)
 
@@ -549,8 +551,11 @@ def epub_to_text(data: bytes):
             body = _paras(soup.body or soup)
             if len(body) < 80:
                 continue
-            if heading and not CHAPTER_RE.match(heading.get_text(" ", strip=True)):
-                body = f"Chapter: {heading.get_text(' ', strip=True)}\n\n{body}"
+            if heading:
+                # Keep the heading either way: a proper "Chapter 3: ..." is what the chunker splits on,
+                # and anything else becomes one by prefixing it.
+                h = heading.get_text(" ", strip=True)
+                body = f"{h}\n\n{body}" if CHAPTER_RE.match(h) else f"Chapter: {h}\n\n{body}"
             parts.append(body)
     return title, "\n\n".join(parts)
 
@@ -698,7 +703,10 @@ def fetch_page(url: str):
     a = soup.select_one("a[rel=next]")
     if not a:
         for cand in soup.find_all("a"):
-            if re.match(r"^\s*(next( chapter)?|›|»)\s*$", cand.get_text(" ", strip=True), re.I):
+            # "Next Chapter →", "next ›", "Next" - strip the arrows before matching, but never match
+            # "next work" / "next page of comments", which are different links on the same page.
+            label = re.sub(r"[\s>\u2192\u203a\u00bb\u2023\u2794]+$", "", cand.get_text(" ", strip=True))
+            if re.match(r"^\s*(?:next(?:\s+chapter)?|\u203a|\u00bb|\u2192)\s*$", label, re.I):
                 a = cand
                 break
     if a and a.get("href"):
