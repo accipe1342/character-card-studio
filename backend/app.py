@@ -961,7 +961,24 @@ def api_list_models(provider):
             return jsonify({"models": models})
 
         else:
-            return jsonify({"error": "Unknown provider"}), 400
+            # Any OpenAI-compatible server (LM Studio, Ollama, KoboldCPP) lists its models the same way.
+            base = os.getenv("LOCAL_OPENAI_BASE_URL", "http://localhost:1234/v1").rstrip("/")
+            key = os.getenv("LOCAL_API_KEY", "local") or "local"
+            try:
+                r = req.get(f"{base}/models", headers={"Authorization": f"Bearer {key}"}, timeout=5)
+                r.raise_for_status()
+            except Exception as e:
+                return jsonify({"error": f"No model list from {base} ({e.__class__.__name__}). "
+                                         "Is the local server running? You can still type the model name."}), 400
+            data = r.json()
+            rows = data.get("data") if isinstance(data, dict) else data
+            models = []
+            for m in rows or []:
+                mid = m.get("id") or m.get("name") if isinstance(m, dict) else str(m)
+                if mid:
+                    models.append({"id": mid, "name": (m.get("name") if isinstance(m, dict) else None) or mid})
+            models.sort(key=lambda m: m["name"].lower())
+            return jsonify({"models": models})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
