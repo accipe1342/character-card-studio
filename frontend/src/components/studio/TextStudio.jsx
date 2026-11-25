@@ -39,7 +39,9 @@ import { InterviewPanel, QuickRepliesButton, ResendPreviewModal, StoryExportsBut
 import RelationshipMap from "./RelationshipMap";
 import { registerHelperFlush, setHelperContext } from "../../lib/helperBus";
 import { markBusy } from "../../lib/leaveGuard";
-import { DEFAULT_MODELS, Divider, btn, btnPrimary, btnSm, btnTool, headingStyle, hint, input, label, panelStyle, toolbarGrid } from "./textUi";
+import { DEFAULT_MODELS, btn, btnPrimary, btnSm, btnTool, headingStyle, hint, input, label, panelStyle, toolbarGrid } from "./textUi";
+import Divider from "../shared/Divider";
+import SelectMenu from "../shared/SelectMenu";
 import {
   getJob, fetchModels,
   textIngest, textIngestFile, textIngestUrls, appendText,
@@ -202,7 +204,6 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
   const [filterType, setFilterType] = useState("all");
   const [filterFlag, setFilterFlag] = useState("all");
   const [search, setSearch] = useState("");
-  const [entDelConfirm, setEntDelConfirm] = useState(null);
   const [dirty, setDirty] = useState(false);     // editor has changes not yet saved
   const [saving, setSaving] = useState(false);
   const [filterIssue, setFilterIssue] = useState("all");
@@ -276,7 +277,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
             showToast && showToast(j.message || "Done");
           }
         }
-      } catch {}
+      } catch { /* a dropped poll is picked up on the next tick */ }
     }, 1000);
     return () => clearInterval(iv);
   }, [jobId]);
@@ -373,7 +374,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
 
   async function selectEntity(e) {
     if (draft && dirty) await saveDraft(true);      // never lose edits when clicking another entry
-    setSelectedId(e.id); setDraft(draftFrom(e)); setDirty(false); setEntDelConfirm(null);
+    setSelectedId(e.id); setDraft(draftFrom(e)); setDirty(false);
   }
 
   function stepEntity(dir) {
@@ -469,7 +470,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
     try {
       await deleteTextEntity(draft.id);
       setLastDeleted([draft.id]);
-      setEntDelConfirm(null); setDirty(false);
+      setDirty(false);
       const p = await getTextProject(project.id);
       setProject(p);
       const nx = next && p.entities.find((x) => x.id === next.id);
@@ -871,11 +872,10 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
 
             <div style={label}>PROVIDER / MODEL</div>
             <div style={{ display: "flex", gap: 8 }}>
-              <select style={{ ...input, width: "auto" }} value={provider} onChange={(e) => { setProvider(e.target.value); setModel(DEFAULT_MODELS[e.target.value] || ""); setModelList([]); }}>
-                <option value="nanogpt">NanoGPT</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="local">Local</option>
-              </select>
+              <SelectMenu label="Provider" value={provider} width={200}
+                onChange={(v) => { setProvider(v); setModel(DEFAULT_MODELS[v] || ""); setModelList([]); }}
+                options={[{ value: "nanogpt", label: "NanoGPT" }, { value: "openrouter", label: "OpenRouter" }, { value: "local", label: "Local" }]}
+                style={{ ...input, width: "auto", display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
               <input style={{ ...input, flex: 1, minWidth: 0 }} list="text-models" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model (optional)" />
               <datalist id="text-models">{modelList.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</datalist>
             </div>
@@ -973,11 +973,11 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
             {entities.length > 0 && recap && (<>
               <Divider label="STORY SO FAR" style={{ marginTop: 16 }} />
               <div style={label}>ROLEPLAY STARTS AFTER</div>
-              <select style={input} value={recap.upto ?? -1}
-                onChange={(e) => loadRecap(project.id, parseInt(e.target.value))}>
-                <option value={-1}>the end of the text</option>
-                {recap.chunks.map((lbl, i) => <option key={i} value={i}>{i + 1}. {lbl}</option>)}
-              </select>
+              <SelectMenu label="Roleplay starts after" value={recap.upto ?? -1} wrapStyle={{ width: "100%" }} width={320}
+                onChange={(v) => loadRecap(project.id, parseInt(v, 10))}
+                options={[{ value: -1, label: "the end of the text" },
+                          ...recap.chunks.map((lbl, i) => ({ value: i, label: `${i + 1}. ${lbl}` }))]}
+                style={{ ...input, width: "100%", display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
               {(recap.upto ?? -1) >= 0 && (
                 <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, marginTop: 6, cursor: "pointer" }}
                   title="Characters, places and the rest are rebuilt from the chapters up to the starting point, so later facts and spoilers stay out. Entries you edited by hand are used as you wrote them.">
@@ -1007,17 +1007,14 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
                 <span style={{ ...hint, margin: 0 }}>{t.recapPlacement || "Placed in SillyTavern"}</span>
-                <select style={{ ...input, width: "auto", flex: 1, padding: "5px 8px", fontSize: 12 }} value={recap.position || "before"}
-                  aria-label="Where SillyTavern inserts the recap"
+                <SelectMenu label="Where SillyTavern inserts the recap" value={recap.position || "before"} width={300} wrapStyle={{ flex: 1 }}
                   title="Before the card: read as background. At depth 4: inserted near the latest messages as a system note, so it weighs more on what happens next."
-                  onChange={async (e) => {
-                    const position = e.target.value;
+                  options={[{ value: "before", label: "before the character card" }, { value: "depth", label: "at depth 4, as a system note" }]}
+                  onChange={async (position) => {
                     try { await saveRecapPosition(project.id, position); setRecap((r) => ({ ...r, position })); }
                     catch (er) { setError(er.message); }
-                  }}>
-                  <option value="before">before the character card</option>
-                  <option value="depth">at depth 4, as a system note</option>
-                </select>
+                  }}
+                  style={{ ...input, width: "100%", padding: "5px 8px", fontSize: 12, display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
               </div>
               <textarea style={{ ...input, height: Math.max(150, Math.min(520, 40 + Math.ceil((recap.text || "").length / 46) * 20)), resize: "vertical",
                 fontFamily: (recap.text || "").startsWith("[HEADER]") ? "ui-monospace, Consolas, monospace" : undefined, fontSize: (recap.text || "").startsWith("[HEADER]") ? 12 : undefined }} value={recap.text}
@@ -1106,32 +1103,18 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
             )}
             <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
               <input style={{ ...input, flex: 1, minWidth: 120, padding: "6px 10px", fontSize: 12 }} placeholder="Search entries..." value={search} onChange={(e) => setSearch(e.target.value)} />
-              <select style={{ ...input, width: "auto", padding: "6px 10px", fontSize: 12 }} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
-                <option value="all">all types</option>
-                {ENTITY_TYPES.filter((x) => x !== "event").map((x) => <option key={x} value={x}>{x}</option>)}
-              </select>
-              <select style={{ ...input, width: "auto", padding: "6px 10px", fontSize: 12 }} value={filterIssue} onChange={(e) => setFilterIssue(e.target.value)}>
-                <option value="all">all entries</option>
-                <option value="any">any problem</option>
-                <option value="dup">duplicates</option>
-                <option value="empty">empty</option>
-                <option value="junk">junk?</option>
-                <option value="nokeys">no keywords</option>
-                <option value="fic">fic-specific</option>
-              </select>
-              <select style={{ ...input, width: "auto", padding: "6px 10px", fontSize: 12 }} value={filterTier} onChange={(e) => setFilterTier(e.target.value)}>
-                <option value="all">all importance</option>
-                <option value="main">main</option>
-                <option value="supporting">supporting</option>
-                <option value="one-off">one-off</option>
-              </select>
-              <select style={{ ...input, width: "auto", padding: "6px 10px", fontSize: 12 }} value={filterFlag} onChange={(e) => setFilterFlag(e.target.value)}>
-                <option value="all">all ages</option>
-                <option value="flagged">flagged</option>
-                <option value="minor">under 18</option>
-                <option value="check">check</option>
-                <option value="unknown">unknown</option>
-              </select>
+              <SelectMenu label="Type filter" value={filterType} onChange={setFilterType} width={220}
+                options={[{ value: "all", label: "all types" }, ...ENTITY_TYPES.filter((x) => x !== "event").map((x) => ({ value: x, label: x }))]}
+                style={{ ...input, width: "auto", padding: "6px 10px", fontSize: 12, display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
+              <SelectMenu label="Problem filter" value={filterIssue} onChange={setFilterIssue} width={220}
+                options={[["all", "all entries"], ["any", "any problem"], ["dup", "duplicates"], ["empty", "empty"], ["junk", "junk?"], ["nokeys", "no keywords"], ["fic", "fic-specific"]].map(([v, l]) => ({ value: v, label: l }))}
+                style={{ ...input, width: "auto", padding: "6px 10px", fontSize: 12, display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
+              <SelectMenu label="Importance filter" value={filterTier} onChange={setFilterTier} width={220}
+                options={[["all", "all importance"], ["main", "main"], ["supporting", "supporting"], ["one-off", "one-off"]].map(([v, l]) => ({ value: v, label: l }))}
+                style={{ ...input, width: "auto", padding: "6px 10px", fontSize: 12, display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
+              <SelectMenu label="Age filter" value={filterFlag} onChange={setFilterFlag} width={220}
+                options={[["all", "all ages"], ["flagged", "flagged"], ["minor", "under 18"], ["check", "check"], ["unknown", "unknown"]].map(([v, l]) => ({ value: v, label: l }))}
+                style={{ ...input, width: "auto", padding: "6px 10px", fontSize: 12, display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
             </div>
             {(issueCount > 0) && (
               <div style={{ border: "1px solid var(--signal-border)", padding: 8, marginBottom: 8 }}>
@@ -1285,9 +1268,9 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                 <div style={{ display: "flex", gap: 8 }}>
                   <div style={{ flex: 1 }}>
                     <div style={label}>TYPE</div>
-                    <select style={input} value={draft.entity_type} onChange={(e) => editDraft({ entity_type: e.target.value })}>
-                      {ENTITY_TYPES.map((x) => <option key={x} value={x}>{x}</option>)}
-                    </select>
+                    <SelectMenu label="Entity type" value={draft.entity_type} wrapStyle={{ width: "100%" }} width={220}
+                      onChange={(v) => editDraft({ entity_type: v })} options={ENTITY_TYPES}
+                      style={{ ...input, width: "100%", display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={label}>AGE {draft.entity_type === "character" && <Flag flag={draft.age_flag} />}</div>
@@ -1295,12 +1278,11 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                   </div>
                 </div>
                 <div style={label}>ORIGIN (vs. the original work)</div>
-                <select style={input} value={draft.origin || ""} onChange={(e) => editDraft({ origin: e.target.value })}>
-                  <option value="">not set / not fan fiction</option>
-                  <option value="canon">canon (as in the original work)</option>
-                  <option value="altered">altered by this story</option>
-                  <option value="original">original to this story</option>
-                </select>
+                <SelectMenu label="Origin" value={draft.origin || ""} wrapStyle={{ width: "100%" }} width={300}
+                  onChange={(v) => editDraft({ origin: v })}
+                  options={[["", "not set / not fan fiction"], ["canon", "canon (as in the original work)"],
+                            ["altered", "altered by this story"], ["original", "original to this story"]].map(([v, l]) => ({ value: v, label: l }))}
+                  style={{ ...input, width: "100%", display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
                 <div style={label}>ALIASES (comma separated)</div>
                 <input style={input} value={draft.aliasesCsv} onChange={(e) => editDraft({ aliasesCsv: e.target.value })} />
                 <div style={label}>TRIGGER KEYWORDS (comma separated)</div>
@@ -1321,7 +1303,7 @@ export default function TextStudio({ t = {}, showToast, onOpenLore, onMakeCard, 
                   <textarea style={{ ...input, height: 70, resize: "vertical" }} value={draft.voiceText} onChange={(e) => editDraft({ voiceText: e.target.value })} />
                 </>)}
                 {draft.entity_type !== "event" && (
-                  <SecretsEditor entity={draft} characterNames={entities.filter((x) => x.entity_type === "character" && x.keep).map((x) => x.name)}
+                  <SecretsEditor key={draft.id} entity={draft} characterNames={entities.filter((x) => x.entity_type === "character" && x.keep).map((x) => x.name)}
                     onChange={(secrets) => {
                       setDraft((d) => ({ ...d, secrets }));
                       setProject((p) => p && { ...p, entities: p.entities.map((x) => (x.id === draft.id ? { ...x, secrets } : x)) });

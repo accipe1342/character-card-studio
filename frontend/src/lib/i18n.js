@@ -96,6 +96,10 @@ export const STRINGS = {
     // Cheatsheet
     cheatsheet: "CHEATSHEET",
     tokens: "tokens",
+    fieldsWord: "FIELDS", totalWord: "TOTAL", emptyWord: "empty", typeWord: "TYPE", versionWord: "VERSION",
+    providerModel: "Provider and model", defaultModel: "DEFAULT", language: "Language",
+    dropImage: "Click, or drop an image here", replaceImageHint: "Click the portrait or drop an image to replace it.",
+    openLorebook: "Open this card's lorebook in LORE",
 
     // Source
     source: "Source",
@@ -158,7 +162,6 @@ export const STRINGS = {
     newCard: "New Card",
     batchTitle: ":: BATCH CHARACTER GENERATION",
     loreBatchHint: "Paste up to 20 wiki URLs — each will be scraped and generated as a lore entry.",
-    addUrl: "Add URL",
     batchHint: "Paste up to 10 wiki URLs — each will be scraped and generated as a separate card.",
     batchGenerate: "Batch Generate",
     cancelBatch: "Cancel Batch",
@@ -257,6 +260,10 @@ export const STRINGS = {
 
     cheatsheet: "チートシート",
     tokens: "トークン",
+    fieldsWord: "項目", totalWord: "合計", emptyWord: "空", typeWord: "種類", versionWord: "バージョン",
+    providerModel: "プロバイダーとモデル", defaultModel: "既定", language: "言語",
+    dropImage: "クリック、または画像をここにドロップ", replaceImageHint: "ポートレートをクリックするか、画像をドロップして差し替えます。",
+    openLorebook: "このカードのロアブックを LORE で開く",
 
     source: "ソース",
     close: "閉じる",
@@ -317,7 +324,6 @@ export const STRINGS = {
     newCard: "新規カード",
     batchTitle: ":: 一括キャラクター生成",
     loreBatchHint: "最大20件のWiki URLを貼り付けてください。それぞれロアエントリーとして生成されます。",
-    addUrl: "URLを追加",
     batchHint: "最大10件のWiki URLを貼り付けてください。それぞれ個別のカードとして生成されます。",
     batchGenerate: "一括生成",
     cancelBatch: "一括キャンセル",
@@ -415,6 +421,10 @@ export const STRINGS = {
 
     cheatsheet: "速查表",
     tokens: "令牌",
+    fieldsWord: "字段", totalWord: "合计", emptyWord: "空", typeWord: "类型", versionWord: "版本",
+    providerModel: "提供方与模型", defaultModel: "默认", language: "语言",
+    dropImage: "点击，或将图片拖到此处", replaceImageHint: "点击头像或拖入图片即可替换。",
+    openLorebook: "在 LORE 中打开此卡的设定集",
 
     source: "来源",
     close: "关闭",
@@ -475,7 +485,6 @@ export const STRINGS = {
     newCard: "新建卡片",
     batchTitle: ":: 批量角色生成",
     loreBatchHint: "粘贴最多20个Wiki网址——每个将作为传说条目被抓取并生成。",
-    addUrl: "添加网址",
     batchHint: "粘贴最多10个Wiki网址——每个将作为单独的卡片被抓取并生成。",
     batchGenerate: "批量生成",
     cancelBatch: "取消批量",

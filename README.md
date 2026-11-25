@@ -61,8 +61,13 @@ To send cards straight to SillyTavern, set its address in **CONFIG → SillyTave
 |---|---|
 | Double-click `start.bat` | `./start.sh` |
 
-The browser opens at `http://localhost:5173` as soon as the backend is ready. Keep the window open while you work;
-close it to stop the app. If the browser doesn't open by itself, go to that address.
+The app opens in its own window as soon as the backend is ready — no tabs, no address bar, and its own taskbar
+icon you can pin. It uses Edge or Chrome if either is installed, and a normal browser tab otherwise. To always use a
+tab, set `OPEN_AS=tab` in `.env`.
+
+The black command window that `start.bat` / `start.sh` opened is the app itself: keep it open while you work, and
+close it to stop the app. Closing the app window alone leaves it running. If nothing opens by itself, go to
+`http://localhost:5173`.
 
 ### 5. Make your first card
 

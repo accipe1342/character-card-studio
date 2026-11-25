@@ -3,6 +3,7 @@
  * Kept out of ConfigPage.jsx so that file stays about prompts and keys.
  */
 import { useEffect, useRef, useState } from "react";
+import SelectMenu from "./shared/SelectMenu";
 import { getPresets, savePresets, listBackups, makeBackup, restoreBackup, getUsage, getBundleContents, exportBundle, importBundle } from "../lib/api";
 
 const TASKS = [
@@ -10,6 +11,7 @@ const TASKS = [
   ["critic", "Critic", "A stronger model gives sharper critique"],
   ["card", "Character cards", "Generate Card and field regeneration"],
   ["lore", "Lore studio", "Wiki pages to lore entries"],
+  ["helper", "SCRIBE-01", "The console helper. It calls tools, so pick a model that follows instructions"],
 ];
 
 const panel = { border: "1px solid var(--signal-border)", background: "var(--signal-bg-panel)", padding: 20, textAlign: "left" };
@@ -101,6 +103,7 @@ function BundlePanel({ showToast, setError, onImported, t = {} }) {
 
 export default function AdminPanels({ showToast, t = {} }) {
   const [presets, setPresets] = useState(null);
+  const [savedPresets, setSavedPresets] = useState(null);   // what the server has, to show when the panel is ahead of it
   const [backups, setBackups] = useState([]);
   const [usage, setUsage] = useState(null);
   const [days, setDays] = useState(30);
@@ -109,7 +112,7 @@ export default function AdminPanels({ showToast, t = {} }) {
   const [confirmRestore, setConfirmRestore] = useState(null);
 
   useEffect(() => {
-    getPresets().then(setPresets).catch((e) => setError(e.message));
+    getPresets().then((p) => { setPresets(p); setSavedPresets(p); }).catch((e) => setError(e.message));
     refreshBackups();
   }, []);
   useEffect(() => { getUsage(days).then(setUsage).catch(() => setUsage(null)); }, [days]);
@@ -119,7 +122,7 @@ export default function AdminPanels({ showToast, t = {} }) {
   }
   async function onSavePresets() {
     setBusy("presets"); setError("");
-    try { await savePresets(presets); showToast && showToast("Model presets saved"); }
+    try { const r = await savePresets(presets); setSavedPresets(r.presets || presets); showToast && showToast("Model presets saved"); }
     catch (e) { setError(e.message); }
     finally { setBusy(""); }
   }
@@ -139,6 +142,7 @@ export default function AdminPanels({ showToast, t = {} }) {
     } catch (e) { setError(e.message); }
     finally { setBusy(""); }
   }
+  const presetsDirty = !!presets && JSON.stringify(presets) !== JSON.stringify(savedPresets);
   const setPreset = (task, key, val) => setPresets((p) => ({ ...p, [task]: { ...(p?.[task] || {}), [key]: val } }));
   const kb = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
@@ -162,13 +166,11 @@ export default function AdminPanels({ showToast, t = {} }) {
                 <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em" }}>{label}</div>
                 <div style={{ ...hint, marginBottom: 4 }}>{tip}</div>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <select aria-label={`${label} provider`} value={presets[task]?.provider || ""} onChange={(e) => setPreset(task, "provider", e.target.value)}
-                    style={{ ...input, width: "auto" }}>
-                    <option value="">Any</option>
-                    <option value="nanogpt">NanoGPT</option>
-                    <option value="openrouter">OpenRouter</option>
-                    <option value="local">Local</option>
-                  </select>
+                  <SelectMenu label={`${label} provider`} value={presets[task]?.provider || ""} width={200}
+                    onChange={(v) => setPreset(task, "provider", v)}
+                    options={[{ value: "", label: "Any" }, { value: "nanogpt", label: "NanoGPT" },
+                              { value: "openrouter", label: "OpenRouter" }, { value: "local", label: "Local" }]}
+                    style={{ ...input, width: "auto", display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
                   <input aria-label={`${label} model`} value={presets[task]?.model || ""} onChange={(e) => setPreset(task, "model", e.target.value)}
                     placeholder="e.g. deepseek/deepseek-v4.1-flash" style={{ ...input, flex: 1, minWidth: 0 }} />
                 </div>
@@ -176,9 +178,17 @@ export default function AdminPanels({ showToast, t = {} }) {
             ))}
           </div>
         )}
-        <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
-          <button className="signal-btn" style={{ ...btn, background: "var(--signal-btn-active-bg)", color: "var(--signal-btn-active-text)" }}
-            disabled={busy === "presets" || !presets} onClick={onSavePresets}>{busy === "presets" ? "SAVING…" : (t.savePresets || "Save presets").toUpperCase()}</button>
+        <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {presetsDirty && (
+            <span style={{ fontSize: 12, color: "var(--signal-warn)", letterSpacing: "0.04em" }}>
+              {t.presetsUnsaved || "Not saved yet — these take effect once you save."}
+            </span>
+          )}
+          <button className="signal-btn" style={{ ...btn, background: "var(--signal-btn-active-bg)", color: "var(--signal-btn-active-text)",
+            boxShadow: presetsDirty ? "3px 3px 0 var(--signal-warn)" : undefined }}
+            disabled={busy === "presets" || !presets} onClick={onSavePresets}>
+            {busy === "presets" ? "SAVING…" : `${(t.savePresets || "Save presets").toUpperCase()}${presetsDirty ? " ·" : ""}`}
+          </button>
         </div>
       </section>
 
@@ -211,9 +221,9 @@ export default function AdminPanels({ showToast, t = {} }) {
       <section className="signal-panel signal-screen-panel" style={panel}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
           <h2 className="signal-heading" style={{ margin: 0, fontSize: 15 }}>{t.modelUsage || "Model usage"}</h2>
-          <select aria-label="Period" value={days} onChange={(e) => setDays(parseInt(e.target.value))} style={{ ...input, width: "auto", marginLeft: "auto" }}>
-            <option value={1}>Today</option><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={365}>Last year</option>
-          </select>
+          <SelectMenu label="Period" value={days} onChange={(v) => setDays(parseInt(v, 10))} width={200} wrapStyle={{ marginLeft: "auto" }}
+            options={[{ value: 1, label: "Today" }, { value: 7, label: "Last 7 days" }, { value: 30, label: "Last 30 days" }, { value: 365, label: "Last year" }]}
+            style={{ ...input, width: "auto", display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
         </div>
         <div style={{ ...hint, marginBottom: 10 }}>Calls and tokens as reported by the provider. Local servers may not report tokens.</div>
         {!usage || !usage.rows.length ? <div style={hint}>No model calls in this period.</div> : (

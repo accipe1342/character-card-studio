@@ -169,7 +169,9 @@
    ---------------------------------------------------------- */
 
 .signal-panel {
-  animation: signal-rise 0.55s var(--signal-spring) both;
+/* `backwards` not `both`: these animations end on the element's own resting state, and a fill that stays
+   on keeps a transform live, which makes a stacking context a drop-down menu cannot escape. */
+  animation: signal-rise 0.55s var(--signal-spring) backwards;
   position: relative;
 }
 .signal-panel::before {
@@ -198,10 +200,10 @@
    ---------------------------------------------------------- */
 
 .signal-mode-enter {
-  animation: signal-slide-in-right 0.38s var(--signal-spring) both;
+  animation: signal-slide-in-right 0.38s var(--signal-spring) backwards;
 }
 .signal-mode-enter-left {
-  animation: signal-slide-in-left 0.38s var(--signal-spring) both;
+  animation: signal-slide-in-left 0.38s var(--signal-spring) backwards;
 }
 
 
@@ -264,7 +266,7 @@
    ---------------------------------------------------------- */
 
 .signal-list-item {
-  animation: signal-rise 0.4s var(--signal-spring) both;
+  animation: signal-rise 0.4s var(--signal-spring) backwards;
 }
 /* Apply via nth-child or inline style for stagger */
 
@@ -304,7 +306,7 @@
    ---------------------------------------------------------- */
 
 .signal-library-item {
-  animation: signal-rise 0.35s var(--signal-spring) both;
+  animation: signal-rise 0.35s var(--signal-spring) backwards;
   position: relative;
   overflow: hidden;
   transition: background 0.15s var(--signal-soft), color 0.15s var(--signal-soft);
@@ -663,7 +665,7 @@ html[data-theme="dark"] button.signal-fetch-btn.signal-fetch-btn-loading {
 
 /* LORE studio: projects | (entry list | editor) */
 .lore-grid-projects { grid-template-columns: 220px minmax(0, 1fr); }
-.lore-grid-editor { grid-template-columns: 280px minmax(0, 1fr); }
+.lore-grid-editor { grid-template-columns: 340px minmax(0, 1fr); }
 @media (max-width: 1180px) {
   .lore-grid-editor { grid-template-columns: 1fr; }
   .lore-grid-editor > section { position: static !important; }
@@ -907,6 +909,14 @@ h2.signal-heading.signal-strip {
 /* drop-down menus (Generate / Tools / Export) */
 .sui-menu { position: absolute; z-index: 120; min-width: 240px; background: var(--signal-bg-panel);
   box-shadow: 4px 4px 0 var(--signal-shadow), 0 8px 24px rgba(0,0,0,0.18); padding: 4px 0; text-align: left; }
+/* a cap until SignalMenu measures the room above and below the button, then it sets its own */
+.sui-menu { max-height: min(60vh, 440px); overflow-y: auto; overscroll-behavior: contain; }
+.sui-menu-filter { padding: 8px 10px; border-bottom: 1px solid var(--signal-border); position: sticky; top: 0;
+  background: inherit; z-index: 1; }
+.sui-menu-filter input { width: 100%; box-sizing: border-box; padding: 5px 9px; font: 400 13px var(--signal-font);
+  background: var(--signal-bg-input); color: var(--signal-text); border: 1px solid var(--signal-border); outline: none; }
+.sui-menu.is-console .sui-menu-filter { border-bottom-color: rgba(218,214,195,0.25); }
+.sui-menu.is-console .sui-menu-filter input { background: rgba(218,214,195,0.1); color: #dad6c3; border-color: rgba(218,214,195,0.25); }
 .sui-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent;
   color: var(--signal-text); font: 400 13px var(--signal-font); letter-spacing: 0.04em; padding: 9px 14px; cursor: pointer; text-align: left; }
 .sui-menu-item::before { content: ''; width: 6px; height: 6px; background: currentColor; opacity: 0.5; flex: none; }
@@ -926,6 +936,14 @@ html .sui-menu button.signal-btn:hover:not(:disabled), html[data-theme="dark"] .
 
 #root { border-inline: none; }
 
+/* a drop-down inside the console: the same menu, in the console's colours (a native select cannot be styled) */
+.sui-menu.is-console { background: #3e3b33; box-shadow: 4px 4px 0 rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.3); }
+.sui-menu.is-console .sui-menu-item { color: #dad6c3; }
+.sui-menu.is-console .sui-menu-item:hover:not(:disabled), .sui-menu.is-console .sui-menu-item:focus-visible { background: #dad6c3; color: #3e3b33; }
+.sui-menu.is-console .sui-menu-sep { background: rgba(218,214,195,0.25); opacity: 1; }
+.sui-menu.is-console .sui-menu-label { color: rgba(218,214,195,0.72); }
+.scribe-btn.is-open { background: #dad6c3; color: #3e3b33; }
+
 /* SCRIBE-01 console buttons: one look and one size in both themes (the console is its own dark device) */
 .scribe-btn { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; font: 500 11px var(--signal-font); letter-spacing: 0.12em;
   border: 1px solid transparent; background: #c4bea8; color: #4e4b42; cursor: pointer; white-space: nowrap; box-shadow: 2px 2px 0 rgba(0,0,0,0.25);
@@ -941,3 +959,86 @@ html .sui-menu button.signal-btn:hover:not(:disabled), html[data-theme="dark"] .
 .scribe-scroll::-webkit-scrollbar-track { background: transparent; }
 /* why a menu item is unavailable */
 .sui-menu-item .why { margin-left: auto; font-size: 11px; letter-spacing: 0.04em; opacity: 0.9; padding-left: 12px; white-space: nowrap; }
+
+/* ----------------------------------------------------------
+   v2.6.1 LAYOUT — pinned tab row and toolbar, compact header, model chip, field list, compact LORE rows
+   ---------------------------------------------------------- */
+:root { --sui-sticky-top: 16px; }
+
+/* tab row: stays at the top of the window; turns solid once the page has scrolled */
+.sui-navbar { position: sticky; top: 0; z-index: 70; padding: 8px 0; margin: 4px 0 -8px; }
+/* studio toolbar: URL box, main actions, menus and the model chip in one row */
+.sui-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 8px 0; margin-bottom: 8px; }
+.sui-toolbar-sep { width: 1px; align-self: stretch; background: var(--signal-border); opacity: 0.5; margin: 0 2px; }
+html[data-scrolled] .sui-navbar { background: var(--signal-bg); }
+@media (min-width: 1100px) and (min-height: 600px) {
+  :root { --sui-sticky-top: 128px; }
+  .sui-toolbar { position: sticky; top: 56px; z-index: 60; flex-wrap: nowrap; }
+  .sui-toolbar > input:first-child { flex: 1 1 0 !important; min-width: 80px !important; }
+  html[data-scrolled] .sui-toolbar { background: var(--signal-bg); box-shadow: 0 1px 0 var(--signal-border); }
+}
+
+/* what is open, in the tab row: only once the big header is out of sight, or in a short window */
+.sui-nav-ctx { display: none; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px;
+  font: 400 12px var(--signal-font); letter-spacing: 0.14em; color: var(--signal-text-dim); text-transform: uppercase; }
+.sui-nav-ctx::after { content: attr(data-label); }
+html[data-compact] .sui-nav-ctx { display: inline-block; }
+@media (max-height: 760px) {
+  .sui-header { display: none !important; }
+  .sui-nav-ctx { display: inline-block; }
+  .sui-toolbar { margin-top: 12px; }
+}
+.sui-ctx-link { display: block; margin-left: auto; padding: 0; border: none; background: none; cursor: pointer; font: inherit; letter-spacing: inherit;
+  color: var(--signal-text-dim); text-transform: uppercase; text-decoration: underline; text-underline-offset: 3px; }
+.sui-ctx-link:hover { color: var(--signal-text); }
+
+/* provider + model chip */
+.sui-chip-btn { display: inline-flex; align-items: center; gap: 6px; max-width: 260px; padding: 9px 12px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--signal-border); background: var(--signal-bg-field); color: var(--signal-text);
+  font: 500 12px var(--signal-font); letter-spacing: 0.14em; }
+.sui-chip-btn[aria-expanded="true"] { background: var(--signal-btn-active-bg); color: var(--signal-btn-active-text); }
+.sui-chip-text { overflow: hidden; text-overflow: ellipsis; }
+.sui-chip-pop { top: calc(100% + 6px); right: 0; width: min(340px, calc(100vw - 32px)); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.sui-chip-pop > select, .sui-chip-pop > div { width: 100% !important; min-width: 0 !important; box-sizing: border-box; }
+.sui-chip-pop select, .sui-chip-pop input { font-size: 13px !important; }
+.sui-chip-pop > select { padding: 9px 10px !important; }
+
+/* NATURAL / STRUCTURED switch inside a panel's dark strip */
+.signal-panel h2.signal-heading.sui-strip-row { display: flex; align-items: center; padding: 4px 4px 4px 12px !important; }
+.sui-strip-switch { margin-left: auto; display: inline-flex; gap: 4px; }
+.sui-strip-btn { padding: 3px 9px; cursor: pointer; font: 500 11px var(--signal-font); letter-spacing: 0.12em; text-transform: uppercase;
+  background: transparent; color: var(--signal-btn-active-text); border: 1px solid var(--signal-btn-active-text); }
+.sui-strip-btn.is-on { background: var(--signal-bg-panel); color: var(--signal-text); border-color: var(--signal-bg-panel); }
+.sui-strip-btn:focus-visible { outline: 2px solid var(--signal-btn-active-text); outline-offset: 1px; }
+
+/* field list: a filled or hollow square, the name, and the field's size */
+.sui-field-sq { width: 8px; height: 8px; flex: none; box-sizing: border-box; border: 1px solid currentColor; }
+.sui-field-sq.is-filled { background: currentColor; }
+.sui-field-tok { margin-left: auto; font-size: 11px; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; opacity: 0.75; white-space: nowrap; }
+.sui-segbar { height: 6px; display: flex; gap: 2px; background: transparent; }
+.sui-segbar > span { background: var(--signal-text); min-width: 2px; }
+.sui-editor-head { display: flex; align-items: baseline; gap: 10px; border-bottom: 1px solid var(--signal-border); padding-bottom: 8px; margin-bottom: 12px; }
+.sui-editor-name { flex: 0 1 auto; min-width: 2em; width: auto; border: none; outline: none; background: transparent;
+  color: var(--signal-text); font: 700 18px var(--signal-font); padding: 2px 0; cursor: text; }
+.sui-editor-name:hover { box-shadow: 0 1px 0 var(--signal-line); }
+.sui-editor-name:focus-visible { box-shadow: 0 1px 0 var(--signal-text); }
+/* the pencil says the name is a field, not a heading; it fades up on hover and whenever the name has focus */
+.sui-name-pencil { border: none; background: none; padding: 0 0 0 2px; margin-right: auto; cursor: pointer; line-height: 0;
+  color: var(--signal-text-dim); opacity: 0.55; transition: opacity 0.15s var(--signal-soft); }
+.sui-editor-head:hover .sui-name-pencil, .sui-name-pencil:focus-visible, .sui-editor-name:focus + .sui-name-pencil { opacity: 1; }
+.sui-version { font-size: 11px; letter-spacing: 0.14em; color: var(--signal-text-dim); font-variant-numeric: tabular-nums; }
+
+/* portrait well: click or drop an image */
+.sui-drop { display: block; position: relative; cursor: pointer; }
+.sui-drop.is-over { outline: 2px dashed var(--signal-text); outline-offset: -6px; }
+
+/* LORE: one-line entry rows; move and delete show on the selected, hovered or focused row */
+.lore-row .lore-row-acts { opacity: 0; transition: opacity 0.15s var(--signal-soft); }
+.lore-row:hover .lore-row-acts, .lore-row.is-selected .lore-row-acts, .lore-row .lore-row-acts:focus-within { opacity: 1; }
+@media (hover: none) { .lore-row .lore-row-acts { opacity: 1; } }
+.lore-row.is-selected .lore-row-acts button { border-color: currentColor !important; color: inherit !important; }
+
+/* people who ask for less motion get none */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

@@ -55,9 +55,7 @@ const LORE_THINKING_LINES = [
 
 export default function MainJobStatus({ job, mode = "character" }) {
   const [thinkIdx, setThinkIdx] = useState(0);
-  const [smoothProgress, setSmoothProgress] = useState(0);
   const [elapsed, setElapsed] = useState(0);
-  const [finalElapsed, setFinalElapsed] = useState(null);
 
   const THINKING_STAGES = new Set(["requesting_model", "building_prompt", "generating"]);
   const isThinking = THINKING_STAGES.has(job?.stage) &&
@@ -74,44 +72,13 @@ export default function MainJobStatus({ job, mode = "character" }) {
     return () => clearInterval(id);
   }, [isThinking, lines.length]);
 
-  // Sync to real progress — only move forward, cap at 89 until truly done
+  // Live elapsed timer — counts from when this stage began, and keeps its last value once the job ends
   useEffect(() => {
-    if (!job) return;
-    const id = setTimeout(() => {
-      setSmoothProgress(prev => {
-        if (isDone) return 100;
-        if (isFailed) return prev;
-        const target = Math.min(job.progress || 0, 75);
-        return Math.max(prev, target);
-      });
-    }, 0);
-    return () => clearTimeout(id);
-  }, [job?.progress, isDone, isFailed]);
-
-  // Creep during model processing — slow crawl, cap at 88
-  useEffect(() => {
-    if (!isThinking) return;
-    const id = setInterval(() => {
-      setSmoothProgress(prev => {
-        if (prev >= 75) return prev;
-        return prev + 0.12;
-      });
-    }, 100);
+    if (!job || isDone || isFailed) return undefined;
+    const started = Date.now();
+    const id = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 250);
     return () => clearInterval(id);
-  }, [isThinking]);
-
-  // Live elapsed timer — starts when job starts, freezes on done/failed
-  useEffect(() => {
-    if (!job || isDone || isFailed) return;
-    setElapsed(0);
-    const id = setInterval(() => setElapsed(s => s + 1), 1000);
-    return () => clearInterval(id);
-  }, [job?.status]);
-
-  // Freeze elapsed on completion
-  useEffect(() => {
-    if (isDone || isFailed) setFinalElapsed(elapsed);
-  }, [isDone, isFailed]);
+  }, [job?.status, isDone, isFailed]);
 
   if (!job) return null;
 
@@ -165,11 +132,7 @@ export default function MainJobStatus({ job, mode = "character" }) {
         <span style={{ opacity: 0.4 }}>::</span>
         <span>{stageLabel}</span>
         <span style={{ opacity: 0.4 }}>·</span>
-        <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {isDone || isFailed
-            ? `${finalElapsed ?? elapsed}s`
-            : `${elapsed}s`}
-        </span>
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>{elapsed}s</span>
 
         {isDone && (
           <>

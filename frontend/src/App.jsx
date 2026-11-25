@@ -40,8 +40,11 @@ import CharacterStudio from "./components/studio/CharacterStudio";
 import LoreStudio from "./components/studio/LoreStudio";
 import TextStudio from "./components/studio/TextStudio";
 import SearchModal from "./components/SearchModal";
+import KeysModal from "./components/KeysModal";
+import { onOpenKeys } from "./lib/keysBus";
 import { anyBusy } from "./lib/leaveGuard";
-import { listCards, loadCard, deleteCard, renameCard, duplicateCard, imageSrc } from "./lib/api";
+import { toggleHelper } from "./lib/helperBus";
+import { listCards, loadCard, deleteCard, duplicateCard, imageSrc } from "./lib/api";
 import HelperPanel from "./components/HelperPanel";
 import StudioHeader, { KeyFooter } from "./components/StudioHeader";
 
@@ -83,6 +86,7 @@ export default function App() {
   const [regenPreview, setRegenPreview] = useState(null);
   const [handoff, setHandoff] = useState(null);   // TEXT "Make card" -> CHARACTER: {lore_project_id, story_point}
   const [searchOpen, setSearchOpen] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
   const [focus, setFocus] = useState(null);       // search hit to open: {kind: "lore"|"text", project_id, id}
 
   // Ctrl+K / Cmd+K opens the search everywhere
@@ -93,6 +97,21 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  // ? opens the key sheet (not while typing), and the footer's "? :: KEYS" hint asks for it too
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== "?" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = (e.target?.tagName || "").toLowerCase();
+      if (["input", "textarea", "select"].includes(tag) || e.target?.isContentEditable) return;
+      if (!keysOpen && document.querySelector('[role="dialog"]')) return; // another dialog owns the screen
+      e.preventDefault();
+      setKeysOpen((v) => !v);
+    }
+    window.addEventListener("keydown", onKey);
+    const off = onOpenKeys(() => setKeysOpen(true));
+    return () => { window.removeEventListener("keydown", onKey); off(); };
+  }, [keysOpen]);
+
   // closing the tab while a job runs or an edit isn't saved yet: ask first
   useEffect(() => {
     function onLeave(e) {
@@ -122,6 +141,22 @@ export default function App() {
     else if (it.group === "lore") { setFocus({ kind: "lore", project_id: it.project_id, id: it.id }); goTo("lore"); }
     else if (it.group === "entities") { setFocus({ kind: "text", project_id: it.project_id, id: it.id }); goTo("text"); }
     else if (it.group === "texts") { setFocus({ kind: "text", project_id: it.id, id: null }); goTo("text"); }
+  }
+
+  // what Ctrl+K can run, besides finding things. Studio-level actions (New card, Export, …) stay in their toolbars.
+  function paletteActions() {
+    const go = [
+      ["character", t.character || "CHARACTER"],
+      ["lore", t.lore || "LORE"],
+      ["text", t.text || "TEXT"],
+      ["config", t.config || "CONFIG"],
+    ].filter(([m]) => m !== mode).map(([m, label]) => ({ id: `go-${m}`, label: `Go to ${label}`, hint: "STUDIO", run: () => goTo(m) }));
+    return [
+      ...go,
+      { id: "library", label: t.library ? `Open ${t.library}` : "Open LIBRARY", hint: "SAVED CARDS", run: openLibrary },
+      { id: "helper", label: "Show or hide SCRIBE-01", hint: "CTRL+/", run: toggleHelper },
+      { id: "keys", label: "Keyboard shortcuts", hint: "?", run: () => setKeysOpen(true) },
+    ];
   }
 
   function showToast(msg) {
@@ -430,7 +465,8 @@ export default function App() {
       </div>
 
       <div style={{ maxWidth: 1600, margin: "0 auto" }}>
-        <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} onPick={openSearchHit} t={t} />
+        <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} onPick={openSearchHit} actions={paletteActions()} t={t} />
+        <KeysModal open={keysOpen} onClose={() => setKeysOpen(false)} t={t} />
         <TopNav
           mode={mode}
           setMode={goTo}
@@ -440,7 +476,7 @@ export default function App() {
           setLang={setLang}
           t={t}
         />
-        <StudioHeader mode={mode} t={t} />
+        <StudioHeader mode={mode} t={t} onOpenLink={(l) => { setFocus({ kind: "lore", project_id: l.project_id, id: null }); goTo("lore"); }} />
 
         <div key={mode} className={modeDir === "right" ? "signal-mode-enter" : "signal-mode-enter-left"} style={{ display: "contents" }}>
         {mode === "config" ? (

@@ -9,7 +9,9 @@ import { useEffect, useState } from "react";
 import { startCritique, listCritiques, getCritique, deleteCritique, startSweep, rewritePassage, getJob, getPresets, scanProject } from "../../lib/api";
 import ProseScanModal from "./ProseScan";
 import { markBusy } from "../../lib/leaveGuard";
-import { DEFAULT_MODELS, Divider, btnPrimary, btnTool, headingStyle, hint, input, label, panelStyle, toolbarGrid } from "./textUi";
+import { DEFAULT_MODELS, btnPrimary, btnTool, headingStyle, hint, input, label, panelStyle, toolbarGrid } from "./textUi";
+import Divider from "../shared/Divider";
+import SelectMenu from "../shared/SelectMenu";
 
 function ScoreBar({ s }) {
   const v = Math.max(0, Math.min(10, Number(s.score) || 0));
@@ -122,9 +124,10 @@ function SweepTable({ rows, projectId, provider, model }) {
   );
 }
 
+const H3 = ({ children }) => <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", margin: "14px 0 6px" }}>{children}</div>;
+
 function CritiqueBody({ c, full, projectId, provider, model }) {
   const r = c.result || {};
-  const H3 = ({ children }) => <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", margin: "14px 0 6px" }}>{children}</div>;
   const avg = (r.scores || []).length ? ((r.scores.reduce((a, x) => a + (Number(x.score) || 0), 0)) / r.scores.length).toFixed(1) : null;
   return (
     <div style={{ fontSize: 13, lineHeight: 1.55, textAlign: "left" }}>
@@ -284,27 +287,22 @@ export default function CriticPanel({ project, parallel = 3, showToast, setError
             Runs on its own; it does not touch extraction or the lorebook.
           </div>
           <div style={label}>SCOPE</div>
-          <select style={input} value={critScope} onChange={(e) => setCritScope(e.target.value)} aria-label="Critique scope">
-            <option value="all">Whole text ({project.chunks.length} parts)</option>
-            {chapterGroups().map((g, i) => <option key={i} value={i}>{g.key}{g.idx.length > 1 ? ` (${g.idx.length} parts)` : ""}</option>)}
-          </select>
+          <SelectMenu label="Critique scope" value={critScope} onChange={setCritScope} wrapStyle={{ width: "100%" }} width={300}
+            options={[{ value: "all", label: `Whole text (${project.chunks.length} parts)` },
+                      ...chapterGroups().map((g, i) => ({ value: i, label: `${g.key}${g.idx.length > 1 ? ` (${g.idx.length} parts)` : ""}` }))]}
+            style={{ ...input, width: "100%", display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
           <div style={label}>FOCUS</div>
-          <select style={input} value={critFocus} onChange={(e) => setCritFocus(e.target.value)} aria-label="Critique focus">
-            <option value="">Everything</option>
-            <option value="prose and style">Prose & style</option>
-            <option value="dialogue and character voice">Dialogue & voice</option>
-            <option value="characterization and canon accuracy">Characters & canon</option>
-            <option value="plot, structure and pacing">Plot & pacing</option>
-            <option value="grammar, spelling, punctuation and formatting">Grammar & mechanics</option>
-          </select>
+          <SelectMenu label="Critique focus" value={critFocus} onChange={setCritFocus} wrapStyle={{ width: "100%" }} width={300}
+            options={[["", "Everything"], ["prose and style", "Prose & style"], ["dialogue and character voice", "Dialogue & voice"],
+                      ["characterization and canon accuracy", "Characters & canon"], ["plot, structure and pacing", "Plot & pacing"],
+                      ["grammar, spelling, punctuation and formatting", "Grammar & mechanics"]].map(([v, l]) => ({ value: v, label: l }))}
+            style={{ ...input, width: "100%", display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
           <div style={label}>MODEL</div>
           <div style={{ display: "flex", gap: 6 }}>
-            <select style={{ ...input, width: "auto" }} value={critProvider} aria-label="Critic provider"
-              onChange={(e) => { setCritProvider(e.target.value); setCritModel(DEFAULT_MODELS[e.target.value] || ""); }}>
-              <option value="nanogpt">NanoGPT</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="local">Local</option>
-            </select>
+            <SelectMenu label="Critic provider" value={critProvider} width={200}
+              onChange={(v) => { setCritProvider(v); setCritModel(DEFAULT_MODELS[v] || ""); }}
+              options={[{ value: "nanogpt", label: "NanoGPT" }, { value: "openrouter", label: "OpenRouter" }, { value: "local", label: "Local" }]}
+              style={{ ...input, width: "auto", display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textAlign: "left" }} />
             <input style={{ ...input, flex: 1, minWidth: 0 }} list="text-models" value={critModel} onChange={(e) => setCritModel(e.target.value)} placeholder="Model" aria-label="Critic model" />
           </div>
           <div style={hint}>A stronger model gives sharper critique; the whole text takes one call per part plus one.</div>

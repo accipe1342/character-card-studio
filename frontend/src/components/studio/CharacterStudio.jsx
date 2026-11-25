@@ -30,7 +30,6 @@
  * batchMode       Whether batch generate UI is expanded
  * batchUrls       Array of URLs for batch generation
  * batchResults    Results from the last batch job
- * glitchActive    Triggers one-shot glitch animation (unused currently)
  * typingField     Field name currently being typed into by animation
  * typingText      Current partial text during typing animation
  * flashSave       True briefly after save to trigger flash animation
@@ -65,7 +64,7 @@
  *   startCharacterGenerate() from api.js.
  */
 
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import CheatsheetBar from "../shared/CheatsheetBar";
 import AlternateGreetings from "../shared/AlternateGreetings";
 import PreviewPanel from "../shared/PreviewPanel";
@@ -74,9 +73,12 @@ import RegenModal from "../shared/RegenModal";
 import MainJobStatus from "../shared/MainJobStatus";
 import { markBusy } from "../../lib/leaveGuard";
 import { InterviewPanel, TrimButton } from "./AssistPanels";
-import { onHelperChange, registerHelperFlush, setHelperContext } from "../../lib/helperBus";
+import { onHelperChange, registerHelperFlush, setHeaderLink, setHelperContext } from "../../lib/helperBus";
 import { getGreetingStyle, setGreetingStyle } from "../../lib/greetingStyle";
 import SignalMenu, { MenuItem, MenuLabel, MenuSep } from "../shared/SignalMenu";
+import ModelChip from "../shared/ModelChip";
+import SelectMenu from "../shared/SelectMenu";
+import { countTokens as estTokens } from "../../lib/tokens";
 import {
   getJob,
   regenerateField,
@@ -95,6 +97,11 @@ import {
   scanCardProse, setCardImage, uploadImage, loadCard, importCard } from "../../lib/api";
 
 // ── static card audit (no model call): what would make this card weaker in SillyTavern ──
+// the field lists, in the order the editor shows them (J / K step through the same order)
+const NATURAL_LIST = [ "description", "personality", "scenario", "first_mes", "mes_example", "tags", "depth_prompt", "system_prompt", ];
+const STRUCTURED_LIST = [ "age", "gender", "pronouns", "species", "ethnicity", "race", "story_point", "job_occupation", "relationship_to_user", "relationship_status", "sexual_attraction", "appearance", "height", "weight", "clothing", "accessories", "non_human_appearance", "personal_parts", "personality_traits", "speech", "backstory", "likes", "dislikes", "loves", "hates", "kinks", "motivations", "flaws", "mannerisms", "relationships", "with_strangers", "with_close", "scenario", "first_mes", "mes_example", "tags", ];
+const SEG_OPACITY = [1, 0.8, 0.62, 0.48, 0.38, 0.3];
+
 function auditCard(card) {
   const issues = [];
   let score = 100;
@@ -195,7 +202,7 @@ export default function CharacterStudio({
   }, []);
   useEffect(() => {
     let v = "";
-    try { v = (cardId && localStorage.getItem(`ccs-card-lore-${cardId}`)) || ""; } catch {}
+    try { v = (cardId && localStorage.getItem(`ccs-card-lore-${cardId}`)) || ""; } catch { /* storage blocked: this session only */ }
     setAttachLore(v);
   }, [cardId]);
   useEffect(() => {
@@ -219,7 +226,7 @@ export default function CharacterStudio({
   }, [attachLore, loreProjects]);
   function chooseLore(v) {
     setAttachLore(v);
-    try { if (cardId) localStorage.setItem(`ccs-card-lore-${cardId}`, v); } catch {}
+    try { if (cardId) localStorage.setItem(`ccs-card-lore-${cardId}`, v); } catch { /* storage blocked: this session only */ }
   }
   const [mainJob, setMainJob] = useState(null);
   const [provider, setProvider] = useState("nanogpt");
@@ -235,7 +242,7 @@ export default function CharacterStudio({
   const [fieldElapsed, setFieldElapsed] = useState(0);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
-  const [glitchActive, setGlitchActive] = useState(false);
+  const nameRef = useRef(null);                  // the pencil beside the card name focuses this
   const [typingField, setTypingField] = useState(null);
   const [typingText, setTypingText] = useState("");
   const [flashSave, setFlashSave] = useState(false);
@@ -768,20 +775,6 @@ export default function CharacterStudio({
     setCard((prev) => ({ ...prev, alternate_greetings: greetings }));
   }
 
-  function handleExportStructured() {
-    if (!card?.structured_profile) return;
-
-    const blob = new Blob([JSON.stringify(card.structured_profile, null, 2)], {
-      type: "application/json",
-    });
-
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = `${card.name || "card"}_structured_profile.json`;
-    a.click();
-    URL.revokeObjectURL(objectUrl);
-  }
 
   async function handleExportCard(spec = "v2") {
     if (!card) return;
@@ -830,200 +823,56 @@ export default function CharacterStudio({
     }
   }
 
+  // the card's attached lorebook, as a link in the page header
+  useEffect(() => {
+    const p = attachLore ? loreProjects.find((x) => String(x.id) === String(attachLore)) : null;
+    setHeaderLink("character", p ? {
+      project_id: p.id,
+      label: `LORE · ${p.project_name || p.name || "lorebook"}${p.entry_count != null ? ` · ${p.entry_count} ENTRIES` : ""}`,
+    } : null);
+    return () => setHeaderLink("character", null);
+  }, [attachLore, loreProjects]);
+
+  // J / K step through the field list; Ctrl+Enter runs Generate Card
+  useEffect(() => {
+    function onKey(ev) {
+      if (document.querySelector('[role="dialog"]') || ev.target?.closest?.("aside")) return;
+      if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") {
+        if (sourceId && !loading) { ev.preventDefault(); handleGenerate(); }
+        return;
+      }
+      const tag = (ev.target?.tagName || "").toLowerCase();
+      if (["input", "textarea", "select"].includes(tag) || ev.target?.isContentEditable || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      const k = String(ev.key || "").toLowerCase();
+      if (!card || (k !== "j" && k !== "k")) return;
+      const list = characterViewMode === "natural" ? NATURAL_LIST : STRUCTURED_LIST;
+      const i = Math.max(0, list.indexOf(selectedField));
+      ev.preventDefault();
+      setSelectedField(list[Math.min(list.length - 1, Math.max(0, i + (k === "j" ? 1 : -1)))]);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   return (
     <>
-      {/* Row 1: inputs */}
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          marginBottom: 8,
-          flexWrap: "wrap",
-        }}
-      >
+      {/* Toolbar: URL, making a card, New / Tools menus, the model chip, Export (pinned under the tabs while scrolling) */}
+      <div className="sui-toolbar">
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="Paste a wiki URL"
+          aria-label="Wiki URL"
           style={{
-            flex: "1 1 260px",
+            flex: "1 1 200px",
             minWidth: 0,
-            padding: 12,
+            padding: "9px 12px",
             border: "1px solid var(--signal-border)",
             background: "var(--signal-bg-field)",
             color: "var(--signal-text)",
+            fontFamily: "inherit",
           }}
         />
-
-        <select
-          value={provider}
-          onChange={(e) => {
-            setProvider(e.target.value);
-            setModel("");
-            setModelSearch("");
-            setModelList([]);
-          }}
-          style={inputStyle}
-        >
-          <option value="nanogpt">NanoGPT</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="local">Local (OpenAI-compatible)</option>
-        </select>
-
-        {/* Model picker — Signal UI style */}
-        <div ref={modelRef} style={{ position: "relative", minWidth: 260 }}>
-          {/* Trigger input */}
-          <div style={{
-            display: "flex",
-            border: "1px solid var(--signal-border)",
-            background: "var(--signal-bg-field)",
-          }}>
-            <input
-              value={modelDropdownOpen ? modelSearch : (model || "")}
-              onChange={(e) => { setModelSearch(e.target.value); setModel(e.target.value); }}
-              onFocus={() => { setModelDropdownOpen(true); setModelSearch(model || ""); }}
-              placeholder={t.modelOptional || "Model (optional)"}
-              style={{
-                flex: 1, padding: "12px 10px", border: "none",
-                background: "transparent", color: "var(--signal-text)",
-                fontFamily: "inherit", fontSize: "inherit",
-                outline: "none", minWidth: 0,
-              }}
-            />
-            <button
-              onClick={() => {
-                if (modelDropdownOpen) { setModelDropdownOpen(false); }
-                else { setModelDropdownOpen(true); }
-              }}
-              style={{
-                padding: "0 12px", border: "none",
-                borderLeft: "1px solid var(--signal-border)",
-                background: "var(--signal-bg-panel)", cursor: "pointer",
-                color: "var(--signal-text)", fontSize: 12,
-              }}
-            >
-              {modelDropdownOpen ? "▴" : "▾"}
-            </button>
-          </div>
-
-          {modelDropdownOpen && (
-            <div style={{
-              position: "absolute", top: "100%", left: 0, right: 0,
-              background: "var(--signal-bg-panel)", border: "1px solid var(--signal-border)",
-              borderTop: "none", zIndex: 500,
-              display: "flex", flexDirection: "column",
-              maxHeight: 340,
-            }}>
-              {/* Search bar */}
-              <div style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "8px 12px", borderBottom: "1px solid var(--signal-border)",
-                background: "var(--signal-bg-mid)",
-              }}>
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                  <circle cx="5.5" cy="5.5" r="4.5" stroke="#888" strokeWidth="1.2"/>
-                  <line x1="9" y1="9" x2="12" y2="12" stroke="#888" strokeWidth="1.2" strokeLinecap="round"/>
-                </svg>
-                <input
-                  autoFocus
-                  value={modelSearch}
-                  onChange={(e) => setModelSearch(e.target.value)}
-                  placeholder="Search models..."
-                  style={{
-                    flex: 1, border: "none", background: "transparent",
-                    color: "var(--signal-text)", fontFamily: "inherit", fontSize: 13,
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              {/* Fetch button */}
-              <button
-                onClick={() => loadModels(provider)}
-                disabled={modelsLoading}
-                className={modelsLoading ? "signal-fetch-btn signal-fetch-btn-loading" : "signal-fetch-btn"}
-                style={{
-                  margin: "8px 10px 4px",
-                  padding: "8px 12px",
-                  border: "1px solid var(--signal-border)",
-                  cursor: modelsLoading ? "not-allowed" : "pointer",
-                  fontFamily: "inherit",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                  <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1"/>
-                  <circle cx="6.5" cy="6.5" r="2.5" stroke="currentColor" strokeWidth="1"/>
-                  <circle cx="6.5" cy="6.5" r="0.8" fill="currentColor"/>
-                  <line x1="1" y1="6.5" x2="4" y2="6.5" stroke="currentColor" strokeWidth="1"/>
-                  <line x1="9" y1="6.5" x2="12" y2="6.5" stroke="currentColor" strokeWidth="1"/>
-                </svg>
-                {modelsLoading ? "SCANNING…" : "FETCH MODELS FROM API"}
-              </button>
-
-              {/* Model count */}
-              {modelList.length > 0 && (
-                <div style={{
-                  padding: "3px 12px 6px",
-                  fontSize: 11, color: "var(--signal-text-dim)",
-                  letterSpacing: "0.06em",
-                }}>
-                  {modelList.length} {provider === "openrouter" ? "OpenRouter" : provider === "nanogpt" ? "NanoGPT" : "local"} models
-                </div>
-              )}
-
-              {/* Model list */}
-              <div style={{ overflowY: "auto", flex: 1 }}>
-                {!modelsLoading && modelList.length === 0 && (
-                  <div style={{ padding: "12px", color: "var(--signal-text-dim)", fontSize: 13, textAlign: "center" }}>
-                    Press FETCH MODELS to load
-                  </div>
-                )}
-                {modelList
-                  .filter((m) =>
-                    !modelSearch ||
-                    m.id.toLowerCase().includes(modelSearch.toLowerCase()) ||
-                    m.name.toLowerCase().includes(modelSearch.toLowerCase())
-                  )
-                  .map((m) => (
-                    <div
-                      key={m.id}
-                      onClick={() => { setModel(m.id); setModelSearch(""); setModelDropdownOpen(false); }}
-                      style={{
-                        padding: "9px 12px",
-                        cursor: "pointer",
-                        borderBottom: "1px solid var(--signal-border)",
-                        background: model === m.id ? "var(--signal-btn-active-bg)" : "transparent",
-                        color: model === m.id ? "var(--signal-btn-active-text)" : "var(--signal-text)",
-                      }}
-                      onMouseEnter={(e) => { if (model !== m.id) e.currentTarget.style.background = "var(--signal-bg-mid)"; }}
-                      onMouseLeave={(e) => { if (model !== m.id) e.currentTarget.style.background = "transparent"; }}
-                    >
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>
-                        {m.name}
-                      </div>
-                      <div style={{ fontSize: 10, opacity: 0.55, marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <span>{m.id}</span>
-                        {m.context && <span>{(m.context / 1000).toFixed(0)}k ctx</span>}
-                        {m.per_token && <span>${(parseFloat(m.per_token) * 1_000_000).toFixed(2)}/1M tok</span>}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-      </div>
-
-      {/* Row 2: actions. Making a card on the left, then New / Tools / Export menus (as in LORE) */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         <button onClick={handleScrape} disabled={loading} className="signal-btn" style={{ ...buttonStyle, whiteSpace: "nowrap" }}>
           {loading ? (t.working || "Working...") : (t.scrape || "Scrape")}
         </button>
@@ -1035,17 +884,17 @@ export default function CharacterStudio({
           title="Story point, your role, size, style, first message point of view and In-depth mode for Generate Card">
           ⚙ {t.genOptions || "Options"}
         </button>
-        <button className={batchMode ? "signal-btn signal-btn-active" : "signal-btn"} onClick={() => { setBatchMode(b => !b); setBatchResults(null); }}
-          style={{ ...buttonStyle, whiteSpace: "nowrap" }}>
-          {batchMode ? (t.cancelBatch || "Cancel Batch") : (t.batchGenerate || "Batch Generate")}
-        </button>
 
-        <div aria-hidden="true" style={{ width: 1, alignSelf: "stretch", background: "var(--signal-border)", opacity: 0.5, margin: "0 4px" }} />
+        <span aria-hidden="true" className="sui-toolbar-sep" />
 
         <SignalMenu label={t.newMenu || "NEW"}>
           <MenuItem onClick={handleNewCard}>{t.newCard || "New Card"} (blank)</MenuItem>
           <MenuItem onClick={() => importRef.current?.click()} title="A card PNG, a card .json (V1, V2 or V3) or a .charx">
             {t.importCard || "Import card (PNG, JSON, CHARX)"}…
+          </MenuItem>
+          <MenuSep />
+          <MenuItem onClick={() => { setBatchMode((b) => !b); setBatchResults(null); }} title="Paste up to 10 wiki URLs and make a card from each">
+            {batchMode ? (t.cancelBatch || "Cancel Batch") : (t.batchGenerate || "Batch Generate")}
           </MenuItem>
         </SignalMenu>
         <input ref={importRef} type="file" accept=".png,.json,.charx,image/png,application/json" aria-label="Import a card file"
@@ -1056,7 +905,167 @@ export default function CharacterStudio({
           <MenuItem disabled={!source} why="scrape a page first" onClick={() => setSourceOpen(true)}>{t.viewSource || "View Source"}</MenuItem>
         </SignalMenu>
 
-        <div style={{ flex: 1 }} />
+        <span aria-hidden="true" className="sui-toolbar-sep" />
+        <ModelChip provider={provider} model={model} t={t}>
+          <SelectMenu
+            label="Provider"
+            value={provider}
+            onChange={(v) => { setProvider(v); setModel(""); setModelSearch(""); setModelList([]); }}
+            options={[{ value: "nanogpt", label: "NanoGPT" }, { value: "openrouter", label: "OpenRouter" }, { value: "local", label: "Local (OpenAI-compatible)" }]}
+            width={240}
+            style={{ ...inputStyle, display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em" }}
+          />
+
+          {/* Model picker — Signal UI style */}
+          <div ref={modelRef} style={{ position: "relative", minWidth: 260 }}>
+            {/* Trigger input */}
+            <div style={{
+              display: "flex",
+              border: "1px solid var(--signal-border)",
+              background: "var(--signal-bg-field)",
+            }}>
+              <input
+                value={modelDropdownOpen ? modelSearch : (model || "")}
+                onChange={(e) => { setModelSearch(e.target.value); setModel(e.target.value); }}
+                onFocus={() => { setModelDropdownOpen(true); setModelSearch(model || ""); }}
+                placeholder={t.modelOptional || "Model (optional)"}
+                style={{
+                  flex: 1, padding: "12px 10px", border: "none",
+                  background: "transparent", color: "var(--signal-text)",
+                  fontFamily: "inherit", fontSize: "inherit",
+                  outline: "none", minWidth: 0,
+                }}
+              />
+              <button
+                onClick={() => {
+                  if (modelDropdownOpen) { setModelDropdownOpen(false); }
+                  else { setModelDropdownOpen(true); }
+                }}
+                style={{
+                  padding: "0 12px", border: "none",
+                  borderLeft: "1px solid var(--signal-border)",
+                  background: "var(--signal-bg-panel)", cursor: "pointer",
+                  color: "var(--signal-text)", fontSize: 12,
+                }}
+              >
+                {modelDropdownOpen ? "▴" : "▾"}
+              </button>
+            </div>
+
+            {modelDropdownOpen && (
+              <div style={{
+                position: "absolute", top: "100%", left: 0, right: 0,
+                background: "var(--signal-bg-panel)", border: "1px solid var(--signal-border)",
+                borderTop: "none", zIndex: 500,
+                display: "flex", flexDirection: "column",
+                maxHeight: 340,
+              }}>
+                {/* Search bar */}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "8px 12px", borderBottom: "1px solid var(--signal-border)",
+                  background: "var(--signal-bg-mid)",
+                }}>
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                    <circle cx="5.5" cy="5.5" r="4.5" stroke="#888" strokeWidth="1.2"/>
+                    <line x1="9" y1="9" x2="12" y2="12" stroke="#888" strokeWidth="1.2" strokeLinecap="round"/>
+                  </svg>
+                  <input
+                    autoFocus
+                    value={modelSearch}
+                    onChange={(e) => setModelSearch(e.target.value)}
+                    placeholder="Search models..."
+                    style={{
+                      flex: 1, border: "none", background: "transparent",
+                      color: "var(--signal-text)", fontFamily: "inherit", fontSize: 13,
+                      outline: "none",
+                    }}
+                  />
+                </div>
+
+                {/* Fetch button */}
+                <button
+                  onClick={() => loadModels(provider)}
+                  disabled={modelsLoading}
+                  className={modelsLoading ? "signal-fetch-btn signal-fetch-btn-loading" : "signal-fetch-btn"}
+                  style={{
+                    margin: "8px 10px 4px",
+                    padding: "8px 12px",
+                    border: "1px solid var(--signal-border)",
+                    cursor: modelsLoading ? "not-allowed" : "pointer",
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                    <circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1"/>
+                    <circle cx="6.5" cy="6.5" r="2.5" stroke="currentColor" strokeWidth="1"/>
+                    <circle cx="6.5" cy="6.5" r="0.8" fill="currentColor"/>
+                    <line x1="1" y1="6.5" x2="4" y2="6.5" stroke="currentColor" strokeWidth="1"/>
+                    <line x1="9" y1="6.5" x2="12" y2="6.5" stroke="currentColor" strokeWidth="1"/>
+                  </svg>
+                  {modelsLoading ? "SCANNING…" : "FETCH MODELS FROM API"}
+                </button>
+
+                {/* Model count */}
+                {modelList.length > 0 && (
+                  <div style={{
+                    padding: "3px 12px 6px",
+                    fontSize: 11, color: "var(--signal-text-dim)",
+                    letterSpacing: "0.06em",
+                  }}>
+                    {modelList.length} {provider === "openrouter" ? "OpenRouter" : provider === "nanogpt" ? "NanoGPT" : "local"} models
+                  </div>
+                )}
+
+                {/* Model list */}
+                <div style={{ overflowY: "auto", flex: 1 }}>
+                  {!modelsLoading && modelList.length === 0 && (
+                    <div style={{ padding: "12px", color: "var(--signal-text-dim)", fontSize: 13, textAlign: "center" }}>
+                      Press FETCH MODELS to load
+                    </div>
+                  )}
+                  {modelList
+                    .filter((m) =>
+                      !modelSearch ||
+                      m.id.toLowerCase().includes(modelSearch.toLowerCase()) ||
+                      m.name.toLowerCase().includes(modelSearch.toLowerCase())
+                    )
+                    .map((m) => (
+                      <div
+                        key={m.id}
+                        onClick={() => { setModel(m.id); setModelSearch(""); setModelDropdownOpen(false); }}
+                        style={{
+                          padding: "9px 12px",
+                          cursor: "pointer",
+                          borderBottom: "1px solid var(--signal-border)",
+                          background: model === m.id ? "var(--signal-btn-active-bg)" : "transparent",
+                          color: model === m.id ? "var(--signal-btn-active-text)" : "var(--signal-text)",
+                        }}
+                        onMouseEnter={(e) => { if (model !== m.id) e.currentTarget.style.background = "var(--signal-bg-mid)"; }}
+                        onMouseLeave={(e) => { if (model !== m.id) e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>
+                          {m.name}
+                        </div>
+                        <div style={{ fontSize: 10, opacity: 0.55, marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <span>{m.id}</span>
+                          {m.context && <span>{(m.context / 1000).toFixed(0)}k ctx</span>}
+                          {m.per_token && <span>${(parseFloat(m.per_token) * 1_000_000).toFixed(2)}/1M tok</span>}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </ModelChip>
         {card && cardId && (
           <span style={{ fontSize: 12, color: "var(--signal-text-dim)", letterSpacing: "0.14em" }}
             title="Edits are saved automatically 1.5 s after you stop typing">
@@ -1076,15 +1085,12 @@ export default function CharacterStudio({
           <MenuSep />
           <MenuLabel>EMBEDDED LOREBOOK</MenuLabel>
           <div style={{ padding: "4px 14px 10px" }}>
-            <select value={attachLore} onChange={(e) => chooseLore(e.target.value)} aria-label="Embedded lorebook"
+            <SelectMenu label="Embedded lorebook" value={attachLore} onChange={chooseLore} wrapStyle={{ width: "100%" }} width={280}
               title="Embed a LORE project in exported cards (JSON and PNG) as the card's own lorebook"
-              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit" }}
-              onFocus={() => listLoreProjects().then((p) => setLoreProjects(p || [])).catch(() => {})}>
-              <option value="">{t.noLorebook || "No lorebook attached"}</option>
-              {loreProjects.map((p) => (
-                <option key={p.id} value={p.id}>{p.project_name || p.name}</option>
-              ))}
-            </select>
+              options={[{ value: "", label: t.noLorebook || "No lorebook attached" },
+                        ...loreProjects.map((p) => ({ value: p.id, label: p.project_name || p.name }))]}
+              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)",
+                color: "var(--signal-text)", fontWeight: 400, letterSpacing: "0.04em", display: "inline-flex", justifyContent: "space-between", gap: 8 }} />
           </div>
         </SignalMenu>
       </div>
@@ -1100,31 +1106,28 @@ export default function CharacterStudio({
             <input value={userRole} onChange={(e) => setUserRole(e.target.value)} placeholder="e.g. a new recruit on the team"
               style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit", boxSizing: "border-box", marginTop: 4 }} />
           </label>
-          <label style={{ fontSize: 11, letterSpacing: "0.08em" }}>SIZE
-            <select value={tokenTarget} onChange={(e) => setTokenTarget(e.target.value)}
-              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit", marginTop: 4 }}>
-              <option value="small">Small model (400-600 tokens)</option>
-              <option value="lean">Lean (~800)</option>
-              <option value="standard">Standard (~1200)</option>
-              <option value="rich">Rich (~1800)</option>
-            </select>
-          </label>
-          <label style={{ fontSize: 11, letterSpacing: "0.08em" }}>STYLE
-            <select value={cardStyle} onChange={(e) => setCardStyle(e.target.value)}
-              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit", marginTop: 4 }}>
-              <option value="prose">Prose</option>
-              <option value="plist">PList + Ali:Chat</option>
-            </select>
-          </label>
+          <div style={{ fontSize: 11, letterSpacing: "0.08em" }}>SIZE
+            <SelectMenu label="Size" value={tokenTarget} onChange={setTokenTarget} wrapStyle={{ width: "100%", marginTop: 4 }} width={260}
+              options={[{ value: "small", label: "Small model (400-600 tokens)" }, { value: "lean", label: "Lean (~800)" },
+                        { value: "standard", label: "Standard (~1200)" }, { value: "rich", label: "Rich (~1800)" }]}
+              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)",
+                color: "var(--signal-text)", fontWeight: 400, letterSpacing: "0.04em", display: "inline-flex", justifyContent: "space-between", gap: 8 }} />
+          </div>
+          <div style={{ fontSize: 11, letterSpacing: "0.08em" }}>STYLE
+            <SelectMenu label="Style" value={cardStyle} onChange={setCardStyle} wrapStyle={{ width: "100%", marginTop: 4 }} width={240}
+              options={[{ value: "prose", label: "Prose" }, { value: "plist", label: "PList + Ali:Chat" }]}
+              style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)",
+                color: "var(--signal-text)", fontWeight: 400, letterSpacing: "0.04em", display: "inline-flex", justifyContent: "space-between", gap: 8 }} />
+          </div>
           {[["pov", "FIRST MESSAGE POV", [["", "Model's choice"], ["third", "Third person (she / he / they)"], ["second", "Second person (you)"], ["first", "First person (I)"]]],
             ["tense", "TENSE", [["", "Model's choice"], ["present", "Present"], ["past", "Past"]]],
             ["length", "GREETING LENGTH", [["", "Model's choice"], ["short", "Short (50-100 words)"], ["medium", "Medium (150-250)"], ["long", "Long (300-450)"]]]].map(([k, label, opts]) => (
-            <label key={k} style={{ fontSize: 11, letterSpacing: "0.08em" }} title="Used for the first message, alternate greetings and example messages, here and when you regenerate them">{label}
-              <select value={greetStyle[k]} onChange={(e) => setGreetStyle(k, e.target.value)}
-                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)", fontFamily: "inherit", marginTop: 4 }}>
-                {opts.map(([v, t2]) => <option key={v} value={v}>{t2}</option>)}
-              </select>
-            </label>
+            <div key={k} style={{ fontSize: 11, letterSpacing: "0.08em" }} title="Used for the first message, alternate greetings and example messages, here and when you regenerate them">{label}
+              <SelectMenu label={label} value={greetStyle[k]} onChange={(v) => setGreetStyle(k, v)} wrapStyle={{ width: "100%", marginTop: 4 }} width={280}
+                options={opts.map(([v, t2]) => ({ value: v, label: t2 }))}
+                style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)",
+                  color: "var(--signal-text)", fontWeight: 400, letterSpacing: "0.04em", display: "inline-flex", justifyContent: "space-between", gap: 8 }} />
+            </div>
           ))}
           <label style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
             <input type="checkbox" checked={deepGen} onChange={(e) => setDeepGen(e.target.checked)} />
@@ -1288,13 +1291,13 @@ export default function CharacterStudio({
         className="signal-main-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(220px, 0.9fr) minmax(0, 1.8fr)",
+          gridTemplateColumns: "minmax(220px, 320px) minmax(0, 1fr)",
           flexWrap: "wrap",
           gap: 16,
           alignItems: "start",
         }}
       >
-        <div className="signal-sticky-panel" style={{ position: "sticky", top: 16, alignSelf: "start" }}>
+        <div className="signal-sticky-panel" style={{ position: "sticky", top: "var(--sui-sticky-top, 16px)", alignSelf: "start" }}>
           <PreviewPanel
             imageFile={imageFile}
             imageUrl={imageUrl}
@@ -1363,31 +1366,26 @@ export default function CharacterStudio({
 
           }}
         >
-          <h2 className="signal-heading" style={{ marginTop: 0 }}>{t.characterSystem || "Character System"}</h2>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <button
-              className={characterViewMode === "natural" ? "signal-btn signal-btn-active" : "signal-btn"}
-              style={{ ...buttonStyle }}
-              onClick={() => setCharacterViewMode("natural")}
-            >
-              {t.natural || "Natural"}
-            </button>
-
-            <button
-              className={characterViewMode === "structured" ? "signal-btn signal-btn-active" : "signal-btn"}
-              style={{ ...buttonStyle }}
-              onClick={() => setCharacterViewMode("structured")}
-            >
-              {t.structured || "Structured"}
-            </button>
-          </div>
+          <h2 className="signal-heading sui-strip-row" style={{ marginTop: 0 }}>
+            <span>{t.characterSystem || "Character System"}</span>
+            <span className="sui-strip-switch" role="group" aria-label="Card view">
+              <button type="button" className={characterViewMode === "natural" ? "sui-strip-btn is-on" : "sui-strip-btn"}
+                aria-pressed={characterViewMode === "natural"} onClick={() => setCharacterViewMode("natural")}>
+                {t.natural || "Natural"}
+              </button>
+              <button type="button" className={characterViewMode === "structured" ? "sui-strip-btn is-on" : "sui-strip-btn"}
+                aria-pressed={characterViewMode === "structured"} onClick={() => setCharacterViewMode("structured")}>
+                {t.structured || "Structured"}
+              </button>
+            </span>
+          </h2>
           {!card ? (
             <div style={{ color: "var(--signal-text-dim)" }}>Generate a card to begin.</div>
           ) : (
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "minmax(160px, 0.9fr) minmax(0, 1.7fr)",
+                gridTemplateColumns: characterViewMode === "structured" ? "minmax(290px, 1.15fr) minmax(0, 1.5fr)" : "minmax(160px, 0.9fr) minmax(0, 1.7fr)",
               // signal-character-grid applied below
                 gap: 12,
                 alignItems: "start",
@@ -1400,13 +1398,6 @@ export default function CharacterStudio({
                   padding: 10,
                 }}
               >
-                <button
-                  style={{ ...buttonStyle, width: "100%", marginBottom: 10 }}
-                  onClick={() => openRegenModal("", "full")}
-                >
-                  {t.regenerateFullCard || "Regenerate Full Card"}
-                </button>
-
                 {/* Progress badge — shows fields for current tab only, excludes optional fields */}
                 {(() => {
                   const sp = card?.structured_profile || {};
@@ -1432,26 +1423,31 @@ export default function CharacterStudio({
                   const total = allFields.length;
                   const filled = total - blank.length;
                   const pct = Math.round((filled / total) * 100);
-                  const color = pct === 100 ? "var(--signal-ok, #4caf50)"
-                    : pct >= 60 ? "var(--signal-warn, #ff9800)"
-                    : "var(--signal-err, #f44336)";
+                  const value = (f) => (NATURAL_FIELDS.has(f) ? card?.[f] : sp[f]);
+                  const segs = characterViewMode === "natural"
+                    ? allFields.filter((f) => !blank.includes(f) && f !== "tags").map((f) => [f, Math.max(1, estTokens(value(f)))])
+                    : [];
 
                   return (
                     <div style={{ marginBottom: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                        <span style={{ fontSize: 10, letterSpacing: "0.08em", color: "var(--signal-text-dim)" }}>
-                          {characterViewMode === "natural" ? "NATURAL FIELDS" : "STRUCTURED FIELDS"}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
+                        <span style={{ fontSize: 10, letterSpacing: "0.16em", color: "var(--signal-text-dim)" }}
+                          title={blank.length ? `Still empty: ${blank.map(f => (t.fields?.[f] || f.replaceAll("_", " "))).join(", ")}` : "Every field is filled"}>
+                          {t.fieldsWord || "FIELDS"} · {filled} / {total}
                         </span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color }}>
-                          {filled}/{total}
+                        <span style={{ fontSize: 10, letterSpacing: "0.08em", color: totalCardTokens > 2000 ? "var(--signal-warn)" : "var(--signal-text-dim)", fontVariantNumeric: "tabular-nums" }}>
+                          {t.totalWord || "TOTAL"} ~{totalCardTokens} TOK
                         </span>
                       </div>
-                      <div style={{ height: 3, background: "var(--signal-bg-field)", borderRadius: 2 }}>
-                        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 2, transition: "width 0.4s ease" }} />
-                      </div>
-                      {blank.length > 0 && (
-                        <div style={{ marginTop: 5, fontSize: 10, color: "var(--signal-text-dim)", lineHeight: 1.6 }}>
-                          {blank.map(f => (t.fields?.[f] || f.replaceAll("_", " "))).join(" · ")}
+                      {segs.length > 0 ? (
+                        <div className="sui-segbar" role="img" aria-label="How the card's tokens split across its fields">
+                          {segs.map(([f, n], i) => (
+                            <span key={f} title={`${t.fields?.[f] || f.replaceAll("_", " ")}: ~${n} tokens`} style={{ flex: n, opacity: SEG_OPACITY[Math.min(i, SEG_OPACITY.length - 1)] }} />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="sui-segbar" aria-hidden="true">
+                          <span style={{ width: `${pct}%`, transition: "width 0.4s ease" }} />
                         </div>
                       )}
                     </div>
@@ -1466,61 +1462,7 @@ export default function CharacterStudio({
                     gap: 6,
                   }}
                 >
-                  {(characterViewMode === "natural"
-                    ? [
-                        "description",
-                        "personality",
-                        "scenario",
-                        "first_mes",
-                        "mes_example",
-                        "tags",
-                        "depth_prompt",
-                        "system_prompt",
-                      ]
-                    : [
-                        // ── Identity ──
-                        "age",
-                        "gender",
-                        "pronouns",
-                        "species",
-                        "ethnicity",
-                        "race",
-                        "story_point",
-                        // ── Role & Relationship ──
-                        "job_occupation",
-                        "relationship_to_user",
-                        "relationship_status",
-                        "sexual_attraction",
-                        // ── Physical ──
-                        "appearance",
-                        "height",
-                        "weight",
-                        "clothing",
-                        "accessories",
-                        "non_human_appearance",
-                        "personal_parts",
-                        // ── Character ──
-                        "personality_traits",
-                        "speech",
-                        "backstory",
-                        "likes",
-                        "dislikes",
-                        "loves",
-                        "hates",
-                        "kinks",
-                        "motivations",
-                        "flaws",
-                        "mannerisms",
-                        "relationships",
-                        "with_strangers",
-                        "with_close",
-                        // ── Card fields ──
-                        "scenario",
-                        "first_mes",
-                        "mes_example",
-                        "tags",
-                      ]
-                  ).map((field, idx) => (
+                  {(characterViewMode === "natural" ? NATURAL_LIST : STRUCTURED_LIST).map((field, idx) => (
                     <React.Fragment key={field}>
                       {/* Divider before natural fields in structured view */}
 
@@ -1544,23 +1486,35 @@ export default function CharacterStudio({
                           fontSize: 14,
                           display: "flex",
                           alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 6,
+                          justifyContent: "flex-start",
+                          gap: 8,
                         }}
                         onClick={() => setSelectedField(field)}
                       >
-                        <span>▸ {fieldLabel(field)}</span>
                         {(() => {
                           const v = NATURAL_FIELDS.has(field) ? card?.[field] : card?.structured_profile?.[field];
                           const isEmpty = !v || (Array.isArray(v) ? v.length === 0 : String(v).trim() === "");
-                          return isEmpty ? (
-                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--signal-text-dim)", opacity: 0.4, flexShrink: 0 }} />
-                          ) : null;
+                          return (
+                            <>
+                              <span aria-hidden="true" className={isEmpty ? "sui-field-sq" : "sui-field-sq is-filled"} />
+                              <span style={{ minWidth: 0, overflowWrap: "break-word", fontSize: characterViewMode === "structured" ? 13 : undefined }}>{fieldLabel(field)}</span>
+                              {characterViewMode === "natural" && (
+                                <span className="sui-field-tok">{isEmpty ? (t.emptyWord || "empty") : field === "tags" ? `${v.length}` : `~${estTokens(v)}`}</span>
+                              )}
+                            </>
+                          );
                         })()}
                       </button>
                     </React.Fragment>
                   ))}
                 </div>
+                <button
+                  className="signal-btn"
+                  style={{ ...buttonStyle, width: "100%", marginTop: 12, background: "transparent", boxShadow: "none", fontWeight: 500 }}
+                  onClick={() => openRegenModal("", "full")}
+                >
+                  {t.regenerateFullCard || "Regenerate Full Card"}
+                </button>
               </div>
 
               <div
@@ -1570,51 +1524,42 @@ export default function CharacterStudio({
                   background: "var(--signal-bg-field)",
                   padding: 12,
                   position: "sticky",
-                  top: 16,
+                  top: "var(--sui-sticky-top, 16px)",
                   alignSelf: "start",
                 }}
               >
-                <input
-                  value={card.name || ""}
-                  onChange={(e) => updateCardField("name", e.target.value)}
-                  onBlur={async (e) => {
-                    const newName = e.target.value.trim();
-                    if (newName && cardId) {
-                      try { await renameCard(cardId, newName); } catch {}
-                    }
-                  }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "center",
-                    fontWeight: 700,
-                    fontSize: 18,
-                    marginBottom: 10,
-                    border: "1px solid var(--signal-border)",
-                    background: "var(--signal-btn-active-bg)",
-                    color: "var(--signal-btn-active-text)",
-                    fontFamily: "inherit",
-                    outline: "none",
-                    padding: "8px 10px",
-                    boxSizing: "border-box",
-                  }}
-                />
-
-                <div
-                  style={{
-                    borderBottom: "1px solid var(--signal-border)",
-                    paddingBottom: 6,
-                    marginBottom: 12,
-                    textAlign: "center",
-                  }}
-                >
+                <div className="sui-editor-head">
+                  <input
+                    className="sui-editor-name"
+                    aria-label="Card name"
+                    ref={nameRef}
+                    size={Math.max(2, Math.min(28, (card.name || "").length || 2))}
+                    value={card.name || ""}
+                    onChange={(e) => updateCardField("name", e.target.value)}
+                    onBlur={async (e) => {
+                      const newName = e.target.value.trim();
+                      if (newName && cardId) {
+                        try { await renameCard(cardId, newName); } catch { /* best effort: the card is saved either way */ }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="sui-name-pencil"
+                    title={t.renameCard || "Rename this card"}
+                    aria-label={t.renameCard || "Rename this card"}
+                    onClick={() => { nameRef.current?.focus(); nameRef.current?.select(); }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+                      <path d="M11.2 2.3a1.1 1.1 0 0 1 1.6 0l0.9 0.9a1.1 1.1 0 0 1 0 1.6L6.1 11.4 3 12.4l1-3.1z" strokeLinejoin="round" />
+                      <path d="M10.3 3.9l1.8 1.8" />
+                    </svg>
+                  </button>
+                  <span aria-hidden="true" style={{ color: "var(--signal-text-dim)" }}>/</span>
                   {(() => {
                     const label = fieldLabel(selectedField).toUpperCase();
                     return (
-                      <span
-                        className="signal-field-label-active signal-glitch-label"
-                        data-text={label}
-                      >
+                      <span className="signal-field-label-active signal-glitch-label" data-text={label}>
                         {label}
                       </span>
                     );
@@ -1720,14 +1665,19 @@ export default function CharacterStudio({
                   </>
                 )}
 
-                <div
-                  style={{
-                    marginTop: 10,
-                    display: "flex",
-                    justifyContent: "center",
-                    gap: 8,
-                  }}
-                >
+                <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  {(fieldHistory[selectedField]?.undo?.length > 0 || fieldHistory[selectedField]?.redo?.length > 0) && (<>
+                    <button className="signal-btn" style={{ ...buttonStyle, padding: "4px 9px", opacity: fieldHistory[selectedField]?.undo?.length ? 1 : 0.4 }}
+                      disabled={!fieldHistory[selectedField]?.undo?.length} onClick={() => stepHistory(selectedField, -1)}
+                      title="Go back to the version before the last regeneration" aria-label="Previous version">◂</button>
+                    <span className="sui-version">
+                      {t.versionWord || "VERSION"} {(fieldHistory[selectedField]?.undo?.length || 0) + 1} / {(fieldHistory[selectedField]?.undo?.length || 0) + (fieldHistory[selectedField]?.redo?.length || 0) + 1}
+                    </span>
+                    <button className="signal-btn" style={{ ...buttonStyle, padding: "4px 9px", opacity: fieldHistory[selectedField]?.redo?.length ? 1 : 0.4 }}
+                      disabled={!fieldHistory[selectedField]?.redo?.length} onClick={() => stepHistory(selectedField, 1)}
+                      title="Forward to the newer version" aria-label="Next version">▸</button>
+                  </>)}
+                  <span style={{ flex: 1 }} />
                   <button
                     className="signal-btn"
                     style={{
@@ -1740,16 +1690,8 @@ export default function CharacterStudio({
                   >
                     {t.regenerateField || "Regenerate Field"}
                   </button>
-                  {(fieldHistory[selectedField]?.undo?.length > 0 || fieldHistory[selectedField]?.redo?.length > 0) && (<>
-                    <button className="signal-btn" style={{ ...buttonStyle, opacity: fieldHistory[selectedField]?.undo?.length ? 1 : 0.4 }}
-                      disabled={!fieldHistory[selectedField]?.undo?.length} onClick={() => stepHistory(selectedField, -1)}
-                      title="Go back to the version before the last regeneration" aria-label="Previous version">↶ {fieldHistory[selectedField]?.undo?.length || 0}</button>
-                    <button className="signal-btn" style={{ ...buttonStyle, opacity: fieldHistory[selectedField]?.redo?.length ? 1 : 0.4 }}
-                      disabled={!fieldHistory[selectedField]?.redo?.length} onClick={() => stepHistory(selectedField, 1)}
-                      title="Forward to the newer version" aria-label="Next version">↷ {fieldHistory[selectedField]?.redo?.length || 0}</button>
-                  </>)}
                   <button
-                    className="signal-btn"
+                    className="signal-btn signal-btn-active"
                     style={{
                       ...buttonStyle,
                       opacity: !card ? 0.4 : 1,

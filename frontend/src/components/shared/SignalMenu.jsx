@@ -31,18 +31,43 @@ export function MenuSep() {
 }
 
 /** keepMounted: the items stay mounted while the menu is closed (for items that own a dialog, like Quick Replies). */
-export default function SignalMenu({ label, children, align = "left", primary = false, style, title, disabled, width, keepMounted = false }) {
+export default function SignalMenu({ label, children, align = "left", primary = false, style, title, disabled, width, keepMounted = false,
+  btnClass = "signal-btn", menuClass = "", ariaLabel, id, wrapStyle }) {
   const [open, setOpen] = useState(false);
-  const [side, setSide] = useState(align);
   const ref = useRef(null);
   const pop = useRef(null);
-  // open on the side that fits: a menu near the right edge of a phone opens leftwards instead of off-screen
+  // Put the menu where it fits: sideways, so one near the right edge opens leftwards instead of off-screen, and
+  // up or down, so one near the bottom is not cut off. Written straight onto the node before paint — as state
+  // this would need one render to measure and another to move.
   useLayoutEffect(() => {
-    if (!open || !pop.current || !ref.current) { setSide(align); return; }
-    const r = pop.current.getBoundingClientRect(), b = ref.current.getBoundingClientRect();
-    if (side === "left" && r.right > window.innerWidth - 8 && b.right - r.width >= 8) setSide("right");
-    else if (side === "right" && r.left < 8 && b.left + r.width <= window.innerWidth - 8) setSide("left");
-  }, [open, side, align]);
+    const el = pop.current, anchor = ref.current;
+    if (!open || !el || !anchor) return undefined;
+    const GAP = 6, EDGE = 8;                 // 6px off the button, 8px clear of the window edge
+    const place = () => {
+      const put = (side) => { el.style.left = side === "right" ? "auto" : "0"; el.style.right = side === "right" ? "0" : "auto"; };
+      put(align);
+      el.style.maxHeight = "";
+      el.style.top = `calc(100% + ${GAP}px)`;
+      el.style.bottom = "auto";
+      const b = anchor.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      if (align === "left" && r.right > window.innerWidth - EDGE && b.right - r.width >= EDGE) put("right");
+      else if (align === "right" && r.left < EDGE && b.left + r.width <= window.innerWidth - EDGE) put("left");
+      // vertical: keep it below unless there is more room above, then cap it so a long list scrolls
+      const below = window.innerHeight - b.bottom - GAP - EDGE;
+      const above = b.top - GAP - EDGE;
+      const upward = r.height > below && above > below;
+      if (upward) {
+        el.style.top = "auto";
+        el.style.bottom = `calc(100% + ${GAP}px)`;
+      }
+      el.style.maxHeight = `${Math.max(140, Math.floor(upward ? above : below))}px`;
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);     // a menu inside a panel that scrolls moves with it
+    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, [open, align]);
   useEffect(() => {
     if (!open) return undefined;
     const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -54,16 +79,21 @@ export default function SignalMenu({ label, children, align = "left", primary = 
   const close = () => setOpen(false);
   const kids = Children.map(children, (c) => (isValidElement(c) && c.type === MenuItem ? cloneElement(c, { _close: close }) : c));
   return (
-    <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
-      <button type="button" className={primary || open ? "signal-btn signal-btn-active" : "signal-btn"} aria-haspopup="menu" aria-expanded={open}
+    <div ref={ref} style={{ position: "relative", display: "inline-flex", ...wrapStyle }}>
+      <button type="button" className={`${btnClass}${(primary || open) && btnClass === "signal-btn" ? " signal-btn-active" : ""}${(primary || open) && btnClass !== "signal-btn" ? " is-open" : ""}`} aria-haspopup="menu" aria-expanded={open} aria-label={ariaLabel} id={id} data-keep-open
         disabled={disabled} title={title} onClick={() => setOpen((v) => !v)}
         style={{ padding: "10px 14px", border: "1px solid transparent", cursor: "pointer", letterSpacing: "0.14em", fontSize: 13, whiteSpace: "nowrap", ...style }}>
         {label} ▾
       </button>
       {(open || keepMounted) && (
-        <div ref={pop} role="menu" aria-label={String(label)} className="sui-menu" hidden={!open}
-          onClick={(e) => { if (e.target.closest && e.target.closest("button") && !e.target.closest("[data-keep-open]")) close(); }}
-          style={{ top: "calc(100% + 6px)", [side === "right" ? "right" : "left"]: 0, minWidth: Math.min(width || 240, window.innerWidth - 16),
+        <div ref={pop} role="menu" aria-label={String(label)} className={`sui-menu${menuClass ? ` ${menuClass}` : ""}`} hidden={!open} data-keep-open
+          onClick={(e) => {
+          if (!e.target.closest || !e.target.closest("button")) return;
+          const keep = e.target.closest("[data-keep-open]");
+          if (keep && keep !== e.currentTarget) return;   // a menu nested in this one owns the click
+          close();
+        }}
+          style={{ minWidth: Math.min(width || 240, window.innerWidth - 16),
             maxWidth: "calc(100vw - 16px)", display: open ? "block" : "none" }}>
           {kids}
         </div>

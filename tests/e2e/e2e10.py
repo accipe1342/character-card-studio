@@ -4,6 +4,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import io, json, re, zipfile, requests
 from playwright.sync_api import sync_playwright
+from ui import pick
 B = "http://127.0.0.1:5173"
 R = []
 def ok(c, n): R.append(bool(c)); print(("PASS " if c else "FAIL ") + n)
@@ -42,7 +43,7 @@ with sync_playwright() as pw:
     pg.get_by_role("button", name=re.compile("SECRETS · WHO KNOWS THIS")).click(); pg.wait_for_timeout(200)
     pg.get_by_role("button", name="+ ADD A SECRET").click()
     pg.get_by_label("Secret 1", exact=True).fill("She rigged the airship engine herself.")
-    pg.get_by_label("Who knows secret 1").select_option("Ilsa"); pg.wait_for_timeout(1200)
+    pick(pg, "Who knows secret 1", "^Ilsa$", wait=1200)
     E = {e["name"]: e for e in requests.get(B + f"/api/text/project/{pid}").json()["entities"]}
     ok(E["Corin"].get("secrets") == [{"text": "She rigged the airship engine herself.", "known_by": ["Ilsa"]}], "secret saved with who knows it")
     pg.screenshot(path=OUT + "/secrets.png", full_page=True)

@@ -48,3 +48,19 @@ export function onHelperToggle(fn) {
   toggleListeners.add(fn);
   return () => toggleListeners.delete(fn);
 }
+
+/* a studio's extra header link (CHARACTER: the card's attached lorebook), shown under what is open */
+const headerLinks = {};
+const linkListeners = new Set();
+/** link: {label, project_id} or null */
+export function setHeaderLink(studio, link) {
+  headerLinks[studio] = link || null;
+  linkListeners.forEach((fn) => fn(studio, headerLinks[studio]));
+}
+export function getHeaderLink(studio) {
+  return headerLinks[studio] || null;
+}
+export function onHeaderLink(fn) {
+  linkListeners.add(fn);
+  return () => linkListeners.delete(fn);
+}

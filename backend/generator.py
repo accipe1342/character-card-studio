@@ -43,6 +43,7 @@ from pathlib import Path
 import json
 import os
 import re
+import threading
 import time
 from typing import Any, Dict, Optional
 from prompt_templates import get_prompt_templates
@@ -309,6 +310,16 @@ def _strip_code_fences(text: str) -> str:
     return text.strip()
 
 
+# What the last model call in THIS thread cost, so a caller can report it per answer (Flask gives each request
+# its own thread, so one call's numbers never land on another's).
+_LAST_CALL = threading.local()
+
+
+def last_call_usage():
+    """{provider, model, prompt_tokens, completion_tokens, seconds} for the last call made on this thread."""
+    return getattr(_LAST_CALL, "usage", None)
+
+
 class NotJSONError(ValueError):
     """The model answered, but not with a JSON object. `raw` holds the whole answer (the message only a part)."""
 
@@ -328,6 +339,8 @@ def _as_object(parsed):
 
 
 def _extract_json_object(text: str) -> Dict[str, Any]:
+    # thinking models often write their reasoning first; the answer is what follows it
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
     text = _strip_code_fences(text)
 
     try:
@@ -640,8 +653,27 @@ def _request(
             response.raise_for_status()
 
             data = response.json()
-            content = data["choices"][0]["message"]["content"]
+            choice = (data.get("choices") or [{}])[0] or {}
+            msg_obj = choice.get("message") or {}
+            content = msg_obj.get("content")
+            if isinstance(content, list):      # some providers answer in content parts
+                content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+            content = content or ""
+            if not content.strip():
+                # a thinking model can spend its whole answer in the reasoning field and leave content empty
+                content = text_of(msg_obj.get("reasoning_content") or msg_obj.get("reasoning") or "", "\n")
+            if not content.strip():
+                why = {"length": "it hit the token limit before writing an answer - raise max_tokens in CONFIG, "
+                                 "or pick a model that does not think for as long",
+                       "content_filter": "the provider filtered the answer"}.get(choice.get("finish_reason") or "",
+                       "it answered with nothing at all")
+                raise RuntimeError(f"{provider}/{payload.get('model', model or '')} returned an empty reply: {why}.")
             usage = data.get("usage") or {}
+            _LAST_CALL.usage = {"provider": provider, "model": payload.get("model", model or ""),
+                                "finish_reason": choice.get("finish_reason") or "",
+                                "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+                                "completion_tokens": int(usage.get("completion_tokens") or 0),
+                                "seconds": round(time.time() - t0, 2)}
             try:
                 from database import record_usage
                 record_usage(provider, payload.get("model", model or ""), usage.get("prompt_tokens", 0),

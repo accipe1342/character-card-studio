@@ -118,6 +118,7 @@ export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card,
   const [includeFields, setIncludeFields] = useState(false);
   const [viewMode, setViewMode] = useState("natural");
   const [exporting, setExporting] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [exportError, setExportError] = useState("");
   const [stStatus, setStStatus] = useState(null);     // {ok, text} after SEND TO SILLYTAVERN
 
@@ -311,22 +312,24 @@ export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card,
     <section className="signal-panel signal-screen-panel" style={{ border: "1px solid var(--signal-border)", background: "var(--signal-bg-panel)", padding: 14, position: "relative" }}>
       <h2 className="signal-heading" style={{ marginTop: 0 }}>{t.preview || "Preview"}</h2>
 
-      <label style={{
-        display: "grid", placeItems: "center", minHeight: 48,
-        border: "1px dashed #3a3a3a", marginBottom: 12,
-        cursor: "pointer", background: "var(--signal-bg-field)",
-      }}>
-        <input type="file" accept="image/*" onChange={onImageChange} style={{ display: "none" }} />
-        <span>{t.uploadImage || "Upload character image"}</span>
-      </label>
-
+      {/* the portrait well: click it or drop an image on it */}
+      <label className={dragOver ? "sui-drop is-over" : "sui-drop"} title={t.uploadImage || "Upload character image"}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault(); setDragOver(false);
+          const f = [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith("image/"));
+          if (f) onImageChange({ target: { files: [f] } });
+        }}>
+        <input type="file" accept="image/*" onChange={onImageChange} aria-label={t.uploadImage || "Upload character image"}
+          style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
       <div
         style={{
           width: "100%", aspectRatio: "3 / 4",
           border: "1px solid var(--signal-border)", background: "var(--signal-bg-mid)",
           overflow: "hidden", marginBottom: 10,
           transition: "opacity 0.25s ease",
-          cursor: "default",
+          cursor: "pointer",
           clipPath: "polygon(12px 0%, calc(100% - 12px) 0%, 100% 12px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0% calc(100% - 12px), 0% 12px)",
         }}
         onMouseEnter={(e) => e.currentTarget.style.opacity = "0.72"}
@@ -336,14 +339,16 @@ export default function PreviewPanel({ imageFile, imageUrl, onImageChange, card,
           <img src={imageUrl} alt={imageFile?.name || t.preview || "Preview"}
             style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
-          <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "var(--signal-text-dim)" }}>
-            {t.noImage || "No image uploaded yet"}
+          <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", alignContent: "center", gap: 6, color: "var(--signal-text-dim)", textAlign: "center", padding: 12, boxSizing: "border-box" }}>
+            <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: "0.2em", textTransform: "uppercase" }}>{t.noImage || "No image uploaded yet"}</span>
+            <span style={{ fontSize: 12 }}>{t.dropImage || "Click, or drop an image here"}</span>
           </div>
         )}
       </div>
+      </label>
 
       <div style={{ color: "var(--signal-text-dim)", fontSize: 13, marginBottom: 12 }}>
-        {imageFile ? `${t.selected || "Selected"}: ${imageFile.name}` : (t.uploadHint || "Upload art, portrait, or cover image.")}
+        {imageFile ? `${t.selected || "Selected"}: ${imageFile.name}` : imageUrl ? (t.replaceImageHint || "Click the portrait or drop an image to replace it.") : (t.uploadHint || "Upload art, portrait, or cover image.")}
       </div>
 
       {/* Export error */}

@@ -20,3 +20,8 @@ LOCAL_API_KEY=local
 ST_URL=http://127.0.0.1:8000
 ST_USER=
 ST_PASSWORD=
+
+# How the app opens on launch.
+#   app = its own window, no tabs or address bar (Edge or Chrome; falls back to a tab)
+#   tab = a normal browser tab
+OPEN_AS=app

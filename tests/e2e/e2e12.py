@@ -76,7 +76,8 @@ with sync_playwright() as pw:
     proj = next((p for p in requests.get(B + "/api/lore/projects").json() if p["project_name"] == "Ferry Lines"), None)
     ok(proj and proj["entry_count"] == 2, "its lorebook became a LORE project")
     m = open_menu(pg, "EXPORT")
-    ok(pg.get_by_label("Embedded lorebook").input_value() == str(proj["id"]), "and is attached to the card for export")
+    ok(str(proj["project_name"]) in pg.get_by_role("button", name=re.compile("^Embedded lorebook$", re.I)).first.inner_text(),
+       "and is attached to the card for export")
     pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
     ok(not m.is_visible(), "Escape closes a menu")
 

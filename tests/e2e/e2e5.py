@@ -4,7 +4,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import re, json, requests
 from playwright.sync_api import sync_playwright
-from ui import menu, open_menu
+from ui import menu, open_menu, pick
 B = "http://127.0.0.1:5173"
 R = []
 def ok(c, n): R.append(bool(c)); print(("PASS " if c else "FAIL ") + n)
@@ -29,8 +29,8 @@ with sync_playwright() as pw:
     pg.locator("div", has_text=re.compile(r"^Bram$")).first.click(); pg.wait_for_timeout(500)
     pg.get_by_role("tab", name="SILLYTAVERN").click()
     pg.get_by_role("button", name=re.compile("ADVANCED SILLYTAVERN SETTINGS")).click()
-    pg.locator("label", has_text="POSITION").locator("select").select_option("4")
-    pg.locator("label", has_text="ROLE (AT DEPTH)").locator("select").select_option("2")
+    pick(pg, "Position", "At depth")
+    pick(pg, "Role at depth", "^Assistant$")
     pg.locator("label", has_text="STICKY").locator("input").fill("3")
     sec = pg.locator("label", has_text="SECONDARY KEYS").locator("input")
     sec.fill("ringball, clockwork"); sec.blur()

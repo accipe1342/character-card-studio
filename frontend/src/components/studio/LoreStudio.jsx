@@ -57,8 +57,8 @@
  *   the PATCH /api/lore/entry/:id endpoint in app.py.
  * - Add a new ST field: add a slider following the scan_depth pattern
  *   and add the column to database.py with a migration.
- * - Change crawl settings: edit the maxPages/maxDepth inputs and
- *   pass them to startLoreCrawl() / startMultiLore() in api.js.
+ * - Change how a lorebook is generated: crawlMode picks the call in
+ *   handleGenerate (startLoreSingle / startLoreMulti in api.js).
  */
 
 import SignalMenu, { MenuItem, MenuSep } from "../shared/SignalMenu";
@@ -67,9 +67,12 @@ import MainJobStatus from "../shared/MainJobStatus";
 import { markBusy } from "../../lib/leaveGuard";
 import { QuickRepliesButton, StoryExportsButton, TrimButton } from "./AssistPanels";
 import { onHelperChange, registerHelperFlush, setHelperContext } from "../../lib/helperBus";
-import { AdvancedWI, BudgetMeter, EntryHints, LinksPanel, SimulatorPanel, TrashPanel, isAlwaysOn, ENTRY_TOKEN_SOFT_LIMIT } from "./LoreTools";
+import ModelChip from "../shared/ModelChip";
+import SelectMenu from "../shared/SelectMenu";
+import { AdvancedWI, BudgetMeter, EntryHints, LinksPanel, SimulatorPanel, TrashPanel, ENTRY_TOKEN_SOFT_LIMIT } from "./LoreTools";
+import { isAlwaysOn } from "../../lib/loreEntries";
 import {
-  startLoreCrawl, startLoreSingle, startLoreMulti, listLoreEntries, getLoreEntry,
+  startLoreSingle, startLoreMulti, getLoreEntry,
   updateLoreEntry, deleteLoreEntry, exportLorebook, exportDeepLore, getJob, fetchModels, pushLoreToST,
   listLoreProjects, createLoreProject, renameLoreProject, deleteLoreProject,
   newLoreEntry, generateLoreEntry, moveEntryToProject, clearLoreProject, cleanLoreKeywords, getPresets,
@@ -94,11 +97,6 @@ const ENTRY_TYPES = ["character", "place", "faction", "event", "item", "ability"
 export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clearFocus }) {
   const [provider, setProvider] = useState("nanogpt");
   const [model, setModel] = useState("");
-  const [maxPages, setMaxPages] = useState(10);
-  const [maxDepth, setMaxDepth] = useState(1);
-  const [purpose, setPurpose] = useState("Create a general lorebook");
-  const [criteria, setCriteria] = useState("Must be a meaningful lore page");
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [deep, setDeep] = useState(false); // multi-pass extraction (more entries, slower)
   const [crawlMode, setCrawlMode] = useState("single"); // "single" | "multi" | "crawl"
   const [multiUrls, setMultiUrls] = useState(["", ""]); // for multi mode
@@ -170,7 +168,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
           if (j.status === "done") { loadEntries(activeProjectRef.current); loadProjects(); }
           if (j.status === "failed") setError(j.error || j.message || "Job failed");
         }
-      } catch {}
+      } catch { /* a dropped poll is picked up on the next tick */ }
     }, 1000);
     return () => clearInterval(interval);
   }, [jobId]);
@@ -539,74 +537,17 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
   return (
     <div>
 
-      {/* Toolbar */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+      {/* Actions: Generate / New entry on the left, Tools / Export / Trash on the right (menus) */}
+      <div className="sui-toolbar">
         {crawlMode === "single" && (
           <input
             value={url}
             onChange={e => setUrl(e.target.value)}
             placeholder={t.urlPlaceholder || "Paste a wiki URL"}
-            style={{ ...inputStyle, flex: "1 1 300px" }}
+            aria-label="Wiki URL"
+            style={{ ...inputStyle, flex: "1 1 200px", minWidth: 0, width: "auto", padding: "9px 12px" }}
           />
         )}
-        <select value={provider} onChange={e => setProvider(e.target.value)} style={{ ...inputStyle, width: "auto" }}>
-          <option value="nanogpt">NanoGPT</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="local">Local (OpenAI-compatible)</option>
-        </select>
-        {/* Model picker */}
-        <div ref={modelRef} style={{ position: "relative", width: 220 }}>
-          <div style={{ display: "flex", border: "1px solid var(--signal-border)", background: "var(--signal-bg-input)" }}>
-            <input
-              value={modelDropdownOpen ? modelSearch : (model || "")}
-              onChange={e => { setModelSearch(e.target.value); setModel(e.target.value); }}
-              onFocus={() => { setModelDropdownOpen(true); setModelSearch(model || ""); }}
-              placeholder="Model (optional)"
-              style={{ flex: 1, padding: "10px 10px", border: "none", background: "transparent", color: "var(--signal-text)", fontFamily: "inherit", fontSize: "inherit", outline: "none", minWidth: 0 }}
-            />
-            <button
-              onClick={() => { if (modelDropdownOpen) { setModelDropdownOpen(false); } else { setModelDropdownOpen(true); } }}
-              style={{ padding: "0 12px", border: "none", borderLeft: "1px solid var(--signal-border)", background: "var(--signal-bg-mid)", cursor: "pointer", color: "var(--signal-text)", fontSize: 12 }}
-            >
-              {modelDropdownOpen ? "▴" : "▾"}
-            </button>
-          </div>
-          {modelDropdownOpen && (
-            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--signal-bg-panel)", border: "1px solid var(--signal-border)", borderTop: "none", zIndex: 500, display: "flex", flexDirection: "column", maxHeight: 320 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--signal-border)", background: "var(--signal-bg-mid)" }}>
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="5.5" cy="5.5" r="4.5" stroke="#888" strokeWidth="1.2"/><line x1="9" y1="9" x2="12" y2="12" stroke="#888" strokeWidth="1.2" strokeLinecap="round"/></svg>
-                <input autoFocus value={modelSearch} onChange={e => setModelSearch(e.target.value)} placeholder="Search models..." style={{ flex: 1, border: "none", background: "transparent", color: "var(--signal-text)", fontFamily: "inherit", fontSize: 13, outline: "none" }} />
-              </div>
-              <button
-                onClick={() => loadModels(provider)}
-                disabled={modelsLoading}
-                className={modelsLoading ? "signal-fetch-btn signal-fetch-btn-loading" : "signal-fetch-btn"}
-                style={{ margin: "8px 10px 4px", padding: "8px 12px", border: "1px solid var(--signal-border)", cursor: modelsLoading ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-              >
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1"/><circle cx="6.5" cy="6.5" r="2.5" stroke="currentColor" strokeWidth="1"/><circle cx="6.5" cy="6.5" r="0.8" fill="currentColor"/><line x1="1" y1="6.5" x2="4" y2="6.5" stroke="currentColor" strokeWidth="1"/><line x1="9" y1="6.5" x2="12" y2="6.5" stroke="currentColor" strokeWidth="1"/></svg>
-                {modelsLoading ? "SCANNING…" : "FETCH MODELS FROM API"}
-              </button>
-              {modelList.length > 0 && <div style={{ padding: "3px 12px 6px", fontSize: 11, color: "var(--signal-text-dim)" }}>{modelList.length} models available</div>}
-              <div style={{ overflowY: "auto", flex: 1 }}>
-                {!modelsLoading && modelList.length === 0 && <div style={{ padding: "12px", color: "var(--signal-text-dim)", fontSize: 13, textAlign: "center" }}>Press FETCH MODELS to load</div>}
-                {modelList.filter(m => !modelSearch || m.id.toLowerCase().includes(modelSearch.toLowerCase()) || m.name.toLowerCase().includes(modelSearch.toLowerCase())).map(m => (
-                  <div key={m.id} onClick={() => { setModel(m.id); setModelSearch(""); setModelDropdownOpen(false); }}
-                    style={{ padding: "9px 12px", cursor: "pointer", borderBottom: "1px solid var(--signal-border)", background: model === m.id ? "var(--signal-btn-active-bg)" : "transparent", color: model === m.id ? "var(--signal-btn-active-text)" : "var(--signal-text)" }}
-                    onMouseEnter={e => { if (model !== m.id) e.currentTarget.style.background = "var(--signal-bg-mid)"; }}
-                    onMouseLeave={e => { if (model !== m.id) e.currentTarget.style.background = "transparent"; }}
-                  >
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{m.name}</div>
-                    <div style={{ fontSize: 11, opacity: 0.55, marginTop: 2 }}>{m.id}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Actions: Generate / New entry on the left, Tools / Export / Trash on the right (menus) */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
         <SignalMenu primary label={loading ? (t.working || "Working...").toUpperCase() : "⟳ " + (t.generateMenu || "GENERATE")}>
           <MenuItem onClick={handleStartCrawl} disabled={loading || crawlMode === "multi"}>{t.generateFromUrl || "Generate from URL"}</MenuItem>
           <MenuItem onClick={() => { setCrawlMode(m => m === "multi" ? "single" : "multi"); }}>
@@ -622,8 +563,62 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
           + {t.newEntry || "New Entry"}
         </button>
 
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: "var(--signal-text-dim)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+        {crawlMode !== "single" && <div style={{ flex: 1 }} />}
+        <span aria-hidden="true" className="sui-toolbar-sep" />
+        <ModelChip provider={provider} model={model} t={t}>
+          <SelectMenu label="Provider" value={provider} onChange={setProvider} options={[{ value: "nanogpt", label: "NanoGPT" }, { value: "openrouter", label: "OpenRouter" }, { value: "local", label: "Local (OpenAI-compatible)" }]}
+            style={{ ...inputStyle, width: "auto", display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em" }} width={240} />
+          {/* Model picker */}
+          <div ref={modelRef} style={{ position: "relative", width: 220 }}>
+            <div style={{ display: "flex", border: "1px solid var(--signal-border)", background: "var(--signal-bg-input)" }}>
+              <input
+                value={modelDropdownOpen ? modelSearch : (model || "")}
+                onChange={e => { setModelSearch(e.target.value); setModel(e.target.value); }}
+                onFocus={() => { setModelDropdownOpen(true); setModelSearch(model || ""); }}
+                placeholder="Model (optional)"
+                style={{ flex: 1, padding: "10px 10px", border: "none", background: "transparent", color: "var(--signal-text)", fontFamily: "inherit", fontSize: "inherit", outline: "none", minWidth: 0 }}
+              />
+              <button
+                onClick={() => { if (modelDropdownOpen) { setModelDropdownOpen(false); } else { setModelDropdownOpen(true); } }}
+                style={{ padding: "0 12px", border: "none", borderLeft: "1px solid var(--signal-border)", background: "var(--signal-bg-mid)", cursor: "pointer", color: "var(--signal-text)", fontSize: 12 }}
+              >
+                {modelDropdownOpen ? "▴" : "▾"}
+              </button>
+            </div>
+            {modelDropdownOpen && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--signal-bg-panel)", border: "1px solid var(--signal-border)", borderTop: "none", zIndex: 500, display: "flex", flexDirection: "column", maxHeight: 320 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--signal-border)", background: "var(--signal-bg-mid)" }}>
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="5.5" cy="5.5" r="4.5" stroke="#888" strokeWidth="1.2"/><line x1="9" y1="9" x2="12" y2="12" stroke="#888" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                  <input autoFocus value={modelSearch} onChange={e => setModelSearch(e.target.value)} placeholder="Search models..." style={{ flex: 1, border: "none", background: "transparent", color: "var(--signal-text)", fontFamily: "inherit", fontSize: 13, outline: "none" }} />
+                </div>
+                <button
+                  onClick={() => loadModels(provider)}
+                  disabled={modelsLoading}
+                  className={modelsLoading ? "signal-fetch-btn signal-fetch-btn-loading" : "signal-fetch-btn"}
+                  style={{ margin: "8px 10px 4px", padding: "8px 12px", border: "1px solid var(--signal-border)", cursor: modelsLoading ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" strokeWidth="1"/><circle cx="6.5" cy="6.5" r="2.5" stroke="currentColor" strokeWidth="1"/><circle cx="6.5" cy="6.5" r="0.8" fill="currentColor"/><line x1="1" y1="6.5" x2="4" y2="6.5" stroke="currentColor" strokeWidth="1"/><line x1="9" y1="6.5" x2="12" y2="6.5" stroke="currentColor" strokeWidth="1"/></svg>
+                  {modelsLoading ? "SCANNING…" : "FETCH MODELS FROM API"}
+                </button>
+                {modelList.length > 0 && <div style={{ padding: "3px 12px 6px", fontSize: 11, color: "var(--signal-text-dim)" }}>{modelList.length} models available</div>}
+                <div style={{ overflowY: "auto", flex: 1 }}>
+                  {!modelsLoading && modelList.length === 0 && <div style={{ padding: "12px", color: "var(--signal-text-dim)", fontSize: 13, textAlign: "center" }}>Press FETCH MODELS to load</div>}
+                  {modelList.filter(m => !modelSearch || m.id.toLowerCase().includes(modelSearch.toLowerCase()) || m.name.toLowerCase().includes(modelSearch.toLowerCase())).map(m => (
+                    <div key={m.id} onClick={() => { setModel(m.id); setModelSearch(""); setModelDropdownOpen(false); }}
+                      style={{ padding: "9px 12px", cursor: "pointer", borderBottom: "1px solid var(--signal-border)", background: model === m.id ? "var(--signal-btn-active-bg)" : "transparent", color: model === m.id ? "var(--signal-btn-active-text)" : "var(--signal-text)" }}
+                      onMouseEnter={e => { if (model !== m.id) e.currentTarget.style.background = "var(--signal-bg-mid)"; }}
+                      onMouseLeave={e => { if (model !== m.id) e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{m.name}</div>
+                      <div style={{ fontSize: 11, opacity: 0.55, marginTop: 2 }}>{m.id}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </ModelChip>
+        <span style={{ fontSize: 12, color: "var(--signal-text-dim)", letterSpacing: "0.14em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
           {entries.length} {entries.length === 1 ? "entry" : "entries"}
         </span>
         <SignalMenu label={t.toolsMenu || "TOOLS"} align="right" width={260}>
@@ -737,11 +732,9 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
             <input value={genTitle} onChange={e => setGenTitle(e.target.value)}
               placeholder="Title (optional — model will suggest)"
               style={{ ...inputStyle, fontSize: 13 }} />
-            <select value={genType} onChange={e => setGenType(e.target.value)} style={{ ...inputStyle }}>
-              {["character","place","faction","event","item","ability","concept","other"].map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
+            <SelectMenu label="Entry type to generate" value={genType} onChange={setGenType}
+              options={["character", "place", "faction", "event", "item", "ability", "concept", "other"]}
+              style={{ ...inputStyle, display: "inline-flex", justifyContent: "space-between", gap: 8, fontWeight: 400, letterSpacing: "0.04em", textTransform: "capitalize" }} />
           </div>
           <textarea
             value={genPrompt}
@@ -920,9 +913,9 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                 <div
                   key={e.id}
                   onClick={() => { if (movingEntryId !== e.id) handleSelectEntry(e.id); }}
-                  className={flashEntry === e.id ? "signal-field-flash" : deletingEntry === e.id ? "signal-entry-delete-flash" : ""}
+                  className={`lore-row${selectedId === e.id ? " is-selected" : ""}${flashEntry === e.id ? " signal-field-flash" : deletingEntry === e.id ? " signal-entry-delete-flash" : ""}`}
                   style={{
-                    padding: "8px 10px",
+                    padding: "6px 10px",
                     border: `1px solid ${deletingEntry === e.id ? "var(--signal-accent)" : "var(--signal-border)"}`,
                     background: deletingEntry === e.id ? "rgba(200,74,58,0.15)" : selectedId === e.id ? "var(--signal-btn-active-bg)" : "var(--signal-bg-btn)",
                     color: selectedId === e.id ? "var(--signal-btn-active-text)" : "var(--signal-text)",
@@ -932,12 +925,14 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {e.title || "Untitled"}
-                      </div>
-                      <div style={{ fontSize: 10, opacity: 0.6, letterSpacing: "0.06em" }}>
-                        {(t.entryTypes && t.entryTypes[e.entry_type]) || e.entry_type?.toUpperCase()}
-                        {e.content_chars != null && ` · ~${Math.max(1, Math.round(e.content_chars / 4))} tok`}
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                          {e.title || "Untitled"}
+                        </div>
+                        <div style={{ marginLeft: "auto", fontSize: 10, opacity: 0.7, letterSpacing: "0.06em", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                          {(t.entryTypes && t.entryTypes[e.entry_type]) || e.entry_type?.toUpperCase()}
+                          {e.content_chars != null && ` · ~${Math.max(1, Math.round(e.content_chars / 4))} tok`}
+                        </div>
                       </div>
                       {loreIssues(e, dupTitles).length > 0 && (
                         <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 3 }}>
@@ -948,7 +943,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                         </div>
                       )}
                     </div>
-                    <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
+                    <div className="lore-row-acts" style={{ display: "flex", gap: 3, flexShrink: 0 }}>
                       <button
                         onClick={ev => { ev.stopPropagation(); setMovingEntryId(movingEntryId === e.id ? null : e.id); }}
                         title={t.moveToProject || "Move to project"} aria-label={`Move ${e.title || "entry"} to another project`}
@@ -966,16 +961,12 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                   </div>
                   {movingEntryId === e.id && (
                     <div style={{ marginTop: 6 }} onClick={ev => ev.stopPropagation()}>
-                      <select
-                        defaultValue={e.crawl_id ?? "none"}
-                        onChange={ev => handleMoveEntry(e.id, ev.target.value)}
-                        style={{ width: "100%", padding: "4px 6px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-input)", color: "var(--signal-text)", fontFamily: "inherit", fontSize: 12 }}
-                      >
-                        <option value="none">{t.noProject || "No Project"}</option>
-                        {projects.map(p => (
-                          <option key={p.id} value={p.id}>{p.project_name}</option>
-                        ))}
-                      </select>
+                      <SelectMenu label="Move to lorebook" value={e.crawl_id ?? "none"} wrapStyle={{ width: "100%" }}
+                        onChange={(v) => handleMoveEntry(e.id, v)} width={260}
+                        options={[{ value: "none", label: t.noProject || "No Project" },
+                                  ...projects.map(p2 => ({ value: p2.id, label: p2.project_name }))]}
+                        style={{ width: "100%", padding: "4px 6px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-input)",
+                          color: "var(--signal-text)", fontSize: 12, fontWeight: 400, letterSpacing: "0.04em", display: "inline-flex", justifyContent: "space-between", gap: 8 }} />
                     </div>
                   )}
                 </div>
@@ -994,7 +985,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
               className={`signal-panel signal-screen-panel${flashEntry === selectedId ? " signal-field-flash" : ""}`}
               style={{
                 border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)",
-                padding: 16, position: "sticky", top: 16, alignSelf: "start",
+                padding: 16, position: "sticky", top: "var(--sui-sticky-top, 16px)", alignSelf: "start",
               }}>
               {/* Title */}
               <input
@@ -1007,28 +998,25 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                 }}
               />
 
-              {/* Type selector */}
-              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
-                {ENTRY_TYPES.map(type => (
-                  <button
-                    key={type}
-                    className={entry.entry_type === type ? "signal-btn signal-btn-active" : "signal-btn"}
-                    onClick={() => setEntry(prev => ({ ...prev, entry_type: type }))}
-                    style={{ padding: "4px 8px", fontSize: 11, border: "1px solid var(--signal-border)", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}
-                  >
-                    {(t.entryTypes && t.entryTypes[type]) || type}
-                  </button>
-                ))}
-              </div>
-
               {/* CONTENT / KEYS / SILLYTAVERN tabs (the hidden ones stay mounted) */}
-              <div role="tablist" aria-label="Entry sections" style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 500, letterSpacing: "0.2em", color: "var(--signal-text-dim)" }}>
+                {t.typeWord || "TYPE"}
+                <SelectMenu label="Entry type" value={entry.entry_type || "other"} width={220}
+                  onChange={(v) => setEntry(prev => ({ ...prev, entry_type: v }))}
+                  options={ENTRY_TYPES.map(type => ({ value: type, label: (t.entryTypes && t.entryTypes[type]) || type }))}
+                  style={{ padding: "5px 8px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-field)", color: "var(--signal-text)",
+                    fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 500, display: "inline-flex", gap: 8 }} />
+              </span>
+              <span style={{ flex: 1 }} />
+              <div role="tablist" aria-label="Entry sections" style={{ display: "flex", gap: 4 }}>
                 {[["content", t.contentTab || "CONTENT"], ["keys", `${t.keysTab || "KEYS"} · ${(entry.keywords || []).length}`], ["st", t.stTab || "SILLYTAVERN"]].map(([k, label]) => (
                   <button key={k} role="tab" aria-selected={edTab === k} className={edTab === k ? "signal-btn signal-btn-active" : "signal-btn"}
                     onClick={() => setEdTab(k)} style={{ padding: "6px 12px", fontSize: 12, letterSpacing: "0.16em", border: "1px solid transparent", cursor: "pointer" }}>
                     {label}
                   </button>
                 ))}
+              </div>
               </div>
 
               <div role="tabpanel" hidden={edTab !== "keys"}>
@@ -1127,7 +1115,7 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
                 ))}
               </div>
 
-              <AdvancedWI entry={entry} setEntry={setEntry} t={t} />
+              <AdvancedWI key={entry.id} entry={entry} setEntry={setEntry} t={t} />
               </div>
 
               {/* Save */}

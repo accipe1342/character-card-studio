@@ -3,7 +3,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import re, json, requests
 from playwright.sync_api import sync_playwright
-from ui import menu, open_menu
+from ui import menu, open_menu, pick
 B = "http://127.0.0.1:5173"
 R = []
 def ok(c, n): R.append(c); print(("PASS " if c else "FAIL ") + n)
@@ -21,7 +21,7 @@ with sync_playwright() as pw:
     pg.locator("div", has_text=re.compile(r"^Aldmere Lore$")).first.click(); pg.wait_for_timeout(700)
     ok(pg.locator("span", has_text=re.compile(r"^NO KEYS$")).count() == 1 and pg.locator("span", has_text=re.compile(r"^EMPTY$")).count() == 1, "LORE list problem badges")
     pg.locator("div", has_text=re.compile(r"^Vessa$")).first.click(); pg.wait_for_timeout(500)
-    pg.get_by_role("button", name=re.compile(r"^character$", re.I)).last.click()
+    pick(pg, "Entry type", r"^character$")
     pg.locator("textarea").last.fill("Vessa is a stoic warrior.")
     pg.wait_for_timeout(2000)
     ok(pg.locator("text=✓ saved").count() >= 1, "LORE autosave indicator")

@@ -28,7 +28,7 @@ bp = Blueprint("admin", __name__)
 
 KEEP_BACKUPS = 12
 _NAME_RE = re.compile(r"^fandom_chars-\d{8}-\d{6}(?:-[a-z-]+)?\.db$")
-PRESET_TASKS = ("extract", "critic", "card", "lore")
+PRESET_TASKS = ("extract", "critic", "card", "lore", "helper")
 SETTINGS_PATH = Path(__file__).resolve().parent / "config" / "settings.json"
 
 

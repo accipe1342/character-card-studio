@@ -27,24 +27,11 @@
  */
 
 import { useState } from "react";
+import { countTokens } from "../../lib/tokens";
 
-// ── Token counting ────────────────────────────────────────────────────────────
-function countTokens(text) {
-  if (!text) return 0;
-  const str = Array.isArray(text) ? text.join(" ") : String(text);
-  const words = str.trim().split(/\s+/).filter(Boolean);
-  let tokens = 0;
-  for (const w of words) {
-    tokens += 1 + Math.floor(Math.max(0, w.length - 4) / 4);
-  }
-  return tokens;
-}
-
+// counts are information, not alarms: dim ink, and the warning color only once a field or the card runs long
 function tokenColor(count) {
-  if (count < 200) return "#9a4a4a";
-  if (count < 400) return "#b04a4a";
-  if (count < 700) return "#c8603a";
-  return "var(--signal-accent)";
+  return count >= 700 ? "var(--signal-warn)" : "var(--signal-text-dim)";
 }
 
 // ── Cheatsheet data ───────────────────────────────────────────────────────────
@@ -176,7 +163,7 @@ export default function CheatsheetBar({ textareaRef, value, onChange, t = {}, to
             fontSize: 13,
             fontWeight: 700,
             letterSpacing: "0.04em",
-            color: totalTokens > 2000 ? "var(--signal-accent)" : totalTokens > 1000 ? "#c8923a" : "#9a4a4a",
+            color: totalTokens > 2000 ? "var(--signal-warn)" : "var(--signal-text-dim)",
           }}>
             <span style={{ opacity: 0.6, fontSize: 10, fontWeight: 400 }}>total ~</span>
             {totalTokens}

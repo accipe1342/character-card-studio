@@ -1,14 +1,14 @@
 @echo off
-title Character Card Studio — Setup
+title Character Card Studio - Setup
 cd /d "%~dp0"
 
 echo.
 echo  ============================================
-echo   Character Card Studio — First Time Setup
+echo   Character Card Studio - First Time Setup
 echo  ============================================
 echo.
 
-:: ── Check Python ─────────────────────────────────────────────────────────────
+:: -- Check Python -------------------------------------------------------------
 echo [1/5] Checking Python...
 python --version >nul 2>&1
 if errorlevel 1 (
@@ -27,7 +27,7 @@ if errorlevel 1 (
 for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set PY_VER=%%v
 echo  [OK] Python %PY_VER% found.
 
-:: ── Check Node ────────────────────────────────────────────────────────────────
+:: -- Check Node ----------------------------------------------------------------
 echo.
 echo [2/5] Checking Node.js...
 node --version >nul 2>&1
@@ -46,7 +46,7 @@ if errorlevel 1 (
 for /f %%v in ('node --version') do set NODE_VER=%%v
 echo  [OK] Node.js %NODE_VER% found.
 
-:: ── Create Python venv ────────────────────────────────────────────────────────
+:: -- Create Python venv --------------------------------------------------------
 echo.
 echo [3/5] Creating Python virtual environment...
 if exist .venv (
@@ -62,11 +62,11 @@ if exist .venv (
     echo  [OK] Virtual environment created.
 )
 
-:: ── Install Python deps ───────────────────────────────────────────────────────
+:: -- Install Python deps -------------------------------------------------------
 echo.
 echo [4/5] Installing Python dependencies...
-call .venv\Scripts\activate.bat
-pip install -r requirements.txt -q
+set "PY=.venv\Scripts\python.exe"
+"%PY%" -m pip install -r requirements.txt -q
 if errorlevel 1 (
     echo  [!] Failed to install Python dependencies.
     pause
@@ -78,7 +78,7 @@ set REQ_HASH=%REQ_HASH: =%
 echo %REQ_HASH%> .venv\.req_hash
 echo  [OK] Python dependencies installed.
 
-:: ── Install Node deps ─────────────────────────────────────────────────────────
+:: -- Install Node deps ---------------------------------------------------------
 echo.
 echo [5/5] Installing frontend dependencies...
 cd frontend
@@ -92,10 +92,10 @@ if errorlevel 1 (
 cd ..
 echo  [OK] Frontend dependencies installed.
 
-:: ── Create data dir ───────────────────────────────────────────────────────────
+:: -- Create data dir -----------------------------------------------------------
 if not exist data mkdir data
 
-:: ── Copy .env ─────────────────────────────────────────────────────────────────
+:: -- Copy .env -----------------------------------------------------------------
 if not exist .env (
     if exist _env.example (
         copy _env.example .env >nul
@@ -109,10 +109,10 @@ if not exist .env (
     echo  [OK] .env already exists.
 )
 
-:: ── Make start.sh executable (for WSL users) ─────────────────────────────────
+:: -- Make start.sh executable (for WSL users) ---------------------------------
 :: Not needed on Windows but harmless
 
-:: ── Done ──────────────────────────────────────────────────────────────────────
+:: -- Done ----------------------------------------------------------------------
 echo.
 echo  ============================================
 echo   Setup complete!

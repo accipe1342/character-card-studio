@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { getEntityChapters, getEntityMentions, imageSrc, setEntityImage, setEntitySecrets, uploadImage } from "../../lib/api";
 import { btnTool, hint, label } from "./textUi";
+import SelectMenu from "../shared/SelectMenu";
 
 const box = { border: "1px solid var(--signal-border)", padding: "8px 10px", marginBottom: 8, fontSize: 12.5, lineHeight: 1.5 };
 
@@ -24,15 +25,19 @@ export function EntityTabs({ tab, setTab, isCharacter, extra = [] }) {
 }
 
 export function EntityChapters({ entityId, onJump }) {
-  const [d, setD] = useState(null);
-  const [error, setError] = useState("");
+  const [res, setRes] = useState(null);           // { for, data } or { for, error }: tagged with the entity it is about
   useEffect(() => {
-    setD(null); setError("");
-    getEntityChapters(entityId).then(setD).catch((e) => setError(e.message));
+    let alive = true;
+    getEntityChapters(entityId)
+      .then((data) => { if (alive) setRes({ for: entityId, data }); })
+      .catch((e) => { if (alive) setRes({ for: entityId, error: e.message }); });
+    return () => { alive = false; };
   }, [entityId]);
-  if (error) return <div style={{ color: "var(--signal-accent)", fontSize: 12, marginTop: 8 }}>⊗ {error}</div>;
+  const fresh = res && res.for === entityId ? res : null;   // another entity's answer is not this one's
+  if (fresh?.error) return <div style={{ color: "var(--signal-accent)", fontSize: 12, marginTop: 8 }}>⊗ {fresh.error}</div>;
+  const d = fresh?.data;
   if (!d) return <div style={{ ...hint, marginTop: 8 }}>Loading…</div>;
-  let markerShown = false;
+  const markerAt = d.upto >= 0 ? d.chapters.findIndex((c) => c.after_start) : -1;   // the first chapter after the starting point
   return (
     <div style={{ marginTop: 8 }}>
       <div style={{ ...hint, marginTop: 0, marginBottom: 8 }}>
@@ -45,9 +50,8 @@ export function EntityChapters({ entityId, onJump }) {
         {d.edited && " This entry was edited by hand, so your text is used as it is."}
       </div>
       {!d.chapters.length && <div style={hint}>No chapter mentions this entry in its extraction (it may come from a manual merge).</div>}
-      {d.chapters.map((c) => {
-        const marker = d.upto >= 0 && c.after_start && !markerShown;
-        if (marker) markerShown = true;
+      {d.chapters.map((c, ci) => {
+        const marker = ci === markerAt;
         return (
           <div key={c.chunk}>
             {marker && (
@@ -76,13 +80,18 @@ export function EntityChapters({ entityId, onJump }) {
 
 export function EntityMentions({ entityId }) {
   const [anyCase, setAnyCase] = useState(false);
-  const [d, setD] = useState(null);
-  const [error, setError] = useState("");
+  const [res, setRes] = useState(null);           // tagged with the entity and the case setting it was asked for
+  const asked = `${entityId}|${anyCase}`;
   useEffect(() => {
-    setD(null); setError("");
-    getEntityMentions(entityId, anyCase).then(setD).catch((e) => setError(e.message));
+    let alive = true;
+    getEntityMentions(entityId, anyCase)
+      .then((data) => { if (alive) setRes({ for: `${entityId}|${anyCase}`, data }); })
+      .catch((e) => { if (alive) setRes({ for: `${entityId}|${anyCase}`, error: e.message }); });
+    return () => { alive = false; };
   }, [entityId, anyCase]);
-  if (error) return <div style={{ color: "var(--signal-accent)", fontSize: 12, marginTop: 8 }}>⊗ {error}</div>;
+  const fresh = res && res.for === asked ? res : null;
+  if (fresh?.error) return <div style={{ color: "var(--signal-accent)", fontSize: 12, marginTop: 8 }}>⊗ {fresh.error}</div>;
+  const d = fresh?.data;
   if (!d) return <div style={{ ...hint, marginTop: 8 }}>Searching the text…</div>;
   const shown = d.chapters.reduce((n, c) => n + c.lines.length, 0);
   return (
@@ -139,12 +148,12 @@ export function PortraitSlot({ entityId, image, onChange }) {
   );
 }
 
+/** Mounted with key={entity.id}, so opening another entry starts this panel again from that entry's data. */
 export function SecretsEditor({ entity, characterNames, onChange }) {
   const saved = entity.secrets || [];
   const [open, setOpen] = useState(saved.length > 0);
   const [rows, setRows] = useState(saved);
   const [status, setStatus] = useState("");
-  useEffect(() => { setRows(entity.secrets || []); setOpen((entity.secrets || []).length > 0); setStatus(""); }, [entity.id]);   // reset when another entry opens (not on every edit of this one)
   const others = characterNames.filter((n) => n !== entity.name);
   async function save(next) {
     setStatus("saving…");
@@ -181,11 +190,13 @@ export function SecretsEditor({ entity, characterNames, onChange }) {
                   style={{ ...btnTool, padding: "1px 6px", fontSize: 11 }}>{n} ✕</button>
               ))}
               {!(r.known_by || []).length && <span style={{ fontSize: 11 }}>{fallback ? `only ${fallback}` : "nobody yet (pick someone)"}</span>}
-              <select value="" aria-label={`Who knows secret ${i + 1}`} onChange={(e) => e.target.value && update(i, { known_by: [...(r.known_by || []), e.target.value] }, true)}
-                style={{ fontFamily: "inherit", fontSize: 11, padding: "2px 4px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-input)", color: "var(--signal-text)" }}>
-                <option value="">+ add…</option>
-                {[entity.name, ...others].filter((n) => !(r.known_by || []).includes(n)).map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <SelectMenu label={`Who knows secret ${i + 1}`} value="" placeholder="+ add…" width={220}
+                onChange={(v) => v && update(i, { known_by: [...(r.known_by || []), v] }, true)}
+                options={[{ value: "", label: "+ add…" },
+                          ...[entity.name, ...others].filter((n) => !(r.known_by || []).includes(n)).map((n) => ({ value: n, label: n }))]}
+                style={{ fontSize: 11, padding: "2px 6px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-input)",
+                  color: "var(--signal-text)", fontWeight: 400, letterSpacing: "0.04em", display: "inline-flex",
+                  justifyContent: "space-between", gap: 8, textAlign: "left" }} />
               <button className="signal-btn" onClick={() => { const next = rows.filter((_, k) => k !== i); setRows(next); save(next); }}
                 style={{ ...btnTool, padding: "1px 6px", fontSize: 11, marginLeft: "auto" }}>DELETE</button>
             </div>

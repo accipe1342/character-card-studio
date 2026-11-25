@@ -1,6 +1,5 @@
 /**
  * LoreTools.jsx — extra LORE studio panels, kept out of LoreStudio.jsx:
- *   isAlwaysOn / entryTokens   helpers shared with the entry list
  *   BudgetMeter                always-on tokens vs SillyTavern's World Info budget
  *   AdvancedWI                 the rest of SillyTavern's per-entry settings (position, sticky, groups, ...)
  *   SimulatorPanel             paste chat text: which entries would fire, and why
@@ -9,14 +8,15 @@
  *   EntryHints                 size warning and stock-phrase hits under the entry text (no model call)
  */
 import { useEffect, useState } from "react";
+import { ALWAYS_ON_TITLES, entryTokens, isAlwaysOn } from "../../lib/loreEntries";
+import SelectMenu from "../shared/SelectMenu";
 import { simulateLore, getLoreGraph, listLoreTrash, restoreLoreEntry, emptyLoreTrash, deleteLoreEntry, scanText } from "../../lib/api";
 
-export const ALWAYS_ON_TITLES = ["Story So Far", "Cast Roster", "Relationships"];
-export const isAlwaysOn = (e) => (e.constant === null || e.constant === undefined ? ALWAYS_ON_TITLES.includes(e.title) : !!e.constant);
-export const entryTokens = (e) => Math.max(1, Math.ceil((e.content_chars ?? (e.content || "").length) / 4));
 
 const dim = { fontSize: 11, color: "var(--signal-text-dim)" };
 const lbl = { fontSize: 10, letterSpacing: "0.08em", color: "var(--signal-text-dim)", marginBottom: 4, display: "block" };
+const fieldMenu = (extra) => ({ ...field, display: "inline-flex", justifyContent: "space-between", gap: 8,
+  fontWeight: 400, letterSpacing: "0.04em", textAlign: "left", width: "100%", ...extra });
 const field = {
   padding: "6px 8px", border: "1px solid var(--signal-border)", background: "var(--signal-bg-input)",
   color: "var(--signal-text)", fontFamily: "inherit", fontSize: 12, boxSizing: "border-box", width: "100%",
@@ -59,14 +59,14 @@ const listText = (v) => (Array.isArray(v) ? v.join(", ") : "");
 const parseList = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
 const numOrNull = (v, lo, hi) => (v === "" ? null : Math.max(lo, Math.min(hi, parseInt(v, 10) || 0)));
 
-/** The rest of SillyTavern's per-entry settings. Empty = the studio's default for the entry type. */
+/** The rest of SillyTavern's per-entry settings. Empty = the studio's default for the entry type.
+ *  Mounted with key={entry.id}: another entry starts the comma-list boxes again from its own values. */
 export function AdvancedWI({ entry, setEntry, t = {} }) {
   const [open, setOpen] = useState(false);
   const set = (k, v) => setEntry((p) => ({ ...p, [k]: v }));
   // comma lists are edited as text and parsed on blur, so typing a comma doesn't fight the input
   const [secText, setSecText] = useState(listText(entry.secondary_keys));
   const [filterText, setFilterText] = useState(listText(entry.char_filter));
-  useEffect(() => { setSecText(listText(entry.secondary_keys)); setFilterText(listText(entry.char_filter)); }, [entry.id]);
   const changed = ["position", "sticky", "constant"].some((k) => entry[k] !== null && entry[k] !== undefined) || !!entry.cooldown || !!entry.delay
     || (entry.probability ?? 100) !== 100 || (entry.secondary_keys || []).length || entry.group_name || entry.vectorized || (entry.char_filter || []).length;
   const constVal = entry.constant === null || entry.constant === undefined ? "" : entry.constant ? "1" : "0";
@@ -78,24 +78,23 @@ export function AdvancedWI({ entry, setEntry, t = {} }) {
       </button>
       {open && (
         <div style={{ border: "1px solid var(--signal-border)", borderTop: "none", padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
-          <label><span style={lbl}>ACTIVATION</span>
-            <select style={field} value={constVal} onChange={(e) => set("constant", e.target.value === "" ? null : e.target.value === "1" ? 1 : 0)}>
-              <option value="">Default ({ALWAYS_ON_TITLES.includes(entry.title) ? "always on" : "keywords"})</option>
-              <option value="1">Always on (constant)</option>
-              <option value="0">Keywords only</option>
-            </select>
-          </label>
-          <label><span style={lbl}>POSITION</span>
-            <select style={field} value={entry.position ?? ""} onChange={(e) => set("position", e.target.value === "" ? null : parseInt(e.target.value, 10))}>
-              {POSITIONS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-            </select>
-          </label>
+          <div><span style={lbl}>ACTIVATION</span>
+            <SelectMenu label="Activation" value={constVal} wrapStyle={{ width: "100%" }} style={fieldMenu()} width={260}
+              onChange={(v) => set("constant", v === "" ? null : v === "1" ? 1 : 0)}
+              options={[{ value: "", label: `Default (${ALWAYS_ON_TITLES.includes(entry.title) ? "always on" : "keywords"})` },
+                        { value: "1", label: "Always on (constant)" }, { value: "0", label: "Keywords only" }]} />
+          </div>
+          <div><span style={lbl}>POSITION</span>
+            <SelectMenu label="Position" value={entry.position ?? ""} wrapStyle={{ width: "100%" }} style={fieldMenu()} width={280}
+              onChange={(v) => set("position", v === "" ? null : parseInt(v, 10))}
+              options={POSITIONS.map(([v, t2]) => ({ value: v, label: t2 }))} />
+          </div>
           {entry.position === 4 && (
-            <label title="Who the entry is sent as when inserted at depth"><span style={lbl}>ROLE (AT DEPTH)</span>
-              <select style={field} value={entry.role ?? 0} onChange={(e) => set("role", parseInt(e.target.value, 10))}>
-                <option value={0}>System</option><option value={1}>User</option><option value={2}>Assistant</option>
-              </select>
-            </label>
+            <div title="Who the entry is sent as when inserted at depth"><span style={lbl}>ROLE (AT DEPTH)</span>
+              <SelectMenu label="Role at depth" value={entry.role ?? 0} wrapStyle={{ width: "100%" }} style={fieldMenu()}
+                onChange={(v) => set("role", parseInt(v, 10))}
+                options={[{ value: "0", label: "System" }, { value: "1", label: "User" }, { value: "2", label: "Assistant" }]} />
+            </div>
           )}
           <label title="Messages the entry stays active after it fires. Default: 2 for characters, 0 for the rest"><span style={lbl}>STICKY</span>
             <input style={field} type="number" min={0} max={1000} placeholder={entry.entry_type === "character" ? "default 2" : "default 0"}
@@ -112,9 +111,9 @@ export function AdvancedWI({ entry, setEntry, t = {} }) {
           </label>
           <label style={{ gridColumn: "1 / -1" }} title="Optional filter: after a primary key matches, these decide whether the entry fires"><span style={lbl}>SECONDARY KEYS (COMMA-SEPARATED)</span>
             <div style={{ display: "flex", gap: 6 }}>
-              <select style={{ ...field, width: "auto" }} value={entry.selective_logic ?? 0} onChange={(e) => set("selective_logic", parseInt(e.target.value, 10))} aria-label="Secondary key logic">
-                {LOGIC.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-              </select>
+              <SelectMenu label="Secondary key logic" value={entry.selective_logic ?? 0} style={fieldMenu({ width: "auto" })} width={200}
+                onChange={(v) => set("selective_logic", parseInt(v, 10))}
+                options={LOGIC.map(([v, t2]) => ({ value: v, label: t2 }))} />
               <input style={field} value={secText} placeholder="e.g. night, festival" onChange={(e) => setSecText(e.target.value)}
                 onBlur={() => set("secondary_keys", parseList(secText))} />
             </div>
@@ -205,9 +204,17 @@ export function SimulatorPanel({ project, onOpen, onClose, t = {} }) {
 }
 
 export function LinksPanel({ project, onOpen, onClose, t = {} }) {
-  const [g, setG] = useState(null);
-  const [error, setError] = useState("");
-  useEffect(() => { setG(null); getLoreGraph(project.id).then(setG).catch((e) => setError(e.message)); }, [project.id]);
+  const [res, setRes] = useState(null);           // { for, data } or { for, error }: tagged with the project it is about
+  useEffect(() => {
+    let alive = true;
+    getLoreGraph(project.id)
+      .then((data) => { if (alive) setRes({ for: project.id, data }); })
+      .catch((e) => { if (alive) setRes({ for: project.id, error: e.message }); });
+    return () => { alive = false; };
+  }, [project.id]);
+  const fresh = res && res.for === project.id ? res : null;
+  const g = fresh?.data || null;
+  const error = fresh?.error || "";
   const title = (id) => g?.nodes.find((n) => n.lore_id === id)?.title || "?";
   const out = {};
   (g?.edges || []).forEach((e) => { (out[e.from] = out[e.from] || []).push(e); });
@@ -256,7 +263,13 @@ export function TrashPanel({ project, onChanged, onClose, refreshKey, t = {} }) 
   async function load() {
     try { setItems((await listLoreTrash(project?.id)).entries || []); } catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); }, [project?.id, refreshKey]);
+  useEffect(() => {   // same fetch as load(), but a late answer for another project is dropped
+    let alive = true;
+    listLoreTrash(project?.id)
+      .then((r) => { if (alive) setItems(r.entries || []); })
+      .catch((e) => { if (alive) setError(e.message); });
+    return () => { alive = false; };
+  }, [project?.id, refreshKey]);
   async function restore(id) {
     try { await restoreLoreEntry(id); await load(); onChanged && onChanged(); } catch (e) { setError(e.message); }
   }
@@ -299,8 +312,8 @@ export function EntryHints({ entry, children }) {
   const [hits, setHits] = useState([]);
   const text = entry?.content || "";
   useEffect(() => {
-    if (!text.trim()) { setHits([]); return; }
     const tm = setTimeout(() => {
+      if (!text.trim()) { setHits([]); return; }
       scanText(text).then((r) => setHits(r.cliches || [])).catch(() => setHits([]));
     }, 800);
     return () => clearTimeout(tm);

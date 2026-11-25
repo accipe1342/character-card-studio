@@ -29,12 +29,12 @@ with sync_playwright() as pw:
     panel.get_by_label("Message to the helper").fill("Rewrite the description please")
     panel.get_by_role("button", name="SEND").click()
     pg.wait_for_selector("text=Report: description rewritten.", timeout=15000); pg.wait_for_timeout(800)
-    ok(panel.locator("text=/: description$/").count() == 1, "the change is listed with KEEP / UNDO")
+    ok(panel.locator("text=/Edited .* Description/").count() == 1, "the change is listed as a sentence, with Open / Undo")
     ok(desc.input_value() == "A courier who knows every alley of the rainy port.", f"the open card reloaded ({desc.input_value()[:40]})")
     pg.screenshot(path=OUT + "/helper_card.png", full_page=False)
     panel.get_by_role("button", name="UNDO").first.click(); pg.wait_for_timeout(1200)
     ok(desc.input_value() == "Old description.", "UNDO put back the description the user had (saved before the helper read it)")
-    ok(panel.locator("text=↶ undone").count() == 1, "the change shows as undone")
+    ok(panel.locator("text=PUT BACK").count() >= 1, "the change moves to the put-back group")
     # 2. the "changed since" refusal
     panel.get_by_label("Message to the helper").fill("Rewrite the description again")
     panel.get_by_role("button", name="SEND").click()
@@ -48,9 +48,10 @@ with sync_playwright() as pw:
     panel.get_by_role("button", name="SEND").click()
     pg.wait_for_selector("text=Report: lorebook ready with 2 entries.", timeout=15000); pg.wait_for_timeout(500)
     labels = panel.inner_text()
-    ok("New lorebook: Helper Port" in labels and "New entry: Old Harbor" in labels and "New entry: Grey Watch" in labels,
-       "lorebook and both entries listed")
-    ok(panel.get_by_role("button", name="UNDO ALL").count() == 1, "UNDO ALL / KEEP ALL for a multi-change reply")
+    ok("Made the lorebook Helper Port" in labels and "Added the entry Old Harbor" in labels
+       and "Added the entry Grey Watch" in labels, "lorebook and both entries listed")
+    ok(panel.get_by_role("button", name="Undo all").count() == 1
+       and panel.get_by_role("button", name="Clear these from the list").count() == 1, "Undo all / Clear for a multi-change reply")
     proj = next(p for p in requests.get(B + "/api/lore/projects").json() if p["project_name"] == "Helper Port")
     ok(proj["entry_count"] == 2, "saved on the server")
     pg.screenshot(path=OUT + "/helper_lorebook.png", full_page=False)
@@ -67,7 +68,7 @@ with sync_playwright() as pw:
     vals = pg.eval_on_selector_all("textarea:not([aria-label='Message to the helper'])", "els => els.map(e => e.value)")
     ok("Docks. Busy all night." in vals, "the open entry reloaded in the LORE editor")
     # 5. undo all of the lorebook (entries first, then the lorebook)
-    panel.get_by_role("button", name="UNDO").last.click(); pg.wait_for_timeout(800)      # undo the tighten edit first
+    panel.get_by_role("button", name="UNDO").first.click(); pg.wait_for_timeout(800)     # newest reply is at the top now
     panel.get_by_role("button", name="UNDO ALL").first.click(); pg.wait_for_timeout(2000)
     ok(not any(p["project_name"] == "Helper Port" for p in requests.get(B + "/api/lore/projects").json()),
        "UNDO ALL removed the entries and then the lorebook")

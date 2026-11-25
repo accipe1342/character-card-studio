@@ -748,6 +748,10 @@ export async function setEntitySecrets(entityId, secrets) {
 export async function helperChat(body) {
   return _json(await _postJson("/api/helper/chat", body), "The helper could not answer");
 }
+/** What a helper run is doing right now: {step, of, message, tools, changes, elapsed} (or {waiting:true}). */
+export async function helperRun(runId) {
+  return _json(await fetch(`/api/helper/run/${runId}`), "Could not read the run");
+}
 export async function helperChats() {
   return _json(await fetch("/api/helper/chats"), "Could not load helper chats");
 }
@@ -755,6 +759,10 @@ export async function helperChatLoad(chatId) {
   const res = await fetch(`/api/helper/chat/${chatId}`);
   if (res.status === 404) { const e = new Error("That chat no longer exists"); e.notFound = true; throw e; }
   return _json(res, "Could not load the chat");      // anything else (server still starting): the caller retries
+}
+/** Forget a conversation. What it made (cards, entries) stays. */
+export async function helperChatDelete(chatId) {
+  return _json(await fetch(`/api/helper/chat/${chatId}`, { method: "DELETE" }), "Could not delete the chat");
 }
 export async function helperKeep(changeId) {
   return _json(await _postJson(`/api/helper/change/${changeId}/keep`, {}), "Could not keep the change");

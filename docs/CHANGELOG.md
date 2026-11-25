@@ -6,6 +6,87 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Changed
+- SCRIBE-01's CHANGES column is a receipt rather than an inbox. Each change reads as a sentence
+  ("Edited Slyphaes — Description · 1,240 words"), grouped under the reply that made it, with the newest
+  reply on top. The header says how many changes were made and that they are already saved, so nothing
+  looks like it is waiting for approval. OPEN/KEEP/UNDO became the words Open, Undo, Undo all and Clear;
+  Clear only hides a group, and anything undone collects in a PUT BACK EARLIER group at the bottom.
+- The tab row stays at the top of the window while you scroll, and the toolbar pins under it. Once the big title
+  has scrolled away (or the window is short), the tab row shows what is open.
+- One toolbar row instead of two: the wiki URL box sits beside the main actions, and provider and model are a
+  single chip (for example "NANOGPT · DEFAULT ▾") that opens the two pickers. Batch Generate moved into NEW ▾.
+- CHARACTER: Natural / Structured moved into the panel's header strip. The field list shows a filled or hollow
+  square and each field's size, with a bar of how the card's tokens split across fields. The card name and the
+  open field share one line. Regenerate Field and Save sit bottom right, with "VERSION n / m" and arrows when a
+  field has earlier versions. Regenerate Full Card moved to the bottom of the field list.
+- The portrait is the upload target: click it or drop an image on it. The preview panel is narrower.
+- A card with an attached lorebook shows a link to it under the card name in the page header.
+- LORE: one-line entry rows, move and delete shown on the selected or hovered row, and the entry type is a
+  dropdown beside the CONTENT / KEYS / SILLYTAVERN tabs.
+- Languages are one menu in the tab row. Token counts are dim text; the warning color only marks long fields.
+
+### Added
+- CHARACTER keys: J / K step through the field list, Ctrl+Enter runs Generate Card.
+- Ctrl+K is a command palette as well as a search: with the box empty it lists what the app can do (go to a
+  studio, open the library, show or hide SCRIBE-01, open the key sheet), Tab narrows the list to actions.
+- A key sheet: press ? anywhere, or the "? :: KEYS" hint in the footer, for every key the app listens for.
+- SCRIBE-01: a conversation can be deleted (the button beside NEW asks once). What the chat made stays.
+- SCRIBE-01's chat picker is the app's own menu in the console's colours, instead of a browser drop-down
+  with its white panel and blue highlight. The open chat is marked, and long titles are shortened.
+- Every drop-down in the app is that menu now (28 of them: entry type, position, greeting style, filters,
+  providers, presets and the rest). A list longer than twelve gets a filter box; arrow keys, Home / End and
+  typing a letter move through it, and the current value carries a tick.
+- SCRIBE-01 has her own entry in CONFIG -> Model presets, so the helper can run on a different model from
+  the studio you happen to be in. Without one she still follows the studio, as before.
+- Model presets say when they are not saved yet: a line beside SAVE PRESETS and a mark on the button, so a
+  model typed into a box and left there cannot look like it took effect.
+- SCRIBE-01 says what she is doing while you wait: which model she is asking, which step she is on, which
+  tool is running and how many changes so far, polled from the backend instead of a bare "working".
+- Each answer in the console carries a quiet line under it: the time, how long it took, tokens in and out,
+  the model that wrote it and the number of steps. Older chats show what was recorded; answers from
+  before this keep the time alone.
+- A pencil beside the card name in the editor, so it reads as a field rather than a heading.
+
+### Fixed
+- A menu inside a menu (the embedded lorebook inside EXPORT) closed the outer one on the first click.
+- A model that answers with nothing used to fail as "could not be parsed as JSON ... Raw:" with nothing
+  after it. The reply is now read from the reasoning field when a thinking model leaves the content empty,
+  a <think> block in the content is dropped before the JSON is read, and a genuinely empty answer says so:
+  which model, and whether it ran out of tokens before writing anything.
+- Drop-downs were cut off inside a panel. Every panel kept a finished entry animation filled forwards, and a
+  transform that stays live makes a stacking context, so a menu could not be drawn past its panel's edge.
+  Those animations now fill backwards, which looks the same and leaves the panel flat once it has played.
+- A menu with little room below it opens upwards instead, and caps its height to the space it has, so a
+  long list scrolls rather than running off the screen.
+- The secrets and advanced-settings panels start again from the open entry's data by key, so an edit in
+  one entry can no longer be carried into the next.
+- SCRIBE-01 left new cards half-made: no message examples and an empty Structured view. Both are now part of
+  making a card in the prompt, and the create_card result lists what is still empty so the helper fills it in
+  the same reply instead of stopping.
+- `npm run lint` passes again (62 errors, and 15 fewer warnings). Dead code removed (an unused export helper, a
+  write-only progress state and its two timers, five unused crawl settings, a stale delete-confirm state);
+  shared helpers moved out of component files so fast refresh works (`lib/wordDiff.js`, `lib/layoutGraph.js`,
+  `lib/loreEntries.js`, `shared/Divider.jsx`); the duplicate `addUrl` string in all three languages removed;
+  the critique heading is one component instead of a new one per render; the TEXT chapter marker is worked out
+  before rendering.
+- Nine effects that set state after rendering now do the work as the page renders instead, so panels no longer
+  render twice to catch up: the job timer counts from a timestamp, a menu's side is measured and set in one
+  pass, the relationship map lays out in a memo with only dragged nodes as state, and the panels that fetch by
+  id (chapters, mentions, links, trash) tag the answer with the id it belongs to rather than clearing first —
+  which also drops a late answer for an entry you have already moved away from.
+- Less motion for people whose system asks for it (prefers-reduced-motion).
+- The app opens in its own window (Edge or Chrome app mode) instead of a browser tab, with its own taskbar
+  icon, through `tools/open_app_window.ps1`. Falls back to a tab when neither is installed; `OPEN_AS=tab` in
+  `.env` turns it off.
+- `start.bat` and `setup.bat` are CRLF and plain ASCII (cmd.exe mis-parses LF-only batch files), and they run
+  `.venv\Scripts\python.exe` directly instead of `activate.bat`, whose baked-in path breaks if the project
+  folder is renamed. A failure now pauses with the message on screen instead of closing the window.
+
+---
+
 ## [2.6.0] - 2026-11-12
 
 ### Added

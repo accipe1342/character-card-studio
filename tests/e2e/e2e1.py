@@ -3,7 +3,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import json, re, time, zipfile, io
 from playwright.sync_api import sync_playwright
-from ui import menu, open_menu
+from ui import menu, open_menu, pick
 R = []
 def ok(c, n): R.append((c, n)); print(("PASS " if c else "FAIL ") + n)
 with sync_playwright() as p:
@@ -70,8 +70,7 @@ with sync_playwright() as p:
     pg.locator("button[title^='Redo just this chunk']").first.click(); pg.wait_for_timeout(3500)
     ok(True, "single-chunk redo ran")
     # recap: starting point after chunk 2, then edit text
-    sel = pg.locator("select").filter(has=pg.locator("option", has_text="the end of the text"))
-    sel.select_option(index=2); pg.wait_for_timeout(700)
+    pick(pg, "Roleplay starts after", r"^2\.", wait=700)
     recap_ta = pg.locator("textarea").filter(has_text="Kestrels press on").first
     ok(recap_ta.input_value().count("press on") == 2, f"recap stops at starting point: {recap_ta.input_value()[:80]!r}")
     pg.get_by_role("button", name="SAVE RECAP").click(); pg.wait_for_timeout(500)
@@ -95,9 +94,9 @@ with sync_playwright() as p:
         if pg.locator("text=Generated from the fic").count() or pg.locator("textarea", has_text="Generated from the fic").count(): break
     ok(pg.locator("textarea", has_text="Generated from the fic").count() >= 1 or pg.locator("text=Generated from the fic").count() >= 1, "card generated from the fic source")
     open_menu(pg, "EXPORT")
-    lsel = pg.locator("select").filter(has=pg.locator("option", has_text="No lorebook attached"))
-    opts = lsel.locator("option").all_inner_texts()
-    lsel.select_option(index=1); pg.wait_for_timeout(300)
+    pg.get_by_role("button", name=re.compile("^Embedded lorebook$", re.I)).first.click(); pg.wait_for_timeout(150)
+    opts = pg.locator("[role=menu]").last.locator("[role=menuitem]").all_inner_texts()
+    pg.locator("[role=menu]").last.locator("[role=menuitem]").nth(1).click(); pg.wait_for_timeout(300)
     with pg.expect_download() as dl2:
         pg.get_by_role("menu").locator("button", has_text=re.compile("Export Card JSON", re.I)).first.click()
     d2 = json.loads(open(dl2.value.path()).read())

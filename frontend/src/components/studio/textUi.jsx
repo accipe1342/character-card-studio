@@ -30,15 +30,3 @@ export const btnTool = {
 
 // Fast, non-thinking model per provider. Extraction makes many calls, so a "thinking" model is far too slow.
 export const DEFAULT_MODELS = { nanogpt: "deepseek/deepseek-v4.1-flash" };
-
-export function Divider({ label: text, style }) {
-  return (
-    <div className="signal-divider" style={style}>
-      <div className="signal-divider-mark signal-divider-mark-left" />
-      <div className="signal-divider-bar" />
-      <span className="signal-divider-label">{text}</span>
-      <div className="signal-divider-bar" />
-      <div className="signal-divider-mark signal-divider-mark-right" />
-    </div>
-  );
-}

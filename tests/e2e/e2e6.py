@@ -5,6 +5,7 @@ OUT = os.environ.get("E2E_OUT", os.path.join(os.path.dirname(os.path.abspath(__f
 os.makedirs(OUT, exist_ok=True)
 import re, json, requests
 from playwright.sync_api import sync_playwright
+from ui import pick
 B = "http://127.0.0.1:5173"
 R = []
 def ok(c, n): R.append(bool(c)); print(("PASS " if c else "FAIL ") + n)
@@ -28,7 +29,7 @@ with sync_playwright() as pw:
     pg.get_by_role("button", name=re.compile(r"^\s*TEXT\s*$", re.I)).first.click(); pg.wait_for_timeout(600)
     pg.locator("div", has_text=re.compile("^" + re.escape(proj["name"]))).first.click(); pg.wait_for_timeout(1200)
     # recap placement
-    pg.get_by_label("Where SillyTavern inserts the recap").select_option("depth"); pg.wait_for_timeout(500)
+    pick(pg, "Where SillyTavern inserts the recap", "at depth 4", wait=500)
     ok(requests.get(B + f"/api/text/project/{pid}/recap").json()["position"] == "depth", "recap placement saved")
     # add text
     n_chunks = len(requests.get(B + f"/api/text/project/{pid}").json()["chunks"])

@@ -25,8 +25,13 @@
  */
 
 import { useState, useEffect } from "react";
+import SignalMenu, { MenuItem } from "./shared/SignalMenu";
+import { useStudioContext } from "../lib/useStudioContext";
+
+const LANGS = [{ code: "en", label: "EN" }, { code: "ja", label: "日本語" }, { code: "zh", label: "中文" }];
 
 export default function TopNav({ mode, setMode, onLibrary, onSearch, lang, setLang, t = {} }) {
+  const ctx = useStudioContext(mode);
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem("signal-theme") === "dark"; } catch { return document.documentElement.getAttribute("data-theme") === "dark"; }
   });
@@ -67,7 +72,7 @@ export default function TopNav({ mode, setMode, onLibrary, onSearch, lang, setLa
   return (
     <>
     <div className="sui-staff" aria-hidden="true"><i /><b /><i /></div>
-    <div style={{ display: "flex", gap: 8, margin: "12px 0 0", alignItems: "center", flexWrap: "wrap" }}>
+    <div className="sui-navbar" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
       <button
         className={`signal-btn${mode === "character" ? " signal-btn-active" : ""}`}
         style={mode === "character" ? activeStyle : buttonStyle}
@@ -132,6 +137,9 @@ export default function TopNav({ mode, setMode, onLibrary, onSearch, lang, setLa
 
       <div style={{ flex: 1 }} />
 
+      {/* what is open, shown here once the big header has scrolled away (or the window is short) */}
+      {ctx?.label ? <span className="sui-nav-ctx" title={String(ctx.label)} data-label={String(ctx.label)} /> : null}
+
       {/* Search (Ctrl+K) */}
       {onSearch && (
         <button className="signal-btn" style={iconBtnStyle} onClick={onSearch} title={`${t.searchAll || "Search everything"} (Ctrl+K)`} aria-label={t.searchAll || "Search everything"}>
@@ -152,26 +160,13 @@ export default function TopNav({ mode, setMode, onLibrary, onSearch, lang, setLa
         {t.library || "LIBRARY"}
       </button>
 
-      {/* Language toggle */}
-      <div style={{ display: "flex", border: "1px solid var(--signal-border, #3a3a3a)" }}>
-        {[{code: "en", label: "EN"}, {code: "ja", label: "日本語"}, {code: "zh", label: "中文"}].map(({code, label}) => (
-          <button
-            key={code}
-            className={`signal-btn${lang === code ? " signal-btn-active" : ""}`}
-            onClick={() => setLang(code)}
-            style={{
-              padding: "10px 12px",
-              fontSize: 13,
-              fontWeight: 700,
-              letterSpacing: "0.04em",
-              border: "none",
-              borderRight: code !== "zh" ? "1px solid var(--signal-border, #3a3a3a)" : "none",
-            }}
-          >
-            {label}
-          </button>
+      {/* Language menu */}
+      <SignalMenu label={(LANGS.find((l) => l.code === lang) || LANGS[0]).label} align="right" width={150} title={t.language || "Language"}
+        style={{ padding: "9px 14px", letterSpacing: "0.12em", fontWeight: 700 }}>
+        {LANGS.map(({ code, label }) => (
+          <MenuItem key={code} onClick={() => setLang(code)}>{label}{lang === code ? "  ✓" : ""}</MenuItem>
         ))}
-      </div>
+      </SignalMenu>
 
       {/* Theme toggle */}
       <button

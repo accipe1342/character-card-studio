@@ -25,6 +25,7 @@ Routes
 
 import hashlib
 import json
+import time
 import re
 import uuid
 from pathlib import Path
@@ -32,6 +33,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 import database as D
+import generator as G
 import text_module as T
 from generator import _request, list_of, request_text, text_of, tidy_text
 
@@ -69,6 +71,12 @@ def init_helper_tables():
             label TEXT, before_json TEXT, after_json TEXT, status TEXT DEFAULT 'open',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP);
     """)
+    for migration in ("ALTER TABLE helper_messages ADD COLUMN meta_json TEXT",
+                      "ALTER TABLE helper_changes ADD COLUMN detail_json TEXT"):
+        try:
+            conn.execute(migration)
+        except Exception:
+            pass        # already there
     conn.commit()
     conn.close()
 
@@ -126,9 +134,38 @@ def _fp(state):
     return hashlib.sha256(json.dumps(s, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def record(chat_id, kind, target_id, label, before, after):
-    return _q("INSERT INTO helper_changes (chat_id, kind, target_id, label, before_json, after_json) VALUES (?,?,?,?,?,?)",
-              (chat_id, kind, target_id, label, json.dumps(before, default=str), json.dumps(after, default=str)),
+FIELD_WORDS = {          # what a field is called in the editor, so a change reads the same way
+    "description": "Description", "personality": "Personality", "scenario": "Scenario", "first_mes": "First message",
+    "mes_example": "Message examples", "tags": "Tags", "system_prompt": "System prompt", "depth_prompt": "Character's note",
+    "post_history_instructions": "Post-history instructions", "alternate_greetings": "Alternate greetings",
+    "structured_profile": "Structured profile", "creator_notes": "Creator notes", "name": "Name",
+    "title": "Title", "content": "Content", "keywords": "Keywords", "entry_type": "Type", "comment": "Note",
+}
+
+
+def field_word(f):
+    return FIELD_WORDS.get(f, str(f).replace("_", " ").capitalize())
+
+
+def field_size(value):
+    """How big a field became, in the unit that suits it: words for prose, a count for a list or a profile."""
+    if isinstance(value, dict):
+        filled = sum(1 for v in value.values() if v not in (None, "", [], {}))
+        return f"{filled} of {len(value)} fields" if value else ""
+    if isinstance(value, list):
+        return f"{len(value)} item{'' if len(value) == 1 else 's'}" if value else "emptied"
+    text = str(value or "").strip()
+    if not text:
+        return "emptied"
+    words = len(text.split())
+    return f"{words:,} word{'' if words == 1 else 's'}" if words > 1 else "1 word"
+
+
+def record(chat_id, kind, target_id, label, before, after, detail=None):
+    return _q("INSERT INTO helper_changes (chat_id, kind, target_id, label, before_json, after_json, detail_json) "
+              "VALUES (?,?,?,?,?,?,?)",
+              (chat_id, kind, target_id, label, json.dumps(before, default=str), json.dumps(after, default=str),
+               json.dumps(detail or {}, default=str)),
               commit=True)
 
 
@@ -198,6 +235,17 @@ def _clean_card_fields(fields, current=None):
     return out
 
 
+CORE_FIELDS = ("description", "personality", "scenario", "first_mes", "mes_example")
+
+
+def _still_empty(state):
+    """Which parts of a card a reader would notice are missing. Returned to the model so it finishes the job."""
+    out = [k for k in CORE_FIELDS if not str((state or {}).get(k) or "").strip()]
+    if not ((state or {}).get("structured_profile") or {}):
+        out.append("structured_profile")
+    return out
+
+
 def t_create_card(args, ctx):
     fields = _clean_card_fields(args.get("fields") or {k: v for k, v in args.items() if k != "fields"})
     name = fields.get("name") or "New Character"
@@ -207,9 +255,18 @@ def t_create_card(args, ctx):
             "tags": [], "structured_profile": {}, "alternate_greetings": [], "provider": "helper", "model": "", **fields}
     cid = D.create_or_update_card(sid, card, force_new=True)
     after = card_state(cid)
-    ctx["changes"].append(record(ctx["chat_id"], "card", cid, f"New card: {name}", None, after))
+    ctx["changes"].append(record(ctx["chat_id"], "card", cid, f"New card: {name}", None, after,
+                                 {"verb": "Made the card", "subject": name}))
     ctx["touched"].append({"kind": "card", "id": cid})
-    return {"card_id": cid, "created": name}
+    out = {"card_id": cid, "created": name}
+    todo = _still_empty(after)
+    if todo:
+        out["still_empty"] = todo
+        out["next"] = ("Fill these in your next step with one update_card call: " + ", ".join(todo)
+                       + ". mes_example: 2-4 <START> blocks of sample dialogue. structured_profile: at least "
+                         "appearance, personality_traits, speech, likes, dislikes, motivations, flaws, backstory, "
+                         "age, species and job_occupation, taken from the prose you just wrote.")
+    return out
 
 
 def t_update_card(args, ctx):
@@ -224,9 +281,16 @@ def t_update_card(args, ctx):
     changed = [k for k in fields if before.get(k) != after.get(k)]
     if changed:
         label = f"{after.get('name') or 'Card'}: " + ", ".join(changed)
-        ctx["changes"].append(record(ctx["chat_id"], "card", cid, label, before, after))
+        ctx["changes"].append(record(ctx["chat_id"], "card", cid, label, before, after,
+                                     {"verb": "Edited", "subject": after.get("name") or "the card",
+                                      "parts": [{"field": field_word(k), "size": field_size(after.get(k)),
+                                                 "added": not str(before.get(k) or "").strip()} for k in changed]}))
         ctx["touched"].append({"kind": "card", "id": cid})
-    return {"card_id": cid, "changed": changed or "nothing (same values)"}
+    out = {"card_id": cid, "changed": changed or "nothing (same values)"}
+    todo = _still_empty(after)
+    if todo:
+        out["still_empty"] = todo
+    return out
 
 
 def t_list_lore_projects(args, ctx):
@@ -256,7 +320,8 @@ def t_get_lore_entry(args, ctx):
 def t_create_lore_project(args, ctx):
     name = text_of(args.get("name")) or "New Lorebook"
     pid = D.create_lore_project(name[:120])
-    ctx["changes"].append(record(ctx["chat_id"], "project", pid, f"New lorebook: {name}", None, project_state(pid)))
+    ctx["changes"].append(record(ctx["chat_id"], "project", pid, f"New lorebook: {name}", None, project_state(pid),
+                                 {"verb": "Made the lorebook", "subject": name}))
     ctx["touched"].append({"kind": "project", "id": pid})
     return {"project_id": pid, "created": name}
 
@@ -296,7 +361,9 @@ def t_add_lore_entry(args, ctx):
     wi = {k: f[k] for k in ("constant", "secondary_keys", "char_filter") if k in f}
     if wi:
         D.set_lore_wi_fields(lid, wi)
-    ctx["changes"].append(record(ctx["chat_id"], "entry", lid, f"New entry: {f['title']}", None, entry_state(lid)))
+    ctx["changes"].append(record(ctx["chat_id"], "entry", lid, f"New entry: {f['title']}", None, entry_state(lid),
+                                 {"verb": "Added the entry", "subject": f["title"],
+                                  "parts": [{"field": "Content", "size": field_size(f.get("content"))}]}))
     ctx["touched"].append({"kind": "entry", "id": lid, "project_id": pid})
     return {"entry_id": lid, "created": f["title"]}
 
@@ -327,7 +394,10 @@ def t_update_lore_entry(args, ctx):
     changed = [k for k in f if before.get(k if k not in ("keywords", "secondary_keys", "char_filter") else f"{k}_json")
                != after.get(k if k not in ("keywords", "secondary_keys", "char_filter") else f"{k}_json")]
     if changed:
-        ctx["changes"].append(record(ctx["chat_id"], "entry", lid, f"{after['title']}: " + ", ".join(changed), before, after))
+        ctx["changes"].append(record(ctx["chat_id"], "entry", lid, f"{after['title']}: " + ", ".join(changed), before, after,
+                                     {"verb": "Edited the entry", "subject": after["title"],
+                                      "parts": [{"field": field_word(k), "size": field_size(after.get(k)),
+                                                 "added": not str(before.get(k) or "").strip()} for k in changed]}))
         ctx["touched"].append({"kind": "entry", "id": lid, "project_id": after["crawl_id"]})
     return {"entry_id": lid, "changed": changed or "nothing (same values)"}
 
@@ -338,7 +408,8 @@ def t_delete_lore_entry(args, ctx):
     if not before or before.get("deleted"):
         raise ToolError("No such entry (or it is already in the trash)")
     _q("UPDATE lore_entries SET deleted=1, updated_at=CURRENT_TIMESTAMP WHERE id=?", (lid,), commit=True)
-    ctx["changes"].append(record(ctx["chat_id"], "entry", lid, f"To the LORE trash: {before['title']}", before, entry_state(lid)))
+    ctx["changes"].append(record(ctx["chat_id"], "entry", lid, f"To the LORE trash: {before['title']}", before,
+                                 entry_state(lid), {"verb": "Trashed the entry", "subject": before["title"]}))
     ctx["touched"].append({"kind": "entry", "id": lid, "project_id": before["crawl_id"]})
     return {"entry_id": lid, "trashed": before["title"]}
 
@@ -388,7 +459,7 @@ TOOLS = {
     "get_text_entity": (t_get_text_entity, "{text_entity_id}", "one character/place from a story, in full"),
     # write (applied at once; the user can undo)
     "create_card": (t_create_card, "{fields: {name, description, personality, scenario, first_mes, mes_example, tags, "
-                                   "alternate_greetings, structured_profile: {appearance: [], personality_traits: [], speech: [], likes: [], ...}}}", "new character card (always fill structured_profile too)"),
+                                   "alternate_greetings, structured_profile: {appearance: [], personality_traits: [], speech: [], likes: [], ...}}}", "new character card (fill mes_example and structured_profile in the same reply)"),
     "update_card": (t_update_card, "{card_id, fields: {...only the fields to change}}", "edit a card"),
     "create_lore_project": (t_create_lore_project, "{name}", "new empty lorebook"),
     "add_lore_entry": (t_add_lore_entry, "{project_id, title, entry_type, keywords, content, constant?, "
@@ -443,8 +514,10 @@ KNOWLEDGE = """WHAT YOU KNOW (use it when explaining or writing):
   chat's format), mes_example (sample dialogue, blocks start with <START>; {{char}} and {{user}} are placeholders),
   alternate_greetings (other openings), tags, system_prompt / post_history (rarely needed), depth_prompt (the
   Character's Note, a short reminder inserted near the end of the context).
-- structured_profile is what the studio's Structured view shows. Whenever you create a card, fill it too, from the
-  same facts as the prose (never contradict it). Lists (arrays of short phrases): appearance, clothing, accessories,
+- structured_profile is what the studio's Structured view shows. Every card you create gets one, filled in the
+  same reply, from the same facts as the prose (never contradict it). A card whose Structured view is empty is
+  half-made: at least appearance, personality_traits, speech, likes, dislikes, motivations, flaws, backstory, age,
+  species and job_occupation. Lists (arrays of short phrases): appearance, clothing, accessories,
   personality_traits, speech (how they talk, sample phrases), mannerisms, likes, dislikes, loves, hates,
   motivations, flaws, relationships ("Name - relation"). Text: age, species, gender, pronouns, job_occupation,
   backstory (2-4 sentences), relationship_to_user, with_strangers, with_close (how they act with people they don't
@@ -454,8 +527,9 @@ KNOWLEDGE = """WHAT YOU KNOW (use it when explaining or writing):
   the description is plain prose in short paragraphs, in this order: an optional one-line quote from the character;
   overall description (who they are now); backstory; personality, including how they speak with one or two sample
   lines of dialogue; likes, dislikes and relationships; physical appearance. Optional XML-style tags around the
-  sections (<backstory>...</backstory>) are fine. No PList or W++ lists. mes_example is optional: speech samples
-  inside the personality paragraph usually do the job.
+  sections (<backstory>...</backstory>) are fine. No PList or W++ lists. Every card you create also gets
+  mes_example: 2-4 blocks, each starting with <START> on its own line, showing how {{char}} talks to {{user}} -
+  different moods, a few lines each. Leave it out only if the user says they do not want examples.
 - Write in plain prose: actions as plain narration, dialogue in quotation marks; avoid *asterisk actions* unless the
   user's chat style uses them. Show personality through specifics instead of adjective lists. Avoid stock phrases
   ("a shiver ran down her spine", "barely above a whisper", "eyes sparkling with mischief") and em-dash chains.
@@ -584,8 +658,38 @@ def _short(obj):
     return s if len(s) <= RESULT_CHARS else s[:RESULT_CHARS] + "...(cut)"
 
 
+MIN_REPLY_TOKENS = 8192      # an answer here can hold a whole card; 4096 cuts one in half
+
+
 def ask_model(provider, model, system, transcript):
-    return request_text(provider, model, transcript, system, "say", call=lambda *a, **k: _request(*a, **k))
+    # never below MIN_REPLY_TOKENS, but a larger setting in CONFIG still wins
+    room = max(MIN_REPLY_TOKENS, int((G.load_runtime_config() or {}).get("max_tokens") or 0))
+    return request_text(provider, model, transcript, system, "say", max_tokens=room,
+                        call=lambda *a, **k: _request(*a, **k))
+
+
+# ── what a run is doing right now, so the console can say more than "working" ──────────────────────────
+_RUNS = {}          # run_id (made by the console) -> {step, of, message, tools, changes, started}
+_RUNS_MAX = 40
+
+
+def _run_set(run_id, **kw):
+    if not run_id:
+        return
+    r = _RUNS.setdefault(run_id, {"started": time.time(), "step": 0, "of": MAX_STEPS, "message": "", "tools": [],
+                                  "changes": 0, "done": False})
+    r.update(kw)
+    if len(_RUNS) > _RUNS_MAX:      # keep the newest; a run is only interesting while its request is open
+        for k in sorted(_RUNS, key=lambda k2: _RUNS[k2]["started"])[:len(_RUNS) - _RUNS_MAX]:
+            _RUNS.pop(k, None)
+
+
+@bp.get("/api/helper/run/<run_id>")
+def api_helper_run(run_id):
+    r = _RUNS.get(run_id)
+    if not r:
+        return jsonify({"waiting": True})
+    return jsonify({**r, "elapsed": round(time.time() - r["started"], 1)})
 
 
 @bp.post("/api/helper/chat")
@@ -611,18 +715,35 @@ def api_helper_chat():
     lines = [f"{'USER' if m['role'] == 'user' else 'YOU'}: {m['content']}" for m in past]
     system = system_prompt(context_line(ctxd), "\n".join(m["content"] for m in past[-3:]))   # this message + the last two
     ctx = {"chat_id": chat_id, "changes": [], "touched": []}
+    run_id = str(d.get("run_id") or "")[:64]
+    t_start = time.time()
+    spend = {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0, "provider": provider, "model": model}
+    _run_set(run_id, message=f"asking {provider}/{model or 'the default model'}", step=1)
     says, steps, log = [], 0, []
     transcript = "CONVERSATION:\n" + "\n".join(lines)
     try:
         while steps < MAX_STEPS:
             steps += 1
+            _run_set(run_id, step=steps, message=f"asking {provider}/{model or 'the default model'}")
             res = ask_model(provider, model, system, transcript)
+            used = G.last_call_usage()          # what that one call cost
+            if used:
+                spend["prompt_tokens"] += used.get("prompt_tokens", 0)
+                spend["completion_tokens"] += used.get("completion_tokens", 0)
+                spend["calls"] += 1
+                spend["provider"], spend["model"] = used.get("provider") or provider, used.get("model") or model
+                if used.get("finish_reason") == "length":
+                    spend["cut_off"] = True
             say, acts = _parse(res)
+            if acts:
+                names = ", ".join(str(a.get("tool") or "?") for a in acts[:MAX_ACTIONS])
+                _run_set(run_id, message=f"running {names}", tools=[str(a.get('tool') or '?') for a in acts])
             if say:
                 says.append(say)
             if not acts:
                 break
             results = [run_action(a, ctx) for a in acts]
+            _run_set(run_id, changes=len(ctx["changes"]), message="reading what came back")
             log += [{"tool": r.get("tool"), "ok": bool(r.get("ok")), "error": r.get("error")} for r in results]
             transcript += (f"\nYOU (step {steps}): {json.dumps({'say': say, 'actions': acts}, ensure_ascii=False)[:4000]}"
                            f"\nRESULTS (step {steps}):\n" + "\n".join(_short(r) for r in results)
@@ -632,15 +753,24 @@ def api_helper_chat():
     except Exception as e:
         err = f"The model call failed: {str(e)[:300]}"
         if not says and not ctx["changes"]:
+            _run_set(run_id, done=True, message=err)
             return jsonify({"error": err, "chat_id": chat_id}), 502
         says.append(f"Report: stopped early. {err}")
+    _run_set(run_id, done=True, message="writing the reply", changes=len(ctx["changes"]))
+    if spend.get("cut_off"):      # a half-written answer explains a half-written card
+        says.append("Report: the model ran out of room mid-answer, so part of this may be unfinished. Raise "
+                    "'Max tokens' in CONFIG, or use a model that does not spend its budget thinking.")
     reply = "\n\n".join(dict.fromkeys(s for s in says if s)) or "Report: done."
-    mid = _q("INSERT INTO helper_messages (chat_id, role, content) VALUES (?, 'helper', ?)", (chat_id, reply), commit=True)
+    meta = {**spend, "seconds": round(time.time() - t_start, 1), "steps": steps, "changes": len(ctx["changes"])}
+    mid = _q("INSERT INTO helper_messages (chat_id, role, content, meta_json) VALUES (?, 'helper', ?, ?)",
+             (chat_id, reply, json.dumps(meta)), commit=True)
     if ctx["changes"]:
         _q(f"UPDATE helper_changes SET message_id=? WHERE id IN ({','.join('?' * len(ctx['changes']))})",
            [mid] + ctx["changes"], commit=True)
     _q("UPDATE helper_chats SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (chat_id,), commit=True)
-    return jsonify({"chat_id": chat_id, "message_id": mid, "reply": reply, "steps": steps, "actions": log,
+    row = _q("SELECT created_at FROM helper_messages WHERE id=?", (mid,), one=True) or {}
+    return jsonify({"chat_id": chat_id, "message_id": mid, "reply": reply, "steps": steps, "actions": log, "meta": meta,
+                    "created_at": row.get("created_at"),
                     "changes": [change_view(c) for c in _changes(ids=ctx["changes"])], "touched": ctx["touched"]})
 
 
@@ -655,8 +785,13 @@ def _changes(chat_id=None, ids=None):
 def change_view(c):
     after = json.loads(c["after_json"] or "null")
     project_id = (after or {}).get("crawl_id") if c["kind"] == "entry" else c["target_id"] if c["kind"] == "project" else None
+    try:
+        detail = json.loads(c["detail_json"] or "null") if "detail_json" in c.keys() else None
+    except (TypeError, ValueError):
+        detail = None
     return {"id": c["id"], "kind": c["kind"], "target_id": c["target_id"], "label": c["label"], "status": c["status"],
-            "message_id": c["message_id"], "created": c["before_json"] in (None, "null"), "project_id": project_id}
+            "message_id": c["message_id"], "created": c["before_json"] in (None, "null"), "project_id": project_id,
+            "detail": detail or None}
 
 
 # ── SCRIBE-01 as a SillyTavern character card (roleplay with her outside the app; the glossary is her lorebook) ──
@@ -738,8 +873,24 @@ def api_helper_chats():
 def api_helper_chat_get(chat_id):
     if not _q("SELECT id FROM helper_chats WHERE id=?", (chat_id,), one=True):
         return jsonify({"error": "Not found"}), 404
-    msgs = _q("SELECT id, role, content, created_at FROM helper_messages WHERE chat_id=? ORDER BY id", (chat_id,))
+    msgs = _q("SELECT id, role, content, created_at, meta_json FROM helper_messages WHERE chat_id=? ORDER BY id", (chat_id,))
+    for m in msgs:                       # what that answer cost, when it was recorded
+        try:
+            m["meta"] = json.loads(m.pop("meta_json") or "null")
+        except (TypeError, ValueError):
+            m["meta"] = None
     return jsonify({"chat_id": chat_id, "messages": msgs, "changes": [change_view(c) for c in _changes(chat_id)]})
+
+
+@bp.delete("/api/helper/chat/<int:chat_id>")
+def api_helper_chat_delete(chat_id):
+    """Forget a conversation: its messages and its change list. Cards and entries it made stay as they are."""
+    if not _q("SELECT id FROM helper_chats WHERE id=?", (chat_id,), one=True):
+        return jsonify({"error": "Not found"}), 404
+    _q("DELETE FROM helper_changes WHERE chat_id=?", (chat_id,), commit=True)
+    _q("DELETE FROM helper_messages WHERE chat_id=?", (chat_id,), commit=True)
+    _q("DELETE FROM helper_chats WHERE id=?", (chat_id,), commit=True)
+    return jsonify({"ok": True, "deleted": chat_id})
 
 
 @bp.post("/api/helper/change/<int:change_id>/keep")
