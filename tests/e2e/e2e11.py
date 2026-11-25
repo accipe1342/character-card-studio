@@ -69,7 +69,7 @@ with sync_playwright() as pw:
     ok("Docks. Busy all night." in vals, "the open entry reloaded in the LORE editor")
     # 5. undo all of the lorebook (entries first, then the lorebook)
     panel.get_by_role("button", name="UNDO").first.click(); pg.wait_for_timeout(800)     # newest reply is at the top now
-    panel.get_by_role("button", name="UNDO ALL").first.click(); pg.wait_for_timeout(2000)
+    panel.get_by_role("button", name="UNDO ALL").first.click(); pg.wait_for_timeout(3500)   # two deletes, one after the other
     ok(not any(p["project_name"] == "Helper Port" for p in requests.get(B + "/api/lore/projects").json()),
        "UNDO ALL removed the entries and then the lorebook")
     # 6. a reload keeps the panel open with the same chat

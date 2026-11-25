@@ -44,15 +44,16 @@ const STUDIO_NAME = { character: "CHARACTER", lore: "LORE", text: "TEXT" };
 const small = {};                           // size and look come from .scribe-btn (same in both themes)
 
 /** One change, as a sentence. The work is already saved, so the only real action is putting it back. */
-function ChangeRow({ c, onUndo, onOpen, busy, dim, red, ink }) {
+function ChangeRow({ c, onUndo, onOpen, busy, dim, red, ink, at = 0 }) {
   const d = c.detail || null;
   const parts = (d?.parts || []).filter((p) => p.field);
   const canOpen = c.status !== "undone" && onOpen && (c.kind !== "entry" || c.project_id);
   const act = { display: "inline-flex", alignItems: "center", padding: "2px 8px", font: "400 11px inherit",
     letterSpacing: "0.1em", border: `1px solid ${dim}`, background: "none", cursor: "pointer" };
   return (
-    <div role="group" aria-label={`Change: ${c.label}`}
-      style={{ display: "flex", flexWrap: "wrap", gap: "6px 9px", alignItems: "center", padding: "8px", fontSize: 12.5,
+    <div role="group" aria-label={`Change: ${c.label}`} className="signal-row-in"
+      style={{ animationDelay: `${Math.min(at, 4) * 60}ms`,            // stagger the first five, then all at once
+        display: "flex", flexWrap: "wrap", gap: "6px 9px", alignItems: "center", padding: "8px", fontSize: 12.5,
         borderBottom: "1px solid rgba(218,214,195,0.12)", opacity: c.status === "undone" ? 0.6 : 1 }}>
       <span aria-hidden="true" style={{ width: 8, height: 8, flex: "none",
         background: c.created ? ink : "transparent", border: c.created ? "none" : `1px solid ${ink}`, boxSizing: "border-box" }} />
@@ -401,7 +402,7 @@ export default function HelperPanel({ studio, onOpen }) {
                     </>
                   )}
                 </div>
-                {list.map((c) => <ChangeRow key={c.id} c={c} onUndo={undo} onOpen={onOpen} busy={busy} dim={DIM} red={red} ink={INK} />)}
+                {list.map((c, i) => <ChangeRow key={c.id} at={i} c={c} onUndo={undo} onOpen={onOpen} busy={busy} dim={DIM} red={red} ink={INK} />)}
               </div>
             );
           })}

@@ -37,6 +37,7 @@ import { LANGUAGES, useStrings } from "./lib/i18n";
 import ConfigPage from "./components/ConfigPage";
 import TopNav from "./components/TopNav";
 import CharacterStudio from "./components/studio/CharacterStudio";
+import SetupGate from "./components/SetupGate";
 import LoreStudio from "./components/studio/LoreStudio";
 import TextStudio from "./components/studio/TextStudio";
 import SearchModal from "./components/SearchModal";
@@ -477,6 +478,9 @@ export default function App() {
           t={t}
         />
         <StudioHeader mode={mode} t={t} onOpenLink={(l) => { setFocus({ kind: "lore", project_id: l.project_id, id: null }); goTo("lore"); }} />
+
+        {/* first run: say no model is connected before a Generate button fails with a model error */}
+        {mode !== "config" && <SetupGate onOpenConfig={() => setMode("config")} />}
 
         <div key={mode} className={modeDir === "right" ? "signal-mode-enter" : "signal-mode-enter-left"} style={{ display: "contents" }}>
         {mode === "config" ? (

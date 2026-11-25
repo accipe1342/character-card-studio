@@ -46,6 +46,8 @@ HOW TO EXTEND
 from collections import deque
 from urllib.parse import urljoin, urlparse, urldefrag, unquote
 
+import time
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -176,14 +178,17 @@ def score_link(url: str, anchor_text: str = "") -> int:
     return score
 
 
+CRAWL_DELAY = 0.5                    # seconds between pages
+_SESSION = requests.Session()        # one session for the whole crawl: a wiki hands out a clearance
+                                     # cookie on the first page and expects it back on the next
+
+
 def fetch_html(url: str, timeout: int = 20) -> str:
-    r = requests.get(
-        url,
-        timeout=timeout,
-        headers={"User-Agent": "Mozilla/5.0"},
-    )
-    r.raise_for_status()
-    return r.text
+    """Same headers, back-off and session as the scraper. A lone "Mozilla/5.0" with no Accept
+    headers, from a new connection each time, is what wikis turn away with a 403."""
+    from scraper import _get          # local import: the crawler is imported before scraper in some paths
+
+    return _get(_SESSION, url, timeout=timeout).text
 
 
 def crawl_worldbook(seed_url: str, max_pages: int = 10, max_depth: int = 1) -> list[dict]:
@@ -215,6 +220,8 @@ def crawl_worldbook(seed_url: str, max_pages: int = 10, max_depth: int = 1) -> l
             if depth >= max_depth:
                 continue
 
+            if results:                  # not before the first page
+                time.sleep(CRAWL_DELAY)
             html = fetch_html(url)
             soup = BeautifulSoup(html, "html.parser")
 

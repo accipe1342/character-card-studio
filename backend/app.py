@@ -134,7 +134,7 @@ from generator import (
 )
 from preview import (build_export_card_json, build_export_card_v3, format_structured_profile_text, normalise_lore_items,
                      character_book_from_items, world_info_book)
-from scraper import scrape_url
+from scraper import scrape_url, WikiBlocked
 import threading
 import uuid
 
@@ -873,6 +873,8 @@ def api_scrape():
         source_id = save_source(source)
 
         return jsonify({"source_id": source_id, "source": source})
+    except WikiBlocked as e:
+        return jsonify({"error": str(e)}), 400          # the wiki refused us; nothing crashed here
     except Exception as e:
         print("SCRAPE ERROR:", repr(e))
         return jsonify({"error": str(e)}), 500
@@ -1444,6 +1446,47 @@ MASK = "\u2022\u2022\u2022\u2022"   # "••••": a saved secret the page ne
 
 def _is_secret(key):
     return key.endswith("_KEY") or "TOKEN" in key or "SECRET" in key or "PASSWORD" in key
+
+
+@app.get("/api/setup/status")
+def api_setup_status():
+    """Is the app usable yet? A first run has no key and no local server, and without one every
+    Generate button fails with a model error. The UI asks this before it lets someone start."""
+    import requests as req
+    providers, missing = [], []
+    if os.getenv("NANOGPT_API_KEY", "").strip():
+        providers.append({"id": "nanogpt", "label": "NanoGPT"})
+    if os.getenv("OPENROUTER_API_KEY", "").strip():
+        providers.append({"id": "openrouter", "label": "OpenRouter"})
+    local_url = os.getenv("LOCAL_OPENAI_BASE_URL", "").strip().rstrip("/")
+    local = {"configured": bool(local_url), "url": local_url, "reachable": False, "models": 0}
+    if local_url:
+        try:
+            r = req.get(f"{local_url}/models", timeout=2,
+                        headers={"Authorization": f"Bearer {os.getenv('LOCAL_API_KEY', 'local') or 'local'}"})
+            if r.ok:
+                body = r.json()
+                rows = body.get("data") if isinstance(body, dict) else body
+                local["reachable"] = True
+                local["models"] = len(rows or [])
+                providers.append({"id": "local", "label": "Local server"})
+        except Exception:
+            pass                                   # not running is the normal case, not an error
+
+    if not providers:
+        missing.append({
+            "id": "model",
+            "label": "No model connected",
+            "fix": "Add a NanoGPT or OpenRouter key in CONFIG -> API Keys, or start a local server "
+                   "(LM Studio, Ollama, KoboldCPP) and set its address.",
+        })
+    return jsonify({
+        "ready": not missing,
+        "providers": providers,
+        "local": local,
+        "missing": missing,
+        "sillytavern_url": os.getenv("ST_URL", "").strip(),     # optional: never blocks a first run
+    })
 
 
 @app.get("/api/config/env")

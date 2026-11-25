@@ -54,13 +54,29 @@ HOW TO EXTEND
 """
 
 import re
+import time
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+APP_URL = "https://github.com/accipe1342/character-card-studio"
+
+
+def _app_version() -> str:
+    """Read the version from package.json rather than keeping a fourth copy of it here."""
+    try:
+        import json
+        from pathlib import Path
+        pkg = Path(__file__).resolve().parent.parent / "frontend" / "package.json"
+        return json.loads(pkg.read_text(encoding="utf-8")).get("version") or "dev"
+    except Exception:
+        return "dev"          # a packaged build may ship no package.json
+
+
+APP_VERSION = _app_version()
 
 SECTION_ALIASES = {
     "appearance": [
@@ -682,6 +698,63 @@ def parse_page(html: str, fallback_title: Optional[str] = None, url: str = "") -
     }
 
 
+class WikiBlocked(RuntimeError):
+    """The wiki refused us, rather than the page being missing or the network being down."""
+
+
+def _headers(api: bool = False) -> Dict[str, str]:
+    """A browser sends more than a User-Agent. A lone UA string with no Accept headers is the
+    shape most edge filters treat as a bot, which is where the 403s come from."""
+    h = {
+        "User-Agent": USER_AGENT,
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate",      # no brotli decoder in requirements: never advertise br
+    }
+    if api:
+        # MediaWiki asks API clients to say who they are; it also keeps us out of the generic bucket.
+        h["Accept"] = "application/json,*/*;q=0.8"
+        h["Api-User-Agent"] = f"CharacterCardStudio/{APP_VERSION} (+{APP_URL})"
+    else:
+        h["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        h["Sec-Fetch-Dest"] = "document"
+        h["Sec-Fetch-Mode"] = "navigate"
+        h["Sec-Fetch-Site"] = "none"
+        h["Upgrade-Insecure-Requests"] = "1"
+    return h
+
+
+def _get(sess: requests.Session, url: str, *, params=None, api: bool = False, timeout: int = 30):
+    """One GET, with a short polite back-off. A refusal is usually rate-based and clears on its own;
+    we try twice more and then say so plainly instead of raising a bare HTTPError."""
+    host = urlparse(url).netloc or url
+    path = urlparse(url).path or "/"
+    last = None
+    for attempt in range(3):
+        r = sess.get(url, params=params, headers=_headers(api=api), timeout=timeout)
+        if r.status_code not in (403, 429, 503):
+            r.raise_for_status()
+            return r
+        last = r
+        # which of the three refusals this is decides what can be done about it, and only the
+        # host's own headers say: a managed challenge needs a browser, a rate rule clears itself.
+        marks = " ".join(f"{k}={r.headers[k]}" for k in ("server", "cf-ray", "cf-mitigated", "retry-after")
+                         if r.headers.get(k))
+        if attempt == 0:
+            print(f"[SCRAPER] {host} refused GET {path} -> {r.status_code}")
+            if marks:
+                print(f"          {marks}")
+        if attempt < 2:
+            wait = float(r.headers.get("Retry-After") or (1.5 * (attempt + 1)))
+            print(f"          retry {attempt + 1} of 2 in {wait:.1f}s")
+            time.sleep(min(wait, 5.0))
+    print(f"[SCRAPER] {host} refused GET {path} -> {last.status_code}  (gave up after 3 tries)")
+    raise WikiBlocked(
+        f"{host} refused the request ({last.status_code}). The wiki is turning away automated "
+        "fetches at the moment - wait a minute and try again, or open the page and paste its text "
+        "into TEXT instead."
+    )
+
+
 def fetch_via_mediawiki_api(wiki_base: str, page_name: str, session: Optional[requests.Session] = None) -> Tuple[str, str]:
     sess = session or requests.Session()
     params = {
@@ -691,9 +764,7 @@ def fetch_via_mediawiki_api(wiki_base: str, page_name: str, session: Optional[re
         "format": "json",
         "formatversion": 2,
     }
-    headers = {"User-Agent": USER_AGENT}
-    response = sess.get(f"{wiki_base.rstrip('/')}/api.php", params=params, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _get(sess, f"{wiki_base.rstrip('/')}/api.php", params=params, api=True)
     data = response.json()
     title = data["parse"]["title"]
     html = data["parse"]["text"]
@@ -702,9 +773,7 @@ def fetch_via_mediawiki_api(wiki_base: str, page_name: str, session: Optional[re
 
 def fetch_generic_page(url: str, session: Optional[requests.Session] = None) -> Tuple[str, str]:
     sess = session or requests.Session()
-    headers = {"User-Agent": USER_AGENT}
-    response = sess.get(url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _get(sess, url)
     html = response.text
     soup = BeautifulSoup(html, "html.parser")
     title = text_from_node(soup.select_one("h1") or soup.title or soup)
@@ -752,6 +821,8 @@ def scrape_url(url: str, session: Optional[requests.Session] = None) -> Dict[str
         page_name = fandom_match.group(2).replace("_", " ")
         try:
             return scrape_fandom_page(wiki_base, page_name, session=session)
+        except WikiBlocked:
+            raise                     # the same edge serves /wiki/ too; asking again is just hammering
         except Exception as e:
             print(f"[SCRAPER] Fandom API failed for {url!r}: {e} — falling back to generic fetch")
 

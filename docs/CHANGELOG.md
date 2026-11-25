@@ -8,6 +8,39 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-11-24
+
+### Added
+- First run confirms before it leaves: CONNECT shows a moving bar while the check runs, then the panel
+  reads CONNECTED with the providers that answered and collapses away. A new change in SCRIBE-01's list
+  slides in, the first five staggered. Both are off under prefers-reduced-motion, and both animations fill
+  backwards, so no element is left holding a transform (which is what trapped drop-downs inside panels).
+- First run says what is missing instead of failing at the first Generate. A new `GET /api/setup/status`
+  reports whether any model is reachable (a NanoGPT or OpenRouter key, or a local server that answers),
+  and until one is, the studios show a FIRST RUN panel: pick a provider, paste a key or give the local
+  address, press CONNECT, and the panel goes. "Skip for now" dismisses it. A returning install never sees it.
+
+### Fixed
+- "403 Forbidden" when scraping a wiki. The fetch sent a browser User-Agent and nothing else, which is
+  the shape edge filters treat as a bot. Requests now carry the headers a browser actually sends, the
+  MediaWiki call identifies the app in `Api-User-Agent`, and a refusal is retried twice with a short
+  back-off. If it still will not have us, the message says which host refused, that it is turning away
+  automated fetches, and to wait or paste the text instead - rather than a raw 500. A refusal is not
+  retried on the article page afterwards: the same edge serves both, so asking again was six requests
+  to a host that had already said no. The console prints what the host said (`server`, `cf-ray`,
+  `cf-mitigated`), which is what tells a managed challenge apart from a rate rule. The lorebook crawler
+  uses the same fetch, keeps one session across the crawl so a clearance cookie is reused, and waits
+  half a second between pages; it was sending a bare "Mozilla/5.0" from a new connection each time.
+- The model list works for local OpenAI-compatible servers (LM Studio, Ollama, KoboldCPP). `/api/models/local`
+  used to answer "Unknown provider", so picking Local left the model drop-down empty with no explanation.
+- `.epub` ingest kept no chapter boundaries: a heading that already read "Chapter 1: ..." was dropped while an
+  oddly-named one was kept. A whole fic became one unlabelled chunk, and "roleplay starts after chapter N" had
+  nothing to anchor to.
+- AO3 chapter labels were doubled ("Chapter 1: Chapter 1 : The Harbor"), since AO3's own heading already names
+  the chapter.
+- Chapter-by-chapter fetching stopped after the first page: the next link had to read exactly "next" or
+  "next chapter", and it is normally rendered "Next Chapter →". "Next Work" is still ignored.
+
 ## [2.7.0] - 2026-11-24
 
 ### Changed

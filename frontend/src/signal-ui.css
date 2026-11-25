@@ -1042,3 +1042,23 @@ html[data-compact] .sui-nav-ctx { display: inline-block; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* ── first run and change rows ──────────────────────────────────────────────
+   Both fill BACKWARDS on purpose. A filled-forwards animation leaves a live
+   transform on the element, which makes a stacking context and traps any menu
+   drawn inside it (the drop-downs that could not escape their panel in v2.7). */
+@keyframes signal-scan {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(333%); }
+}
+.signal-scan { animation: signal-scan 1.05s linear infinite backwards; }
+
+@keyframes signal-row-in {
+  from { opacity: 0; transform: translateY(-6px); }
+}
+.signal-row-in { animation: signal-row-in 220ms var(--signal-soft) backwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .signal-scan,
+  .signal-row-in { animation: none; }
+}
