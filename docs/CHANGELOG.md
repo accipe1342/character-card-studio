@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-11-24
+
 ### Changed
 - SCRIBE-01's CHANGES column is a receipt rather than an inbox. Each change reads as a sentence
   ("Edited Slyphaes — Description · 1,240 words"), grouped under the reply that made it, with the newest
