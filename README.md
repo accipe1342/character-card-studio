@@ -88,6 +88,7 @@ and stories live in `data/` and are kept.
 
 | Problem | Fix |
 |---|---|
+| `start.bat` does nothing, or the window flashes and closes | Delete the `.venv` folder and run `setup.bat` again - usually a virtual environment built under an older folder name |
 | "Python not found" on Windows | Reinstall Python with **Add Python to PATH** ticked, then run `setup.bat` again |
 | "Permission denied" on Mac / Linux | Run `chmod +x setup.sh start.sh` |
 | The browser didn't open | Go to `http://localhost:5173` yourself |
