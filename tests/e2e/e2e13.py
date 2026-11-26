@@ -92,6 +92,36 @@ with sync_playwright() as pw:
     ok(opened >= 5, f"opened enough menus to be meaningful ({opened} menus, {items} items)")
     ok(broken == 0, f"no menu has unreachable items ({broken} broken)")
 
+    # --- any popup that borrows the .sui-menu frame has to land inside the window ----------------
+    # ModelChip shares the class but places itself with percentage offsets, so it is a dialog with
+    # no menu items: the hit-test above walks straight past it. When .sui-menu became fixed, its
+    # top:calc(100% + 6px) started meaning 100% of the viewport and the popup fell below the screen.
+    ONSCREEN = """() => [...document.querySelectorAll('.sui-menu')]
+      .filter(p => { const cs = getComputedStyle(p);
+                     return cs.display !== 'none' && !p.hasAttribute('hidden') && cs.visibility !== 'hidden'; })
+      .map(p => { const r = p.getBoundingClientRect();
+                  return {role: p.getAttribute('role'),
+                          box: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)],
+                          off: r.top >= innerHeight || r.bottom <= 0 || r.left >= innerWidth || r.right <= 0}; })"""
+
+    back = pg.get_by_role("button", name="CHARACTER", exact=True)   # the chip lives in the top bar here
+    if back.count():
+        back.first.click()
+        pg.wait_for_timeout(500)
+    chip = pg.locator('button[aria-haspopup="dialog"]')
+    ok(chip.count() > 0, "the model chip is on screen to be tested")   # never let this pass vacuously
+    if chip.count():
+        chip.first.click()
+        pg.wait_for_timeout(300)
+        pops = pg.evaluate(ONSCREEN)
+        off = [p for p in pops if p["off"]]
+        ok(len(pops) > 0, "the model chip popup opened")
+        ok(not off, f"the model chip popup is on screen, not past the window edge {off}")
+        pg.screenshot(path=os.path.join(OUT, "e2e13-model-chip.png"))
+        pg.keyboard.press("Escape")
+    else:
+        ok(True, "no model chip on this screen")
+
     br.close()
 
 print(f"\n{sum(R)}/{len(R)} passed")

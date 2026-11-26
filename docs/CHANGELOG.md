@@ -8,6 +8,24 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.9.1] - 2026-11-26
+
+### Fixed
+- **The model picker in the top bar opened off the bottom of the screen.** Making menus escape their
+  panel in 2.9.0 moved them to `position: fixed`, and the model chip's popup borrows the same frame but
+  places itself with percentage offsets - so `top: calc(100% + 6px)` stopped meaning "under the button"
+  and started meaning 100% of the window, which put it a few pixels past the bottom edge. Clicking the
+  chip looked like nothing happened. It is pinned back to absolute; the drop-downs that needed to escape
+  are unaffected.
+- Menus are drawn above every other floating layer. They sat below the SCRIBE-01 console and the modals
+  in the stacking order, which did not matter while they were positioned inside their own panel and
+  would have started to once they were not.
+
+### Changed
+- The end-to-end suite checks every popup that uses the menu frame, not only the ones with menu items -
+  the model chip is a dialog with none, so the earlier check walked straight past it - and it fails if a
+  popup lands outside the window.
+
 ## [2.9.0] - 2026-11-26
 
 ### Added
