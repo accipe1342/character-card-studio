@@ -209,14 +209,21 @@ def api_lore_import():
         return jsonify({"error": "Every entry in that lorebook is empty."}), 400
 
     name = _s(book.get("name")).strip() or (f.filename or "lorebook").rsplit(".", 1)[0].replace("_", " ")
+    if not _s(book.get("name")).strip():
+        book = {**book, "name": name}      # or import_book names the project "<name> lorebook"
     pid, count = import_book(book, name)
-    off = sum(1 for e in entries if e.get("disable") is True or e.get("enabled") is False)
-    empty = len(entries) - count
+
+    empty = off = 0                        # an empty entry is skipped, so it is not also "switched off"
+    for e in entries:
+        if not _s(e.get("content")).strip():
+            empty += 1
+        elif e.get("disable") is True or e.get("enabled") is False:
+            off += 1
     notes = []
     if empty:
-        notes.append(f"{empty} entr{'y' if empty == 1 else 'ies'} had no content and were skipped")
+        notes.append(f"{empty} empty {'entry' if empty == 1 else 'entries'} skipped")
     if off:
-        notes.append(f"{off} were switched off in SillyTavern and come in as normal entries")
+        notes.append(f"{off} switched off in SillyTavern, imported as normal {'entry' if off == 1 else 'entries'}")
     return jsonify({"project_id": pid, "name": name, "entries": count, "notes": notes})
 
 

@@ -115,7 +115,7 @@ def test_standalone_lorebook_imports_with_its_settings(client, H):
     assert r.status_code == 200, r.get_json()
     out = r.get_json()
     assert out["name"] == "Saltmere" and out["entries"] == 2          # the blank one is dropped
-    assert any("no content" in n for n in out["notes"])
+    assert any("empty" in n and "skipped" in n for n in out["notes"])
     assert any("switched off" in n for n in out["notes"])             # one was disabled in SillyTavern
 
     rows = client.get(f"/api/lore/entries?project_id={out['project_id']}", headers=H).get_json()
@@ -152,3 +152,24 @@ def test_a_card_file_sent_to_the_lore_importer_still_works(client, H):
 def test_a_file_with_no_lorebook_says_so(client, H):
     r = _post_book(client, H, {"name": "nothing here"})
     assert r.status_code == 400 and "No lorebook" in r.get_json()["error"]
+
+
+def test_lore_import_names_project_after_the_file_when_the_book_has_no_name(client, H):
+    """A book with no "name" takes the file's name - once, not "x lorebook lorebook"."""
+    book = {"entries": [{"comment": "Old Harbor", "content": "A port town.", "keys": ["harbor"]}]}
+    r = _post_book(client, H, book, "my_lorebook.json")
+    assert r.status_code == 200, r.get_json()
+    pid = r.get_json()["project_id"]
+    assert r.get_json()["name"] == "my lorebook"
+    row = next(p for p in client.get("/api/lore/projects").get_json() if p["id"] == pid)
+    assert row["project_name"] == "my lorebook"      # the list and the toast agree
+
+
+def test_lore_import_counts_an_empty_switched_off_entry_once(client, H):
+    """Empty entries are skipped, so they are not also reported as switched off."""
+    book = {"name": "B", "entries": [
+        {"comment": "Real", "content": "text", "keys": ["a"]},
+        {"comment": "Dead", "content": "", "keys": ["b"], "disable": True},
+    ]}
+    notes = _post_book(client, H, book, "b.json").get_json()["notes"]
+    assert notes == ["1 empty entry skipped"]
