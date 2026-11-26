@@ -43,25 +43,34 @@ export default function SignalMenu({ label, children, align = "left", primary = 
     const el = pop.current, anchor = ref.current;
     if (!open || !el || !anchor) return undefined;
     const GAP = 6, EDGE = 8;                 // 6px off the button, 8px clear of the window edge
+    // The menu is positioned in viewport coordinates because it is `position: fixed`, not absolute.
+    // That is what lets it out of a panel that clips: SetupGate collapses itself with overflow:hidden
+    // and the studio panels scroll with overflow:auto, and either one crops an absolutely positioned
+    // menu to the panel - which is how the first-run provider list ended up showing one of its three
+    // options. A fixed element ignores an ancestor's overflow. It does NOT ignore an ancestor holding
+    // a transform, filter or will-change, since that makes the containing block: keep animations on
+    // fill-mode backwards so none is left behind, or this goes back to being trapped.
     const place = () => {
-      const put = (side) => { el.style.left = side === "right" ? "auto" : "0"; el.style.right = side === "right" ? "0" : "auto"; };
-      put(align);
-      el.style.maxHeight = "";
-      el.style.top = `calc(100% + ${GAP}px)`;
+      el.style.right = "auto";
       el.style.bottom = "auto";
+      el.style.maxHeight = "";
+      el.style.left = "0px";                 // measure the natural size before placing it
+      el.style.top = "0px";
       const b = anchor.getBoundingClientRect();
       const r = el.getBoundingClientRect();
-      if (align === "left" && r.right > window.innerWidth - EDGE && b.right - r.width >= EDGE) put("right");
-      else if (align === "right" && r.left < EDGE && b.left + r.width <= window.innerWidth - EDGE) put("left");
-      // vertical: keep it below unless there is more room above, then cap it so a long list scrolls
+
+      // sideways: aligned to the button, then pulled back inside the window if it would overhang
+      const wanted = align === "right" ? b.right - r.width : b.left;
+      const left = Math.min(Math.max(EDGE, wanted), Math.max(EDGE, window.innerWidth - r.width - EDGE));
+
+      // vertical: below the button unless there is more room above, then capped so a long list scrolls
       const below = window.innerHeight - b.bottom - GAP - EDGE;
       const above = b.top - GAP - EDGE;
       const upward = r.height > below && above > below;
-      if (upward) {
-        el.style.top = "auto";
-        el.style.bottom = `calc(100% + ${GAP}px)`;
-      }
-      el.style.maxHeight = `${Math.max(140, Math.floor(upward ? above : below))}px`;
+      const cap = Math.max(140, Math.floor(upward ? above : below));
+      el.style.maxHeight = `${cap}px`;
+      el.style.left = `${Math.round(left)}px`;
+      el.style.top = `${Math.round(upward ? b.top - GAP - Math.min(r.height, cap) : b.bottom + GAP)}px`;
     };
     place();
     window.addEventListener("resize", place);

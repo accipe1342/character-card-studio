@@ -61,3 +61,7 @@ desktop.ini
 *-deeplore.zip
 card-studio-bundle-*.zip
 _to_delete/
+
+# Portable build output and its download cache (tools/build_portable.ps1)
+dist_portable/
+tools/.cache/

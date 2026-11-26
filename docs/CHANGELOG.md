@@ -40,6 +40,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   and the project list disagreed about which it was.
 - An entry that was both empty and switched off in SillyTavern was counted twice on import, once as
   skipped and once as switched off.
+- **Drop-downs could not be clicked.** The menu was positioned absolutely, so any ancestor that clips
+  cropped it: the first-run panel collapses itself with overflow:hidden and the studio panels scroll, and
+  the provider list came out with its options outside the panel - there was no way to pick OpenRouter or a
+  local server during setup. The menu is placed against the window now, which an ancestor's overflow cannot
+  crop. Every menu is hit-tested in the end-to-end suite, since a cropped item still reports itself visible.
 - Starting the app while it was already running stopped on a bare "WinError 10048". It now steps to the
   next free port, says that is what it did, and only gives up after ten. The port it settles on is added
   to the trusted set, so the page's own requests are not mistaken for cross-site ones - without that the

@@ -13,7 +13,7 @@ import time
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCRIPTS = ["e2e1.py", "e2e2.py", "e2e3.py", "e2e4.py", "e2e5.py", "e2e6.py", "e2e7.py", "e2e8.py", "e2e9.py", "e2e10.py", "e2e11.py", "e2e12.py"]
+SCRIPTS = ["e2e1.py", "e2e2.py", "e2e3.py", "e2e4.py", "e2e5.py", "e2e6.py", "e2e7.py", "e2e8.py", "e2e9.py", "e2e10.py", "e2e11.py", "e2e12.py", "e2e13.py"]
 
 
 def wait_up(url, seconds=20):
