@@ -1,7 +1,7 @@
 # Character Card Studio
 
 [![CI](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-2.8.0-informational)
+![version](https://img.shields.io/badge/version-2.9.0-informational)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 A Signal UI–themed app for making SillyTavern character cards and lorebooks with AI: from Fandom wiki pages, from fan fiction and other long text, or from your own roleplay chats.
@@ -15,6 +15,22 @@ A Signal UI–themed app for making SillyTavern character cards and lorebooks wi
 ---
 
 ## Quick Start
+
+Two ways in: the portable build, which needs nothing installed, or from source.
+
+### Portable - Windows, nothing to install
+
+Download `CharacterCardStudio-<version>-portable-win64.zip` from the
+[latest release](https://github.com/accipe1342/character-card-studio/releases/latest), unzip it anywhere, and
+double-click **Start Character Card Studio.bat**. The app opens in your browser.
+
+No Python, no Node, no installer, no admin rights. Everything stays inside the folder - the database in `data\`
+and your keys in `.env` beside the launcher - so moving the folder moves everything and deleting it leaves
+nothing behind. Read `READ ME FIRST.txt` in the zip first if you plan to run it on a work or shared computer.
+
+Then carry on from [Connect a model](#3-connect-a-model).
+
+### From source
 
 **You need:** [Python 3.10+](https://www.python.org/downloads/) and [Node.js 18+](https://nodejs.org/) (the LTS
 version), plus one way to run a model: a [NanoGPT](https://nano-gpt.com) or [OpenRouter](https://openrouter.ai) API
@@ -229,8 +245,13 @@ python tests/e2e/run_all.py                # browser tests (see tests/e2e/README
 
 ## Requirements
 
+Running from source:
+
 - Python 3.10+
 - Node.js 18+
+
+The portable build needs neither - it carries its own Python and a prebuilt frontend. Building the portable zip
+yourself needs both, plus PowerShell: `powershell -ExecutionPolicy Bypass -File tools\build_portable.ps1`.
 
 ---
 

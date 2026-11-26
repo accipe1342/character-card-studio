@@ -1,0 +1,38 @@
+Character Card Studio - portable
+================================
+
+Double-click "Start Character Card Studio.bat". Your browser opens at http://localhost:5000.
+Close the black window to stop it.
+
+Nothing is installed. No admin rights, no installer, no registry changes, nothing added to PATH.
+Everything lives in this folder: your database in data\, your API keys in .env. Move the folder
+and the whole thing moves with it. Delete the folder and nothing is left behind.
+
+First run
+---------
+Open the CONFIG tab and add an API key, or point it at a local model server you already run
+(Text Generation WebUI, LM Studio, Ollama, koboldcpp). The setup panel on first launch walks
+through it.
+
+
+A few honest notes
+------------------
+
+On a work computer. Nothing here needs admin rights, but that is not the same as being allowed.
+Plenty of managed Windows builds block scripts or block programs run from a Downloads or Documents
+folder (AppLocker does this by default), and some will stop this from starting. Also worth thinking
+about before you do: your API key sits in a plain text file on company hardware, and the app talks
+to whichever model provider you configure over the company network. If that matters where you work,
+it matters.
+
+On a shared or public computer. The folder keeps your database and your API key. Anyone who uses
+that machine afterwards can read both. If you must, put it on a USB stick, run it from there, and
+take the stick with you - and revoke the API key afterwards anyway.
+
+Windows may still ask. The first launch can show a Windows Firewall prompt because the app opens a
+local port. Allowing it on the private network is enough; it does not need to accept connections
+from anywhere else. The app binds to 127.0.0.1, so nothing outside the machine can reach it.
+
+Antivirus. There is no compiled executable here. python.exe is the official build from python.org
+and the rest is plain text. If something does flag it, it is a false positive on an unsigned .bat,
+and you can check every file yourself.

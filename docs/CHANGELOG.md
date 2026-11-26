@@ -8,7 +8,21 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-11-26
+
 ### Added
+- **Portable build, no install.** `CharacterCardStudio-2.9.0-portable-win64.zip`: unzip it, double-click
+  `Start Character Card Studio.bat`, and the app opens in your browser. No Python, no Node, no installer,
+  no admin rights, nothing written outside the folder - the database lives in `data\` and the keys in
+  `.env` beside the launcher, so moving the folder moves everything and deleting it leaves nothing behind.
+  Nothing in it is compiled or packed: `python.exe` is the official embeddable build from python.org and
+  the rest is plain text, which is what keeps Windows Defender and SmartScreen quiet. About 42 MB unzipped.
+  Built with `tools\build_portable.ps1`. `READ ME FIRST.txt` is straight about the limits - a managed work
+  machine may block it whatever its rights, and a shared computer keeps your database and key after you walk away.
+- **The app runs as one process.** Flask serves the built frontend from `web/` (or `frontend/dist`), so
+  there is no second server and no Node at run time. A deep link falls back to the app shell so the
+  single-page app can route it, while an unknown `/api` path still answers JSON rather than quietly
+  returning the UI.
 - **Import a lorebook.** LORE has an IMPORT button: a SillyTavern World Info `.json` becomes a new
   project with its entries, keys, secondary keys, order, position, depth, probability and constant
   flags intact. Drop a character card file on it and it takes the lorebook inside. Entries with no
@@ -22,6 +36,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   when the type is something other than the default.
 - The card importer reads the World Info fields a SillyTavern file keeps at the top level, not only the
   ones a V3 `character_book` keeps under `extensions`; `position` is accepted as a number as well as a name.
+- Importing a lorebook with no `name` of its own called the project "my lorebook lorebook", and the toast
+  and the project list disagreed about which it was.
+- An entry that was both empty and switched off in SillyTavern was counted twice on import, once as
+  skipped and once as switched off.
+- Starting the app while it was already running stopped on a bare "WinError 10048". It now steps to the
+  next free port, says that is what it did, and only gives up after ten. The port it settles on is added
+  to the trusted set, so the page's own requests are not mistaken for cross-site ones - without that the
+  UI would load on the new port and every action would come back 403.
+
+### Changed
+- The build is 29 MB smaller. `@fontsource` ships every face twice, `.woff2` and a `.woff` fallback, and
+  both were bundled: 992 font files, 28 MB of a 29 MB build. The fallback is dropped before the assets are
+  emitted, since every browser that can run this app has supported `woff2` for a decade. 29 MB -> 14 MB with
+  16,657 glyphs either way - verified against the font tables, not assumed.
 
 ## [2.8.0] - 2026-11-24
 

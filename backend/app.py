@@ -101,6 +101,7 @@ from flask import (
     jsonify,
     request,
     send_file,
+    send_from_directory,
 )
 
 from lore_crawler import crawl_worldbook
@@ -505,6 +506,12 @@ DATA_DIR.mkdir(exist_ok=True)
 ENV_PATH = ROOT_DIR / ".env"
 CONFIG_PATH = BASE_DIR / "config" / "settings.json"
 
+# The built frontend, when there is one. "web/" is what the portable build ships; frontend/dist is
+# what "npm run build" leaves behind. With neither, the UI is the Vite dev server and Flask only
+# answers /api (the development setup).
+WEB_DIR = next((d for d in (ROOT_DIR / "web", ROOT_DIR / "frontend" / "dist")
+                if (d / "index.html").is_file()), None)
+
 load_dotenv(ENV_PATH, override=True)
 
 from flask import Request as _Request
@@ -834,10 +841,24 @@ register_lore_routes(app, create_job=create_job, update_job=update_job, get_db_c
 
 @app.get("/")
 def api_root():
-    """The UI is the React app (http://localhost:5173 in development). The old Flask template pages are gone."""
+    """The built UI when one is present, so the app is one process on one port and needs no Node.
+    Without a build, the UI is the Vite dev server and this is just a signpost to it."""
+    if WEB_DIR:
+        return send_from_directory(WEB_DIR, "index.html")
     return ("<!doctype html><title>Character Card Studio API</title><body style='font-family:system-ui;padding:24px'>"
             "<h2>Character Card Studio backend is running</h2><p>Open the app at "
             "<a href='http://localhost:5173'>http://localhost:5173</a>.</p></body>")
+
+
+@app.get("/<path:asset>")
+def web_asset(asset):
+    """A file of the built UI, or index.html so the single-page app can route an unknown path itself.
+    /api is left alone: an unknown API path stays a JSON 404 rather than quietly becoming the UI."""
+    if WEB_DIR is None or asset.startswith("api/"):
+        abort(404)
+    if (WEB_DIR / asset).is_file():
+        return send_from_directory(WEB_DIR, asset)       # guards traversal itself
+    return send_from_directory(WEB_DIR, "index.html")
 
 
 @app.get("/api/job/<job_id>")
@@ -1742,10 +1763,43 @@ def api_image_proxy():
         return jsonify({"error": str(e)}), 500
 
 
+def _first_free_port(preferred: int, tries: int = 10):
+    """The preferred port, or the next free one after it, or None if they are all taken.
+
+    Something already holding 5000 is nearly always this app already running - from start.bat, or a
+    portable copy. Stepping aside beats stopping on a bare "WinError 10048"."""
+    for candidate in range(preferred, preferred + tries):
+        with socket.socket() as probe:
+            try:
+                probe.bind(("127.0.0.1", candidate))
+                return candidate
+            except OSError:
+                continue
+    return None
+
+
 if __name__ == "__main__":
     import logging
     port = int(os.getenv("PORT", 5000))
+    free = _first_free_port(port)
+    if free is None:
+        print(f"[!] Ports {port}-{port + 9} are all in use. Close whatever is using them, or set PORT in .env.")
+        raise SystemExit(1)
+    if free != port:
+        print(f"[.] Port {port} is in use - Character Card Studio may already be running. Using {free}.")
+        port = free
+    # The origin check only trusts the ports it knows about, so a moved port has to be added or every
+    # POST from the page comes back 403 "Blocked: cross-site request" while the page itself loads fine.
+    _SAFE_PORTS.add(port)
     log = logging.getLogger("werkzeug")
     log.setLevel(logging.WARNING)
     print(f"[OK] Flask running on http://localhost:{port}")
+    if os.getenv("CCS_OPEN_BROWSER") == "1":
+        # The portable launcher sets this. Opening from here rather than from the .bat means no
+        # PowerShell (blocked on some locked-down machines) and no race against the server starting.
+        import threading
+        import webbrowser
+        # 127.0.0.1, not localhost: the server binds 127.0.0.1, and a stack that resolves
+        # localhost to ::1 first would open a port nothing is listening on.
+        threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
     app.run(host="127.0.0.1", port=port, debug=False)

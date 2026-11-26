@@ -201,3 +201,58 @@ def test_we_never_ask_for_an_encoding_we_cannot_read(monkeypatch):
         import brotli  # noqa: F401
     except ImportError:
         pass          # expected: it is not in requirements.txt, which is why br must stay out
+
+
+# --- starting up when the port is taken -----------------------------------------------------------
+
+def test_a_free_port_is_the_preferred_one():
+    import socket as _s
+    import app as A
+    with _s.socket() as probe:               # find one nothing is using
+        probe.bind(("127.0.0.1", 0))
+        free = probe.getsockname()[1]
+    assert A._first_free_port(free) == free
+
+
+def test_a_taken_port_steps_to_the_next_one():
+    """start.bat already running must not stop a portable copy with a bare WinError 10048."""
+    import socket as _s
+    import app as A
+    with _s.socket() as held:
+        held.bind(("127.0.0.1", 0))
+        held.listen(1)
+        taken = held.getsockname()[1]
+        assert A._first_free_port(taken) == taken + 1
+
+
+def test_all_ports_taken_reports_rather_than_guessing():
+    import socket as _s
+    import app as A
+    holders = []
+    try:
+        with _s.socket() as first:
+            first.bind(("127.0.0.1", 0))
+            base = first.getsockname()[1]
+        for p in range(base, base + 3):
+            s = _s.socket()
+            s.bind(("127.0.0.1", p))
+            s.listen(1)
+            holders.append(s)
+        assert A._first_free_port(base, tries=3) is None
+    finally:
+        for s in holders:
+            s.close()
+
+
+def test_a_moved_port_is_trusted_by_the_origin_check():
+    """The page is served from the port the app settled on, so its own POSTs must not read as
+    cross-site. Without this the UI loads and every action comes back 403."""
+    import app as A
+    moved = 5099
+    assert not A._origin_allowed(f"http://127.0.0.1:{moved}")      # unknown port, as it starts out
+    A._SAFE_PORTS.add(moved)
+    try:
+        assert A._origin_allowed(f"http://127.0.0.1:{moved}")
+        assert not A._origin_allowed(f"http://evil.example:{moved}")   # the host still has to be local
+    finally:
+        A._SAFE_PORTS.discard(moved)
