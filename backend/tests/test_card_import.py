@@ -87,3 +87,68 @@ def test_not_a_card(client, H):
     assert r.status_code == 400 and "Unsupported file" in r.get_json()["error"]
     r = client.post("/api/card/import", data={}, headers=H, content_type="multipart/form-data")
     assert r.status_code == 400
+
+
+ST_BOOK = {
+    "name": "Saltmere",
+    "entries": {
+        "0": {"uid": 0, "comment": "Cursed Energy", "key": ["Cursed Energy", "Juryoku"],
+              "keysecondary": ["Usage"], "content": "A power source aligned with negative emotion.",
+              "order": 10, "insertion_order": 10, "position": 0, "depth": 4, "probability": 100,
+              "constant": False, "selective": True, "disable": False, "enabled": True},
+        "1": {"uid": 1, "comment": "Old Harbor", "key": ["Old Harbor"], "content": "Docks that never sleep.",
+              "order": 25, "position": 1, "depth": 2, "probability": 90, "constant": True, "disable": True},
+        "2": {"uid": 2, "comment": "Empty one", "key": ["nothing"], "content": "   "},
+    },
+}
+
+
+def _post_book(client, H, book, name="book.json"):
+    return client.post("/api/lore/import", headers=H, content_type="multipart/form-data",
+                       data={"file": (io.BytesIO(json.dumps(book).encode()), name)})
+
+
+def test_standalone_lorebook_imports_with_its_settings(client, H):
+    """A World Info file exported from SillyTavern is the same shape as an embedded character_book.
+    Keys, order, position, depth and probability must survive, and empty entries are skipped."""
+    r = _post_book(client, H, ST_BOOK)
+    assert r.status_code == 200, r.get_json()
+    out = r.get_json()
+    assert out["name"] == "Saltmere" and out["entries"] == 2          # the blank one is dropped
+    assert any("no content" in n for n in out["notes"])
+    assert any("switched off" in n for n in out["notes"])             # one was disabled in SillyTavern
+
+    rows = client.get(f"/api/lore/entries?project_id={out['project_id']}", headers=H).get_json()
+    rows = rows if isinstance(rows, list) else rows.get("entries", [])
+    assert len(rows) == 2
+    full = [client.get(f"/api/lore/entry/{e['id']}", headers=H).get_json() for e in rows]
+    ce = next(e for e in full if "Cursed Energy" in (e.get("title") or ""))
+    assert sorted(ce["keywords"]) == ["Cursed Energy", "Juryoku"]
+    assert ce["insertion_order"] == 10 and ce["position"] == 0
+    assert ce["entry_depth"] == 4 and ce["probability"] == 100
+
+
+def test_lorebook_round_trip_keeps_entry_names(client, H):
+    """Exporting what we imported must not rename anything: the type suffix is for entries we typed,
+    not for someone else's lorebook arriving as the default 'concept'."""
+    out = _post_book(client, H, ST_BOOK).get_json()
+    back = client.get(f"/api/lore/export?project_id={out['project_id']}", headers=H).get_json()
+    entries = back["entries"]
+    entries = list(entries.values()) if isinstance(entries, dict) else entries
+    names = {e["comment"] for e in entries}
+    assert names == {"Cursed Energy", "Old Harbor"}, names
+    ce = next(e for e in entries if e["comment"] == "Cursed Energy")
+    assert ce["order"] == 10 and sorted(ce["key"]) == ["Cursed Energy", "Juryoku"]
+
+
+def test_a_card_file_sent_to_the_lore_importer_still_works(client, H):
+    """People will drop a card here by mistake: take its lorebook rather than refusing."""
+    card = {"spec": "chara_card_v2", "data": {"name": "Mara", "description": "x",
+                                              "character_book": ST_BOOK}}
+    r = _post_book(client, H, card, "mara.json")
+    assert r.status_code == 200 and r.get_json()["entries"] == 2
+
+
+def test_a_file_with_no_lorebook_says_so(client, H):
+    r = _post_book(client, H, {"name": "nothing here"})
+    assert r.status_code == 400 and "No lorebook" in r.get_json()["error"]

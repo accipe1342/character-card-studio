@@ -226,12 +226,19 @@ def normalise_lore_items(raw):
     return out
 
 
+def wi_comment(it):
+    """The entry's name for SillyTavern. The type is appended so a round trip keeps it - but not for
+    the default "concept", which would rename every entry of an imported lorebook."""
+    t = (it.get("entry_type") or "").strip()
+    return f"{it['title']} - {t}" if t and t != "concept" else it["title"]
+
+
 def world_info_entry(it) -> Dict[str, Any]:
     """One entry of a SillyTavern World Info JSON file (the 'entries' object)."""
     i = it["uid"]
     return {
         "uid": i, "key": it["keys"], "keysecondary": it["secondaryKeys"],
-        "comment": f"{it['title']} - {it['entry_type']}", "content": it["content"],
+        "comment": wi_comment(it), "content": it["content"],
         "constant": it["constant"], "vectorized": it["vectorized"],
         "selective": bool(it["secondaryKeys"]), "selectiveLogic": it["selectiveLogic"], "addMemo": True,
         "order": it["order"], "position": it["position"], "disable": False,
@@ -261,7 +268,7 @@ def character_book_from_items(name: str, items) -> Dict[str, Any]:
         "recursive_scanning": True, "extensions": {},
         "entries": [{
             "id": it["uid"], "keys": it["keys"], "secondary_keys": it["secondaryKeys"],
-            "comment": f"{it['title']} - {it['entry_type']}",
+            "comment": wi_comment(it),
             "name": it["title"], "content": it["content"], "constant": it["constant"],
             "selective": bool(it["secondaryKeys"]),
             "enabled": True, "insertion_order": it["order"], "priority": it["order"], "case_sensitive": False,

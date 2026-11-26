@@ -782,3 +782,13 @@ export async function importCard(file) {
   if (!res.ok) throw new Error(data.error || "Import failed");
   return data;
 }
+
+/** A SillyTavern World Info .json -> a new LORE project. {project_id, name, entries, notes[]}. */
+export async function importLorebook(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/lore/import", { method: "POST", body: fd });
+  const data = await readJsonSafe(res);
+  if (!res.ok) throw new Error(data.error || "Import failed");
+  return data;
+}

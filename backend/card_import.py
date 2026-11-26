@@ -150,14 +150,16 @@ def import_book(book, card_name):
                                 keywords=_list(e.get("keys") or e.get("key")), summary=content[:200], content=content,
                                 provider="import", model="")
         wi = {"constant": 1 if e.get("constant") else 0, "secondary_keys": _list(e.get("secondary_keys") or e.get("keysecondary"))}
-        pos = ex.get("position", POSITIONS.get(e.get("position"), None))
+        raw_pos = e.get("position")
+        pos = ex.get("position", raw_pos if isinstance(raw_pos, int) else POSITIONS.get(raw_pos))
         if isinstance(pos, int):
             wi["position"] = pos
         for src, dst in (("depth", "entry_depth"), ("probability", "probability"), ("sticky", "sticky"),
                          ("cooldown", "cooldown"), ("delay", "delay"), ("selectiveLogic", "selective_logic"),
                          ("scan_depth", "scan_depth"), ("group", "group_name"), ("group_weight", "group_weight")):
-            if ex.get(src) not in (None, ""):
-                wi[dst] = ex[src]
+            val = ex.get(src, e.get(src))        # extensions first, then the entry itself
+            if val not in (None, ""):
+                wi[dst] = val
         if isinstance(ex.get("role"), int):
             wi["role"] = ex["role"]
         order = e.get("insertion_order", e.get("priority"))
@@ -169,6 +171,53 @@ def import_book(book, card_name):
             wi["char_filter"] = _list(cf.get("names"))
         D.set_lore_wi_fields(lid, wi)
     return pid, len(entries)
+
+
+def book_entries(book):
+    """The entries of a lorebook, whether SillyTavern keeps them as a dict or a list."""
+    entries = book.get("entries") if isinstance(book, dict) else None
+    if isinstance(entries, dict):
+        entries = list(entries.values())
+    return [e for e in (entries or []) if isinstance(e, dict)]
+
+
+@bp.post("/api/lore/import")
+def api_lore_import():
+    """A SillyTavern World Info / lorebook .json -> a new LORE project.
+
+    The card importer already turns an embedded character_book into a project; a standalone
+    lorebook is the same structure, so this is that path with its own door."""
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file: choose a lorebook .json"}), 400
+    raw = f.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        return jsonify({"error": "That file is too large (30 MB max)."}), 400
+    try:
+        book = json.loads(raw.decode("utf-8", "replace"))
+    except Exception:
+        return jsonify({"error": "That file is not JSON."}), 400
+
+    if isinstance(book, dict) and not book.get("entries"):
+        inner = book.get("data") if isinstance(book.get("data"), dict) else book
+        book = inner.get("character_book") or inner          # a card file: take its lorebook
+    entries = book_entries(book) if isinstance(book, dict) else []
+    if not entries:
+        return jsonify({"error": "No lorebook in that file. Export it from SillyTavern's World Info panel "
+                                 "(or import a card and its lorebook comes with it)."}), 400
+    if not any(_s(e.get("content")).strip() for e in entries):
+        return jsonify({"error": "Every entry in that lorebook is empty."}), 400
+
+    name = _s(book.get("name")).strip() or (f.filename or "lorebook").rsplit(".", 1)[0].replace("_", " ")
+    pid, count = import_book(book, name)
+    off = sum(1 for e in entries if e.get("disable") is True or e.get("enabled") is False)
+    empty = len(entries) - count
+    notes = []
+    if empty:
+        notes.append(f"{empty} entr{'y' if empty == 1 else 'ies'} had no content and were skipped")
+    if off:
+        notes.append(f"{off} were switched off in SillyTavern and come in as normal entries")
+    return jsonify({"project_id": pid, "name": name, "entries": count, "notes": notes})
 
 
 @bp.post("/api/card/import")

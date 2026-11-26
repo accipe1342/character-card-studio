@@ -8,6 +8,21 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Import a lorebook.** LORE has an IMPORT button: a SillyTavern World Info `.json` becomes a new
+  project with its entries, keys, secondary keys, order, position, depth, probability and constant
+  flags intact. Drop a character card file on it and it takes the lorebook inside. Entries with no
+  content are skipped and counted, and entries switched off in SillyTavern are reported, since there
+  is nowhere here to keep them switched off. Tested against a 397-entry lorebook: every name, key
+  and order came back unchanged on export.
+
+### Fixed
+- Exporting no longer renames entries. The entry type was appended to every name (`Old Harbor - concept`),
+  which rewrote the names of any lorebook that came from somewhere else. The suffix is now only added
+  when the type is something other than the default.
+- The card importer reads the World Info fields a SillyTavern file keeps at the top level, not only the
+  ones a V3 `character_book` keeps under `extensions`; `position` is accepted as a number as well as a name.
+
 ## [2.8.0] - 2026-11-24
 
 ### Added

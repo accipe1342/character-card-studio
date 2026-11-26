@@ -76,7 +76,7 @@ import {
   updateLoreEntry, deleteLoreEntry, exportLorebook, exportDeepLore, getJob, fetchModels, pushLoreToST,
   listLoreProjects, createLoreProject, renameLoreProject, deleteLoreProject,
   newLoreEntry, generateLoreEntry, moveEntryToProject, clearLoreProject, cleanLoreKeywords, getPresets,
-  restoreLoreEntry,
+  restoreLoreEntry, importLorebook,
 } from "../../lib/api";
 
 // list badges: problems that make an entry useless or noisy in SillyTavern
@@ -228,6 +228,24 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
       const data = await listLoreProjects();
       setProjects(data);
     } catch(e) { setError(e.message); }
+  }
+
+  const importRef = React.useRef(null);
+
+  async function handleImportLorebook(file) {
+    if (!file) return;
+    setError("");
+    try {
+      const r = await importLorebook(file);
+      const fresh = await listLoreProjects();
+      setProjects(fresh);
+      const made = fresh.find((p) => p.id === r.project_id);
+      if (made) { setActiveProject(made); loadEntries(made); }
+      const note = r.notes?.length ? ` (${r.notes.join("; ")})` : "";
+      if (showToast) showToast(`Imported ${r.entries} entries into ${r.name}${note}`);
+    } catch (e) {
+      setError(e.message);
+    }
   }
 
   const activeProjectRef = React.useRef(null);
@@ -647,6 +665,13 @@ export default function LoreStudio({ url, setUrl, t = {}, showToast, focus, clea
             <span style={{ color: "var(--signal-accent)" }}>{t.trashAllEntries || "Trash all entries"}</span>
           </MenuItem>
         </SignalMenu>
+        <button type="button" className="signal-btn" style={btnStyle} onClick={() => importRef.current?.click()}
+          title="A SillyTavern World Info .json becomes a new lorebook here, entries, keys and order intact">
+          {t.importLorebook || "IMPORT"}
+        </button>
+        <input ref={importRef} type="file" accept=".json,application/json" aria-label="Import a lorebook file"
+          style={{ display: "none" }}
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; handleImportLorebook(f); }} />
         <SignalMenu label={t.exportMenu || "EXPORT"} align="right" width={280} keepMounted disabled={!entries.length}>
           <MenuItem onClick={handleExport} title="World Info lorebook for SillyTavern (import in the World Info panel)">
             {t.exportSillyTavern || "SillyTavern (.json)"}
