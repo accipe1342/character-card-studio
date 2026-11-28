@@ -8,6 +8,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.9.2] - 2026-11-27
+
+### Fixed
+- **"Connection refused" on a card you made by hand, even with a NanoGPT key set** (#5). A card keeps
+  the provider it was made with, and several things write a word there that names no backend at all:
+  a hand-made card is "manual", an imported one "import", SCRIBE-01 writes "helper" and the text
+  module "text-module". Any of those fell through to "some OpenAI-compatible server", which defaults
+  to `localhost:1234` - so regenerating a field reached for a local server the user had never run and
+  reported `[Errno 61] Connection refused` to someone whose key was configured and working. A word
+  that is not a provider now resolves to whichever provider is actually configured, and the log says
+  so rather than silently redirecting. Reported with the cause already found, which is the only reason
+  it took minutes instead of an evening.
+- An unsupported provider now fails with a message naming it, instead of being redirected to a local
+  server that may not exist. That silent redirect is what turned a one-line configuration problem into
+  a connection error pointing at the wrong machine.
+
 ## [2.9.1] - 2026-11-26
 
 ### Fixed

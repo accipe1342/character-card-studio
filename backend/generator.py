@@ -509,6 +509,29 @@ def get_openrouter_key() -> str:
     return os.getenv("OPENROUTER_API_KEY", "")
 
 
+REAL_PROVIDERS = ("nanogpt", "openrouter", "local")
+
+
+def _resolve_provider(provider: str) -> str:
+    """Turn whatever a row remembers into a provider that can actually be called.
+
+    A card keeps the provider it was made with, but several things write a word there that names no
+    backend at all: a card made by hand is "manual", an imported one is "import", SCRIBE-01 writes
+    "helper" and the text module writes "text-module". Those used to fall through to "some
+    OpenAI-compatible server", which is localhost:1234 by default - so regenerating a field on a
+    hand-made card tried to reach a local server the user had never run, and reported "Connection
+    refused" to someone whose NanoGPT key was set and working. Anything that is not a real provider
+    resolves to whichever one is configured."""
+    p = (provider or "").strip().lower()
+    if p in REAL_PROVIDERS:
+        return p
+    if get_nanogpt_key().strip():
+        return "nanogpt"
+    if get_openrouter_key().strip():
+        return "openrouter"
+    return "local"      # nothing configured: the local branch gives the clearer message
+
+
 def _build_messages(system: str, user: str) -> list:
     """Build the messages array from separate system and user strings."""
     return [
@@ -523,6 +546,10 @@ def _build_request(
 ):
     """Return (url, headers, payload) for the given provider."""
     messages = _build_messages(system, user)
+    asked = provider
+    provider = _resolve_provider(provider)
+    if provider != (asked or "").strip().lower():
+        _log_warn(f"'{asked}' is not a provider; using {provider}")
 
     if provider == "nanogpt":
         api_key = get_nanogpt_key()
@@ -576,19 +603,11 @@ def _build_request(
         return f"{base_url}/chat/completions", headers, payload
 
     else:
-        _log_warn(f"Unknown provider '{provider}', treating as local OpenAI-compatible")
-        base_url = _env("LOCAL_OPENAI_BASE_URL", LOCAL_BASE_URL).rstrip("/")
-        headers = {
-            "Authorization": f"Bearer {_env('LOCAL_API_KEY', LOCAL_API_KEY) or 'local'}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": model or _env("LOCAL_MODEL", LOCAL_MODEL) or provider,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        return f"{base_url}/chat/completions", headers, payload
+        # _resolve_provider above only ever returns one of REAL_PROVIDERS, so this cannot happen.
+        # It used to quietly point anything unrecognised at a local OpenAI-compatible server, which
+        # is what made issue #5 ("Connection refused" with a working NanoGPT key) so hard to read.
+        # Raising keeps that behaviour from creeping back if the resolve call is ever dropped.
+        raise ValueError(f"Unsupported provider '{provider}'. Expected one of: {', '.join(REAL_PROVIDERS)}.")
 
 
 def _request(

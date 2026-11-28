@@ -1,7 +1,7 @@
 # Character Card Studio
 
 [![CI](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/accipe1342/character-card-studio/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-2.9.1-informational)
+![version](https://img.shields.io/badge/version-2.9.2-informational)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 A Signal UI–themed app for making SillyTavern character cards and lorebooks with AI: from Fandom wiki pages, from fan fiction and other long text, or from your own roleplay chats.
