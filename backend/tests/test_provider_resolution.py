@@ -68,3 +68,38 @@ def test_with_no_keys_a_manual_card_goes_where_the_local_server_is(keys, monkeyp
     monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://localhost:1234/v1")
     url, _, _ = G._build_request("manual", "", "sys", "user")
     assert url == "http://localhost:1234/v1/chat/completions"
+
+
+# --- what the UI has selected beats what the card remembers ---------------------------------------
+
+def test_the_request_wins_over_the_card():
+    """The card remembers "manual", but the UI knows which provider is selected. Resolving "manual"
+    is a guess; the selection is not, so it wins."""
+    import app as A
+    card = {"provider": "manual", "model": ""}
+    assert A._model_for({"provider": "openrouter", "model": "x/y"}, card) == ("openrouter", "x/y")
+
+
+def test_the_card_is_used_when_the_request_says_nothing():
+    import app as A
+    card = {"provider": "nanogpt", "model": "some-model"}
+    for body in ({}, None, {"provider": ""}, {"provider": "   "}):
+        assert A._model_for(body, card) == ("nanogpt", "some-model")
+
+
+def test_a_picked_provider_does_not_borrow_the_card_s_model():
+    """A model name belongs to the provider it was chosen under. Pairing one provider's model with
+    another is worse than sending no model at all, which lets the generator use that provider's
+    default."""
+    import app as A
+    card = {"provider": "nanogpt", "model": "nanogpt-only-model"}
+    assert A._model_for({"provider": "local"}, card) == ("local", "")
+
+
+def test_a_manual_card_with_no_selection_still_resolves(keys):
+    """Belt and braces: nothing selected, card says manual, a key is set - it must still work."""
+    import app as A
+    keys(nano="sk-test")
+    provider, model = A._model_for({}, {"provider": "manual", "model": ""})
+    assert provider == "manual"                     # untouched here...
+    assert G._resolve_provider(provider) == "nanogpt"   # ...and resolved downstream

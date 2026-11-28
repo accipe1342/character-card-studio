@@ -123,9 +123,11 @@ export async function startCharacterGenerate(sourceId, provider, model, asNew = 
   return data;
 }
 
-export async function regenerateFullCard(cardId) {
+export async function regenerateFullCard(cardId, { provider = "", model = "" } = {}) {
   const res = await fetch(`/api/generate/full/${cardId}`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider: provider || undefined, model: model || undefined }),
   });
 
   const data = await readJsonSafe(res);
@@ -141,6 +143,8 @@ export async function regenerateField(cardId, fieldName, options = {}) {
     customPrompt = "",
     includeCurrentCard = true,
     includeSource = true,
+    provider = "",
+    model = "",
   } = options;
 
   const formData = new URLSearchParams();
@@ -149,6 +153,7 @@ export async function regenerateField(cardId, fieldName, options = {}) {
   formData.append("include_current_card", String(includeCurrentCard));
   formData.append("include_source", String(includeSource));
   if (greetingStyleToSend()) formData.append("greeting_style", JSON.stringify(greetingStyleToSend()));
+  if (provider) { formData.append("provider", provider); formData.append("model", model || ""); }
 
   const res = await fetch(`/api/generate/field/${cardId}`, {
     method: "POST",
@@ -211,11 +216,12 @@ export async function compileField(cardId, target) {
   return data;
 }
 
-export async function regenerateGreeting(cardId, idx, customPrompt = "") {
+export async function regenerateGreeting(cardId, idx, customPrompt = "", { provider = "", model = "" } = {}) {
   const res = await fetch(`/api/generate/greeting/${cardId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idx, custom_prompt: customPrompt, greeting_style: greetingStyleToSend() || undefined }),
+    body: JSON.stringify({ idx, custom_prompt: customPrompt, greeting_style: greetingStyleToSend() || undefined,
+                           provider: provider || undefined, model: model || undefined }),
   });
   const data = await readJsonSafe(res);
   if (!res.ok) throw new Error(data.error || "Greeting regeneration failed");

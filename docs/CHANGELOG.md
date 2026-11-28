@@ -20,6 +20,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   that is not a provider now resolves to whichever provider is actually configured, and the log says
   so rather than silently redirecting. Reported with the cause already found, which is the only reason
   it took minutes instead of an evening.
+- Generating on a card now uses the provider the model chip is showing, rather than whatever the card
+  was created with. Resolving an unusable stored value works, but it is still a guess: someone with a
+  key and a local server would get whichever the ordering preferred. The selection on screen is not a
+  guess, so it wins, and the stored value is the fallback for anything that does not send one. The
+  model travels with the provider it was picked under - pairing one provider's model with another is
+  worse than sending none and letting that provider use its default.
 - An unsupported provider now fails with a message naming it, instead of being redirected to a local
   server that may not exist. That silent redirect is what turned a one-line configuration problem into
   a connection error pointing at the wrong machine.

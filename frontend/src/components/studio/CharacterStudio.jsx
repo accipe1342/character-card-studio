@@ -612,7 +612,7 @@ export default function CharacterStudio({
         message: "Regenerating full card...",
       });
 
-      const data = await regenerateFullCard(cardId);
+      const data = await regenerateFullCard(cardId, { provider, model });
 
       setCard(data.card);
       setCardId(data.card_id);
@@ -670,7 +670,7 @@ export default function CharacterStudio({
       setFieldBusy(fieldName);
       pushHistory(fieldName, readField(fieldName));
 
-      const data = await regenerateField(cardId, fieldName, options);
+      const data = await regenerateField(cardId, fieldName, { ...options, provider, model });
 
       if (characterViewMode === "structured") {
         const nextValue =
@@ -1711,6 +1711,8 @@ export default function CharacterStudio({
                     onChange={updateAlternateGreetings}
                     t={t}
                     cardId={cardId}
+                    provider={provider}
+                    model={model}
                   />
                 )}
               </div>

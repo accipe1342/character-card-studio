@@ -30,7 +30,7 @@
 import { useState } from "react";
 import { regenerateGreeting } from "../../lib/api";
 
-export default function AlternateGreetings({ greetings = [], onChange, t = {}, cardId }) {
+export default function AlternateGreetings({ greetings = [], onChange, t = {}, cardId, provider = "", model = "" }) {
   const [busyIdx, setBusyIdx] = useState(null);
   const [regenPrompt, setRegenPrompt] = useState({});
   const [showPrompt, setShowPrompt] = useState({});
@@ -55,7 +55,7 @@ export default function AlternateGreetings({ greetings = [], onChange, t = {}, c
     setBusyIdx(idx);
     setError("");
     try {
-      const data = await regenerateGreeting(cardId, idx, regenPrompt[idx] || "");
+      const data = await regenerateGreeting(cardId, idx, regenPrompt[idx] || "", { provider, model });
       update(idx, data.greeting);
       setShowPrompt(p => ({ ...p, [idx]: false }));
     } catch (e) {

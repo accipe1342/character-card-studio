@@ -1125,15 +1125,32 @@ def api_save_card(card_id):
     return jsonify({"status": "ok"})
 
 
+def _model_for(data, card):
+    """Which provider and model to generate with: the one the UI currently has selected, or, when the
+    request does not say, whatever the card remembers.
+
+    A card keeps the provider it was made with, and a card made by hand keeps "manual", which names no
+    backend (#5). The generator resolves that to a configured provider, but resolving is a guess - a
+    person with a key AND a local server gets whichever the ordering prefers. When the UI has told us
+    which one is selected, that is not a guess, so it wins. The two travel together on purpose: a model
+    name belongs to the provider it was chosen under, and pairing one provider's model with another
+    provider is worse than either on its own."""
+    picked = str((data or {}).get("provider") or "").strip()
+    if picked:
+        return picked, str((data or {}).get("model") or "").strip()
+    return card["provider"], card["model"]
+
+
 @app.post("/api/generate/full/<int:card_id>")
 def api_generate_full(card_id: int):
     try:
         card = get_card(card_id)
         source = get_source(card["source_id"])
+        provider, model = _model_for(request.get_json(silent=True) or {}, card)
 
-        generated = generate_full_card(source, card["provider"], card["model"]); generated.pop("_warnings", None)
-        generated["provider"] = card["provider"]
-        generated["model"] = card["model"]
+        generated = generate_full_card(source, provider, model); generated.pop("_warnings", None)
+        generated["provider"] = provider
+        generated["model"] = model
 
         create_or_update_card(card["source_id"], generated, card_id=card_id)
 
@@ -1183,7 +1200,8 @@ Existing first message (for reference, make this one different):
 Character card context:
 {json.dumps({"name": name, "personality": card.get("personality",""), "scenario": card.get("scenario","")}, ensure_ascii=False)}"""
 
-        result = request_text(card["provider"], card["model"], prompt, None, "greeting")
+        provider, model = _model_for(data, card)
+        result = request_text(provider, model, prompt, None, "greeting")
         greeting = tidy_text(text_of(result.get("greeting"), "\n"), name)      # plain-prose answers count too
         if not greeting:
             return jsonify({"error": "The model returned no greeting. Try again or pick another model."}), 502
@@ -1248,7 +1266,8 @@ Current personality (may be empty or outdated):
         else:
             return jsonify({"error": f"Unknown target: {target}"}), 400
 
-        result = request_text(card["provider"], card["model"], prompt, None, target)
+        provider, model = _model_for(data, card)
+        result = request_text(provider, model, prompt, None, target)
         value = text_of(result.get(target), "\n")
         if not value:
             return jsonify({"error": f"The model returned no {target}. Try again or pick another model."}), 502
@@ -1282,12 +1301,13 @@ def regenerate_field(card_id: int):
     source = get_source(card["source_id"])
 
     try:
+        provider, model = _model_for(data, card)
         result = regenerate_single_field(
             source=source,
             card=card,
             field_name=field_name,
-            provider=card["provider"],
-            model=card["model"],
+            provider=provider,
+            model=model,
             custom_prompt=custom_prompt,
             include_current_card=include_current_card,
             include_source=include_source,
